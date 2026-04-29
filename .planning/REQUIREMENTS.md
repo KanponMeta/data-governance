@@ -147,32 +147,31 @@
 | AUTH-02 | Phase 1 | Pending |
 | AUTH-03 | Phase 1 | Pending |
 | AUTH-04 | Phase 1 | Pending |
+| CONN-08 | Phase 1 | Pending |
 | ORCH-01 | Phase 2 | Pending |
 | ORCH-02 | Phase 2 | Pending |
 | ORCH-03 | Phase 2 | Pending |
 | ORCH-04 | Phase 2 | Pending |
+| ORCH-09 | Phase 2 | Pending |
+| ORCH-10 | Phase 2 | Pending |
+| CONN-01 | Phase 2 | Pending |
+| CONN-02 | Phase 2 | Pending |
+| CONN-03 | Phase 2 | Pending |
+| CONN-04 | Phase 2 | Pending |
+| CONN-05 | Phase 2 | Pending |
+| CONN-06 | Phase 2 | Pending |
+| CONN-07 | Phase 2 | Pending |
 | ORCH-05 | Phase 3 | Pending |
 | ORCH-06 | Phase 3 | Pending |
 | ORCH-07 | Phase 3 | Pending |
 | ORCH-08 | Phase 3 | Pending |
-| ORCH-09 | Phase 2 | Pending |
-| ORCH-10 | Phase 2 | Pending |
 | LINE-01 | Phase 4 | Pending |
 | LINE-02 | Phase 4 | Pending |
 | LINE-03 | Phase 4 | Pending |
-| LINE-04 | Phase 6 | Pending |
-| LINE-05 | Phase 6 | Pending |
 | LINE-06 | Phase 4 | Pending |
-| QUAL-01 | Phase 5 | Pending |
-| QUAL-02 | Phase 5 | Pending |
-| QUAL-03 | Phase 5 | Pending |
-| QUAL-04 | Phase 5 | Pending |
-| QUAL-05 | Phase 5 | Pending |
-| QUAL-06 | Phase 6 | Pending |
 | META-01 | Phase 4 | Pending |
 | META-02 | Phase 4 | Pending |
 | META-03 | Phase 4 | Pending |
-| META-04 | Phase 6 | Pending |
 | META-05 | Phase 4 | Pending |
 | RBAC-01 | Phase 5 | Pending |
 | RBAC-02 | Phase 5 | Pending |
@@ -187,14 +186,15 @@
 | GOV-05 | Phase 5 | Pending |
 | GOV-06 | Phase 5 | Pending |
 | GOV-07 | Phase 5 | Pending |
-| CONN-01 | Phase 2 | Pending |
-| CONN-02 | Phase 2 | Pending |
-| CONN-03 | Phase 2 | Pending |
-| CONN-04 | Phase 2 | Pending |
-| CONN-05 | Phase 2 | Pending |
-| CONN-06 | Phase 2 | Pending |
-| CONN-07 | Phase 2 | Pending |
-| CONN-08 | Phase 1 | Pending |
+| QUAL-01 | Phase 5 | Pending |
+| QUAL-02 | Phase 5 | Pending |
+| QUAL-03 | Phase 5 | Pending |
+| QUAL-04 | Phase 5 | Pending |
+| QUAL-05 | Phase 5 | Pending |
+| LINE-04 | Phase 6 | Pending |
+| LINE-05 | Phase 6 | Pending |
+| QUAL-06 | Phase 6 | Pending |
+| META-04 | Phase 6 | Pending |
 | UI-01 | Phase 6 | Pending |
 | UI-02 | Phase 6 | Pending |
 | UI-03 | Phase 6 | Pending |
@@ -204,10 +204,10 @@
 | UI-07 | Phase 6 | Pending |
 
 **Coverage:**
-- v1 requirements: 57 total
-- Mapped to phases: 57
+- v1 requirements: 64 total
+- Mapped to phases: 64
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-04-29*
-*Last updated: 2026-04-29 after initial definition*
+*Last updated: 2026-04-29 after roadmap creation (corrected count from 57 to 64)*
