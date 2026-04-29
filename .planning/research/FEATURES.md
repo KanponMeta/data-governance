@@ -1,222 +1,222 @@
-# Feature Landscape
+# 功能全景
 
-**Domain:** Data governance + orchestration platform (combined)
-**Researched:** 2026-04-29
-**Confidence:** HIGH (verified against Dagster docs, DataHub docs, OpenMetadata docs, Collibra, Apache Atlas)
-
----
-
-## Platform Baseline Survey
-
-Before categorizing, here is what each surveyed platform covers:
-
-### Dagster (orchestration baseline)
-
-Strengths: asset-centric model, rich UI (Dagit), scheduling/sensors/partitioning, materialization metadata, run history, software-defined assets, op-level retry, backfill, test harness. Column-level lineage exists but is: (a) manually declared via `TableColumnLineage` in `MaterializeResult` — not inferred from SQL, (b) visualization only available in Dagster+ (closed source). No governance workflows. No access control. No approval/certification. No compliance audit trail. No column-level security.
-
-### DataHub (metadata + lineage)
-
-Strengths: SQL-parser-based automatic column-level lineage (97-99% accuracy using SQLGlot), broad connector coverage (Snowflake, BigQuery, Redshift, Databricks, dbt, Looker, Tableau), lineage graph UI, business glossary, domains, data products, compliance forms and certification workflows, ML-based anomaly detection, AI-generated documentation. Weakness: Not an orchestrator — it observes and catalogs but does not execute pipelines.
-
-### OpenMetadata (open-source governance)
-
-Strengths: Column-level lineage, fine-grained RBAC, classification/tagging for PII policy enforcement, glossary approval workflow (Draft → Approved/Rejected), data contracts (Draft → Review → Active → Deprecated → Retired), asset certification backed by tag_usage table, data quality with no-code profiling, collaboration (tasks, conversations on assets), business glossary, domains, data products. Weakness: Not an orchestrator.
-
-### Apache Atlas (data governance + metadata)
-
-Strengths: Type-and-entity metadata model (highly extensible), automatic classification propagation (tag PII on source, descendants inherit), column-level lineage across Hadoop-native sources, Apache Ranger integration for policy enforcement, hierarchical business glossary. Weakness: Hadoop-era design — UI is dated, not Kubernetes-native, slow-moving project (2.4.0 broke a two-year release gap), limited modern connector support, no orchestration.
-
-### Collibra (enterprise commercial)
-
-Strengths: Full governance lifecycle — configurable approval workflows with Slack/Teams integration, business stewardship modules, business glossary as organizational backbone, data catalog with searchable inventory, automated metadata enrichment, audit trail for all decisions, AI-generated asset descriptions. Weakness: Expensive, closed-source, no orchestration, complex to deploy/operate.
+**领域：** 数据治理 + 编排平台（综合）
+**调研日期：** 2026-04-29
+**可信度：** HIGH（已对照 Dagster、DataHub、OpenMetadata、Collibra、Apache Atlas 文档验证）
 
 ---
 
-## Table Stakes
+## 平台基线调研
 
-Features users expect from any serious entry in this space. Missing = product feels incomplete and users go elsewhere.
+在分类之前，先梳理各调研平台的覆盖范围：
 
-### Orchestration (from Dagster benchmark)
+### Dagster（编排基准）
 
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| Software-defined assets in code | Industry standard since Dagster popularized it; task-centric (Airflow-style) is now considered legacy for data work | Med | Core mental model of the platform |
-| Explicit upstream dependency graph | Users need DAG execution order; without this it's a cron scheduler, not an orchestrator | Med | Dependency resolution is the orchestrator's core job |
-| Cron + event-trigger scheduling | Every orchestrator has this; missing = cannot run production pipelines | Med | Sensors (file-landed, upstream-materialized) are also expected |
-| Configurable retry with backoff | Transient failures are universal; no retry = manual babysitting | Low | Per-asset or per-run configurability required |
-| Time-based and categorical partitioning | Standard for daily/hourly pipelines and multi-region/multi-tenant pipelines | High | Backfill of partitions is equally expected |
-| Run history and execution logs | Users must be able to debug; no logs = unusable in production | Low | Per-run, per-asset log streaming is baseline |
-| Asset materialization status (fresh/stale) | Dagster established this as table stakes; knowing what's stale drives re-runs | Med | Freshness indicators per asset |
-| Configurable alerting on failure | PagerDuty/Slack/email on failure is universally expected | Low | Webhook or plugin interface is sufficient |
+优势：资产中心模型、丰富的 UI（Dagit）、调度/传感器/分区、物化元数据、运行历史、软件定义资产、Op 级重试、回填、测试框架。列级血缘存在但有局限：(a) 需通过 `MaterializeResult` 中的 `TableColumnLineage` 手动声明——并非从 SQL 自动推断；(b) 可视化仅在 Dagster+（闭源）中可用。无治理工作流。无访问控制。无审批/认证。无合规审计追踪。无列级安全。
 
-### Metadata & Catalog (from DataHub/OpenMetadata benchmark)
+### DataHub（元数据 + 血缘）
 
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| Auto-capture schema on materialization | Users should not manually register schemas; auto-discovery is the baseline | Med | Infer from Go struct tags or query result schemas |
-| Asset/table/column descriptions + tags | Without annotation the catalog is useless for discovery | Low | Free-text + structured tags |
-| Full-text search across catalog | Discovery is the primary analyst workflow; no search = no adoption | Med | Minimum: name, description, tag, owner search |
-| Asset ownership assignment | Accountability requires owners; required for governance workflows | Low | Per-asset owner(s), team assignment |
-| Asset-level lineage DAG (table/asset level) | Every governance platform has this; missing = no trust in data provenance | Med | Interactive DAG in UI is expected |
-| Schema evolution tracking | Schema drift is a top source of data incidents; users need to see diffs | Med | Version-to-version schema diff |
-| Business glossary | Standard on every governance platform; maps business terms to technical assets | Med | Terms linked to columns/assets |
+优势：基于 SQL 解析器的自动列级血缘（使用 SQLGlot，准确率 97-99%）、广泛的连接器覆盖（Snowflake、BigQuery、Redshift、Databricks、dbt、Looker、Tableau）、血缘图 UI、业务术语表、数据域、数据产品、合规表单和认证工作流、基于 ML 的异常检测、AI 生成文档。弱点：非编排器——它观察和编目，但不执行流水线。
 
-### Data Quality (from OpenMetadata/DataHub benchmark)
+### OpenMetadata（开源治理）
 
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| Built-in null/range/uniqueness checks | Baseline quality checks are the entry point for data quality users | Low | Declarative rule definition in Go |
-| Quality evaluation on materialization | Quality checks triggered automatically; not manual runs = adoption blocker | Med | Hooks into the execution lifecycle |
-| Quality history and trend per asset | Users need to see degradation over time, not just pass/fail today | Med | Time-series storage of check results |
-| Failure alerts | Quality failures are high-priority incidents; silence = lost trust | Low | Re-uses alerting infrastructure |
+优势：列级血缘、细粒度 RBAC、用于 PII 策略执行的分类/标签、词汇表审批工作流（草稿 → 已批准/已拒绝）、数据契约（草稿 → 审核 → 活跃 → 废弃 → 退役）、由 tag_usage 表支持的资产认证、无代码剖析的数据质量、协作（资产上的任务和对话）、业务词汇表、数据域、数据产品。弱点：非编排器。
 
-### Access Control (from Collibra/OpenMetadata/Unity Catalog benchmark)
+### Apache Atlas（数据治理 + 元数据）
 
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| Role-based access control (RBAC) | Every enterprise system requires RBAC at minimum | Med | Roles → permissions model |
-| Immutable audit log | Required for SOC2 and GDPR; no audit = failed compliance | Med | Append-only, tamper-evident event store |
-| User authentication (SSO/OIDC) | Enterprise deployments require SSO; local-user-only = rejected by enterprise IT | Med | OIDC integration; local users as fallback |
+优势：类型和实体元数据模型（高度可扩展）、自动分类传播（在源标注 PII，下游继承）、Hadoop 原生数据源的列级血缘、与 Apache Ranger 集成进行策略执行、层级业务词汇表。弱点：Hadoop 时代设计——UI 陈旧，非 Kubernetes 原生，项目进展缓慢（2.4.0 打破了两年的发布间隔），现代连接器支持有限，无编排能力。
+
+### Collibra（企业商业版）
+
+优势：完整治理生命周期——可配置的审批工作流（含 Slack/Teams 集成）、业务管理模块、作为组织骨干的业务词汇表、可搜索目录的数据资产清单、自动元数据丰富、所有决策的审计追踪、AI 生成的资产描述。弱点：费用高、闭源、无编排、部署/运维复杂。
 
 ---
 
-## Differentiators
+## 基础功能
 
-Features that set this platform apart from existing tools. Not universally expected today, but highly valued — and where this project's stated advantage lives.
+任何在此领域的产品都应具备的功能。缺失意味着产品不完整，用户会转向其他平台。
 
-### Field-Level Lineage (Primary Differentiator)
+### 编排（以 Dagster 为基准）
 
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| Automatic SQL-inferred column lineage | DataHub does this via SQLGlot; Dagster requires manual declaration. A Go platform that auto-infers from transformation SQL is genuinely differentiated for the orchestration space | High | Requires SQL parser integration (sqlparser-go or pg_query_go); or explicit API for Go-native transforms where SQL isn't the transform |
-| Explicit column lineage API for Go transforms | For non-SQL transforms (pure Go code), users declare which output columns derive from which input columns — compiler-checked, not string-based | Med | `ColumnLineage{OutputCol: "revenue", InputCols: []ColRef{{Asset: "orders", Col: "amount"}}}` style API |
-| Column lineage visualization in open-source UI | Dagster hides this behind Dagster+ (paid). An open-source platform with full column lineage UI in the free tier is a direct competitive advantage against Dagster | Med | Interactive graph with column-to-column edge rendering |
-| Field-level impact analysis | "If I change column X in asset Y, what breaks downstream?" — requires traversing the column lineage graph | High | Graph traversal query over stored lineage edges |
+| 功能特性 | 预期原因 | 复杂度 | 备注 |
+|---------|----------|--------|------|
+| 代码中的软件定义资产 | 行业标准，Dagster 将其推广；任务中心模式（Airflow 风格）现在被视为数据工作的过时方法 | 中 | 平台的核心思维模型 |
+| 显式上游依赖图 | 用户需要 DAG 执行顺序；缺少此功能就只是 cron 调度器，而非编排器 | 中 | 依赖解析是编排器的核心职责 |
+| Cron + 事件触发调度 | 每个编排器都有此功能；缺少 = 无法运行生产流水线 | 中 | 传感器（文件到达、上游已物化）同样被期待 |
+| 带退避的可配置重试 | 瞬时失败普遍存在；无重试 = 需要人工监控 | 低 | 需要每资产或每运行的可配置性 |
+| 基于时间和分类的分区 | 日常/小时流水线和多地区/多租户流水线的标准做法 | 高 | 分区回填同样被期待 |
+| 运行历史和执行日志 | 用户必须能够调试；无日志 = 在生产中不可用 | 低 | 每次运行、每个资产的日志流式传输是基线 |
+| 资产物化状态（新鲜/过期） | Dagster 将此确立为基础功能；了解哪些过期驱动重新运行 | 中 | 每个资产的新鲜度指示器 |
+| 失败时可配置的告警 | PagerDuty/Slack/邮件失败通知是普遍预期 | 低 | Webhook 或插件接口即可 |
 
-### Governance Workflows (Primary Differentiator)
+### 元数据与目录（以 DataHub/OpenMetadata 为基准）
 
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| Asset publication approval workflow | Collibra and OpenMetadata have this for glossary terms; no open-source orchestrator has it for pipeline assets. Governance teams demand gated publication | Med | States: Draft → Pending Review → Approved → Published / Rejected; configurable reviewers per asset |
-| Inline review comments | Reviewers leave structured comments on specific fields or the asset as a whole before approve/reject | Low | Attached to approval request entity |
-| Notification dispatch on workflow events | Notifications to reviewers on submission; to submitter on decision. Collibra integrates with Slack/Teams — critical for workflow completion rates | Low | Webhook + email; Slack plugin as extension |
-| Rejection with required remediation | Rejected assets return to Draft with mandatory comments — forces feedback loop rather than silent rejection | Low | Workflow state constraint |
+| 功能特性 | 预期原因 | 复杂度 | 备注 |
+|---------|----------|--------|------|
+| 物化时自动捕获 Schema | 用户不应手动注册 Schema；自动发现是基线 | 中 | 从 Go 结构体标签或查询结果 Schema 推断 |
+| 资产/表/列描述 + 标签 | 缺少注解则目录对发现毫无用处 | 低 | 自由文本 + 结构化标签 |
+| 目录全文搜索 | 发现是分析师的主要工作流；无搜索 = 无采用 | 中 | 最低要求：名称、描述、标签、负责人搜索 |
+| 资产所有权分配 | 可追责性需要所有者；治理工作流必需 | 低 | 每资产负责人、团队分配 |
+| 资产级血缘 DAG（表/资产级） | 每个治理平台都有此功能；缺少 = 数据来源无可信保障 | 中 | UI 中的交互式 DAG 是预期 |
+| Schema 演化追踪 | Schema 漂移是数据事故的主要来源；用户需要查看差异 | 中 | 版本间的 Schema diff |
+| 业务词汇表 | 每个治理平台的标准；将业务术语映射到技术资产 | 中 | 术语关联到列/资产 |
 
-### Column-Level Security Enforcement (Primary Differentiator)
+### 数据质量（以 OpenMetadata/DataHub 为基准）
 
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| Column masking policies | Unity Catalog, BigQuery, and Apache Ranger all do this; no open-source governance+orchestration combo does. Enforcing at query time by role is the key ask from governance teams | High | Requires a query proxy layer or catalog-enforced view generation; masking functions applied per-role per-column |
-| Policy-as-code column ACL definition | Governance teams want to version-control access policies; YAML/Go struct definitions committed to Git | Med | `ColumnPolicy{Column: "ssn", Roles: []string{"pii-analyst"}, Mask: MaskType_Hash}` |
-| PII tag-to-policy propagation | Tag a column "PII" → policy automatically applied. Inspired by Apache Atlas classification propagation | Med | Requires tag→policy rule engine |
-| Downstream column policy inheritance | If column A in asset X is masked, derived column B in asset Y (which lineage shows came from A) should inherit the restriction unless explicitly overridden | High | Requires field-level lineage as a prerequisite |
+| 功能特性 | 预期原因 | 复杂度 | 备注 |
+|---------|----------|--------|------|
+| 内置空值/范围/唯一性检查 | 基础质量检查是数据质量用户的入口 | 低 | Go 中的声明式规则定义 |
+| 物化时质量评估 | 质量检查自动触发；而非手动运行 = 采用障碍 | 中 | 钩入执行生命周期 |
+| 每资产的质量历史和趋势 | 用户需要随时间查看退化情况，而非仅当天的通过/失败 | 中 | 检查结果的时间序列存储 |
+| 失败告警 | 质量失败是高优先级事件；沉默 = 信任丧失 | 低 | 复用告警基础设施 |
 
-### Compliance & Audit Trail (Differentiator vs. Orchestrators; Table Stakes vs. Enterprise Governance)
+### 访问控制（以 Collibra/OpenMetadata/Unity Catalog 为基准）
 
-| Feature | Why Differentiating | Complexity | Notes |
-|---------|---------------------|------------|-------|
-| Tamper-evident append-only audit log | Standard governance platforms have this; orchestrators (including Dagster) do not. Combining orchestration + audit in one system eliminates a whole integration | Med | Write-once event store; cryptographic chaining optional but valuable for SOC2 |
-| GDPR/SOC2 compliance export | Pre-formatted compliance reports that governance teams can deliver to auditors without manual extraction | Med | Parameterized queries over audit log → structured report |
-| Data retention / TTL policies on assets | GDPR right-to-erasure requires this; no orchestrator has it | Med | Policy attached to asset: `RetentionPolicy{TTL: 365 * 24 * time.Hour, Action: Delete}` |
-
-### Go-Native Developer Experience (Differentiator vs. Python Ecosystem)
-
-| Feature | Why Differentiating | Complexity | Notes |
-|---------|---------------------|------------|-------|
-| Type-safe asset definitions in Go | Python's duck typing in Dagster leads to runtime errors; Go structs give compile-time guarantees on asset interface, lineage declarations, and quality rule definitions | Med | The asset SDK is the platform's public API — stability from day one is critical |
-| Single binary deployment | Go compiles to a single binary; no Python virtualenv, no pip install, no JVM. Operations teams strongly prefer this | Low | Key adoption driver for self-hosted; Docker image is ~20MB not ~500MB |
-| Connector interface as stable public API | Extensibility via Go interface allows third-party connectors without platform changes — drives ecosystem | Med | `Connector` interface defined as v1 public API before first release |
-
-### Data Asset Freshness SLA
-
-| Feature | Why Differentiating | Complexity | Notes |
-|---------|---------------------|------------|-------|
-| Per-asset freshness SLA declaration | "This asset must be materialized within 6 hours of its upstream" — violation triggers alert and governance flag | Med | SLA attached to asset definition; evaluated by scheduler |
-| SLA breach surfaced in governance workflow | SLA breach = automatic review trigger; governance team is notified, not just ops team | Med | Bridge between orchestration and governance layers |
+| 功能特性 | 预期原因 | 复杂度 | 备注 |
+|---------|----------|--------|------|
+| 基于角色的访问控制（RBAC） | 每个企业系统都要求 RBAC | 中 | 角色 → 权限模型 |
+| 不可变审计日志 | SOC2 和 GDPR 必需；无审计 = 合规失败 | 中 | 追加式、防篡改的事件存储 |
+| 用户认证（SSO/OIDC） | 企业部署需要 SSO；仅本地用户 = 被企业 IT 拒绝 | 中 | OIDC 集成；本地用户作为回退 |
 
 ---
 
-## Anti-Features
+## 差异化功能
 
-Features to deliberately NOT build in v1. These are either out of scope, complexity traps, or dilute the core value proposition.
+能让本平台区别于现有工具的功能。今天并非普遍期待，但极具价值——也是本项目所声称优势所在。
 
-| Anti-Feature | Why Avoid | What to Do Instead |
-|--------------|-----------|-------------------|
-| Python SDK / Python runtime dependency | Python dependency in core would require users to have Python installed to use a Go platform. Defeats the single-binary deployment goal and Go-native DX | Defer Python bindings post-stable API; Go SDK only for v1 |
-| Row-level security | Adds significant complexity (query proxy required, interaction with every connector), highly database-specific, and is a separate product surface. Column-level security is the stated scope and is differentiated enough | Document as future extension; design column ACL system so row-level can be added without re-architecture |
-| Built-in Spark / dbt execution | The platform orchestrates; it does not execute Spark jobs or run dbt models itself. Adding an embedded execution engine blurs the value proposition and massively increases surface area | Provide first-class Dagster-style op wrappers that delegate to external dbt/Spark processes; capture lineage from those runs |
-| Multi-tenant SaaS hosting | SaaS requires per-tenant isolation, billing, onboarding flows, and ops overhead that pulls engineering away from core governance features. Open-source adoption comes first | Self-hosted only for v1; commercial SaaS is a v2+ business decision |
-| AI-generated metadata / LLM descriptions | DataHub and Collibra already do this; it's becoming table stakes but is not a differentiator. It also requires significant infrastructure (embedding model, vector store) | Defer to v2; design metadata model so AI enrichment can be layered on without schema changes |
-| Built-in BI / dashboards / charts | Tableau/Looker integration is a common catalog feature but adds enormous UI scope. Analysts use BI tools they already have | Track BI assets as catalog entries and capture lineage from BI tools (Looker, Tableau extractors); don't build BI tooling |
-| Managed connector marketplace | A connector registry with ratings, versions, and downloads is a significant product. It creates community overhead before the platform has users | Ship 6-8 first-party connectors; design the public `Connector` interface well; let community build and self-distribute connectors |
-| Workflow automation / data contracts enforcement at query time | Data contracts that block queries at the database level require a query proxy, which is a major infrastructure component (similar to what Privacera builds). This is not orchestration | Enforce governance decisions at materialization time (pipeline-level), not at query time; column masking is the limit of query-time enforcement for v1 |
+### 字段级血缘（主要差异化功能）
+
+| 功能特性 | 价值主张 | 复杂度 | 备注 |
+|---------|----------|--------|------|
+| SQL 自动推断列血缘 | DataHub 通过 SQLGlot 实现；Dagster 需要手动声明。能从 SQL 自动推断的 Go 平台在编排领域真正具有差异化 | 高 | 需要 SQL 解析器集成（sqlparser-go 或 pg_query_go）；或针对非 SQL 转换的 Go 原生变换的显式 API |
+| Go 变换的显式列血缘 API | 对于非 SQL 变换（纯 Go 代码），用户声明哪些输出列来自哪些输入列——编译器检查，而非字符串 | 中 | `ColumnLineage{OutputCol: "revenue", InputCols: []ColRef{{Asset: "orders", Col: "amount"}}}` 风格 API |
+| 开源 UI 中的列血缘可视化 | Dagster 将此隐藏在 Dagster+（付费版）之后。免费层提供完整列血缘 UI 的开源平台是直接针对 Dagster 的竞争优势 | 中 | 带列到列边渲染的交互式图 |
+| 字段级影响分析 | "如果我改变资产 Y 中的列 X，下游哪些会受影响？"——需要遍历列血缘图 | 高 | 对存储血缘边进行图遍历查询 |
+
+### 治理工作流（主要差异化功能）
+
+| 功能特性 | 价值主张 | 复杂度 | 备注 |
+|---------|----------|--------|------|
+| 资产发布审批工作流 | Collibra 和 OpenMetadata 对词汇表术语有此功能；没有开源编排器对流水线资产有此功能。治理团队强烈要求有门控发布 | 中 | 状态：草稿 → 待审核 → 已批准 → 已发布 / 已拒绝；每资产可配置审核人 |
+| 内联审核评论 | 审核人在批准/拒绝前对特定字段或整个资产留下结构化评论 | 低 | 附加到审批请求实体 |
+| 工作流事件通知分发 | 提交时通知审核人；决定后通知提交人。Collibra 集成 Slack/Teams——对工作流完成率至关重要 | 低 | Webhook + 邮件；Slack 插件作为扩展 |
+| 拒绝并要求整改 | 被拒绝的资产返回草稿状态并附强制评论——迫使反馈循环而非静默拒绝 | 低 | 工作流状态约束 |
+
+### 列级安全执行（主要差异化功能）
+
+| 功能特性 | 价值主张 | 复杂度 | 备注 |
+|---------|----------|--------|------|
+| 列掩码策略 | Unity Catalog、BigQuery 和 Apache Ranger 均有此功能；没有开源的治理+编排组合产品有此功能。在查询时按角色执行是治理团队的核心需求 | 高 | 需要查询代理层或目录强制视图生成；每角色每列应用掩码函数 |
+| 策略即代码的列 ACL 定义 | 治理团队希望对访问策略进行版本控制；提交到 Git 的 YAML/Go 结构体定义 | 中 | `ColumnPolicy{Column: "ssn", Roles: []string{"pii-analyst"}, Mask: MaskType_Hash}` |
+| PII 标签到策略传播 | 标注列为"PII" → 策略自动应用。借鉴 Apache Atlas 分类传播思想 | 中 | 需要标签→策略规则引擎 |
+| 下游列策略继承 | 如果资产 X 中的列 A 被掩码，资产 Y 中从 A 派生的列 B（血缘显示）应继承该限制，除非明确覆盖 | 高 | 需要字段级血缘作为前提条件 |
+
+### 合规与审计追踪（相对编排器的差异化功能；相对企业治理的基础功能）
+
+| 功能特性 | 差异化原因 | 复杂度 | 备注 |
+|---------|-----------|--------|------|
+| 防篡改追加式审计日志 | 标准治理平台有此功能；编排器（包括 Dagster）没有。在一个系统中结合编排和审计消除了整个集成需求 | 中 | 仅写入事件存储；哈希链可选但对 SOC2 有价值 |
+| GDPR/SOC2 合规导出 | 预格式化的合规报告，治理团队可直接交付给审计员，无需手动提取 | 中 | 审计日志的参数化查询 → 结构化报告 |
+| 资产数据保留/TTL 策略 | GDPR 删除权要求此功能；没有编排器有此功能 | 中 | 附加到资产的策略：`RetentionPolicy{TTL: 365 * 24 * time.Hour, Action: Delete}` |
+
+### Go 原生开发者体验（相对 Python 生态的差异化功能）
+
+| 功能特性 | 差异化原因 | 复杂度 | 备注 |
+|---------|-----------|--------|------|
+| Go 中类型安全的资产定义 | Python 在 Dagster 中的鸭子类型会导致运行时错误；Go 结构体对资产接口、血缘声明和质量规则定义提供编译时保证 | 中 | 资产 SDK 是平台的公共 API——从第一天起就需要稳定性 |
+| 单二进制部署 | Go 编译为单一二进制；无 Python 虚拟环境、无 pip install、无 JVM。运维团队强烈偏好此方式 | 低 | 自托管的关键采用驱动因素；Docker 镜像约 20MB 而非约 500MB |
+| 连接器接口作为稳定公共 API | 通过 Go 接口实现的可扩展性允许第三方连接器无需修改平台——驱动生态系统 | 中 | `Connector` 接口在首次发布前定义为 v1 公共 API |
+
+### 数据资产新鲜度 SLA
+
+| 功能特性 | 差异化原因 | 复杂度 | 备注 |
+|---------|-----------|--------|------|
+| 每资产新鲜度 SLA 声明 | "此资产必须在其上游 6 小时内物化"——违规触发告警和治理标志 | 中 | SLA 附加到资产定义；由调度器评估 |
+| SLA 违约在治理工作流中的体现 | SLA 违约 = 自动触发审核；不仅通知运维团队，也通知治理团队 | 中 | 编排层和治理层之间的桥接 |
 
 ---
 
-## Feature Dependencies
+## 反特性
+
+v1 中故意不构建的功能。这些要么超出范围，要么是复杂性陷阱，或者会稀释核心价值主张。
+
+| 反特性 | 避免原因 | 替代方案 |
+|--------|---------|---------|
+| Python SDK / Python 运行时依赖 | 核心中的 Python 依赖将要求用户安装 Python 来使用 Go 平台。破坏单二进制部署目标和 Go 原生开发体验 | 在 API 稳定后推迟 Python 绑定；v1 仅提供 Go SDK |
+| 行级安全 | 增加显著复杂性（需要查询代理、与每个连接器交互），高度数据库特定，是独立的产品面。列级安全已是声明范围且足够差异化 | 记录为未来扩展；设计列 ACL 系统使行级安全可后续添加而无需重构 |
+| 内置 Spark / dbt 执行 | 平台负责编排；它不执行 Spark 作业或运行 dbt 模型本身。添加内嵌执行引擎模糊了价值主张并大幅扩展表面积 | 提供类 Dagster op 的包装器委托给外部 dbt/Spark 进程；从这些运行中捕获血缘 |
+| 多租户 SaaS 托管 | SaaS 需要每租户隔离、计费、入驻流程和运维开销，会将工程资源从核心治理功能拉走。开源采用优先 | v1 仅自托管；商业 SaaS 是 v2+ 的业务决策 |
+| AI 生成元数据 / LLM 描述 | DataHub 和 Collibra 已经这样做；它正在成为基础功能但不是差异化。它还需要大量基础设施（嵌入模型、向量存储） | 推迟到 v2；设计元数据模型使 AI 丰富可以在不改变 Schema 的情况下叠加 |
+| 内置 BI / 仪表板 / 图表 | Tableau/Looker 集成是常见的目录功能，但增加了巨大的 UI 范围。分析师使用他们已有的 BI 工具 | 将 BI 资产作为目录条目追踪，从 BI 工具（Looker、Tableau 提取器）捕获血缘；不构建 BI 工具 |
+| 托管连接器市场 | 带评分、版本和下载的连接器注册表是一个重大产品。在平台有用户之前会带来社区开销 | 发布 6-8 个第一方连接器；良好设计公共 `Connector` 接口；让社区构建并自行分发连接器 |
+| 工作流自动化 / 查询时数据契约执行 | 在数据库层阻止查询的数据契约需要查询代理，这是重大基础设施组件（类似 Privacera 构建的）。这不是编排 | 在物化时（流水线级）而非查询时执行治理决策；列掩码是 v1 查询时执行的上限 |
+
+---
+
+## 功能依赖关系
 
 ```
-Column lineage visualization ← Field-level lineage capture (SQL parser or explicit API)
-Field-level impact analysis ← Field-level lineage (complete graph required)
-Downstream column policy inheritance ← Field-level lineage + column masking policy engine
-SLA breach → governance workflow ← Asset publication workflow + freshness SLA declaration
-Approval workflow ← Asset ownership (owner is notified/assigned as reviewer)
-Column masking enforcement ← RBAC (roles required before policies can reference them)
-GDPR compliance export ← Immutable audit log (data source for the report)
-Data retention TTL enforcement ← Asset ownership + audit log (who authorized deletion)
-Schema drift detection ← Schema evolution tracking (diff stored versions)
-PII tag → policy propagation ← Classification/tagging system + column masking policy engine
+列血缘可视化 ← 字段级血缘捕获（SQL 解析器或显式 API）
+字段级影响分析 ← 字段级血缘（需要完整图）
+下游列策略继承 ← 字段级血缘 + 列掩码策略引擎
+SLA 违约 → 治理工作流 ← 资产发布工作流 + 新鲜度 SLA 声明
+审批工作流 ← 资产所有权（所有者收到通知/被分配为审核人）
+列掩码执行 ← RBAC（策略引用角色前需要角色）
+GDPR 合规导出 ← 不可变审计日志（报告的数据源）
+数据保留 TTL 执行 ← 资产所有权 + 审计日志（谁授权删除）
+Schema 漂移检测 ← Schema 演化追踪（diff 存储版本）
+PII 标签 → 策略传播 ← 分类/标签系统 + 列掩码策略引擎
 ```
 
-### Hard Prerequisites (must build before dependent feature)
+### 硬性前提条件（必须在依赖功能之前构建）
 
-1. Asset + schema metadata model → everything else depends on it
-2. RBAC roles model → column masking, approval workflow, audit log attribution
-3. Immutable audit log → compliance export, tamper-evident governance
-4. Field-level lineage graph → impact analysis, downstream policy inheritance, field lineage UI
-5. Asset publication states (Draft/Published) → approval workflow (states are workflow states)
-
----
-
-## MVP Recommendation
-
-The minimum viable product that demonstrates the core differentiators:
-
-**Priority 1 (without these it's just another orchestrator):**
-1. Software-defined assets in Go — the execution foundation
-2. Dependency graph execution + scheduling — operational baseline
-3. Auto-captured schema metadata on materialization — catalog backbone
-4. Asset-level lineage DAG — lineage baseline
-5. RBAC + immutable audit log — governance foundation
-
-**Priority 2 (the actual differentiators that justify building this over Dagster):**
-6. Field-level lineage (explicit Go API first, SQL parser second) — primary differentiator
-7. Asset publication workflow (Draft → Pending → Approved/Published) — governance differentiator
-8. Column-level masking policies enforced at materialization — access control differentiator
-
-**Priority 3 (valuable but not MVP-blocking):**
-9. Data quality rules + evaluation on materialization
-10. GDPR/SOC2 compliance audit export
-11. Downstream column policy inheritance via lineage
-
-**Defer:**
-- SQL-inferred automatic column lineage (complex; start with explicit API, add SQL parser later)
-- PII tag → policy propagation (requires policy rule engine; design hooks but defer)
-- Freshness SLA → governance bridge (nice-to-have; core SLA alerting is enough for MVP)
+1. 资产 + Schema 元数据模型 → 其他所有功能都依赖于它
+2. RBAC 角色模型 → 列掩码、审批工作流、审计日志归因
+3. 不可变审计日志 → 合规导出、防篡改治理
+4. 字段级血缘图 → 影响分析、下游策略继承、字段血缘 UI
+5. 资产发布状态（草稿/已发布）→ 审批工作流（状态即工作流状态）
 
 ---
 
-## Sources
+## MVP 建议
 
-- Dagster column lineage docs: https://docs.dagster.io/guides/build/assets/metadata-and-tags/column-level-lineage
-- DataHub SQL parser / column lineage: https://docs.datahub.com/docs/lineage/sql_parsing and https://datahub.com/blog/extracting-column-level-lineage-from-sql/
-- DataHub lineage API: https://docs.datahub.com/docs/api/tutorials/lineage
-- OpenMetadata governance: https://docs.open-metadata.org/latest/how-to-guides/data-governance
-- OpenMetadata glossary approval workflow: https://docs.open-metadata.org/latest/how-to-guides/data-governance/glossary/approval
-- Collibra governance: https://www.collibra.com/products/data-governance
+能够展示核心差异化功能的最小可行产品：
+
+**优先级 1（缺少这些就只是另一个编排器）：**
+1. Go 中的软件定义资产——执行基础
+2. 依赖图执行 + 调度——操作基线
+3. 物化时自动捕获 Schema 元数据——目录骨干
+4. 资产级血缘 DAG——血缘基线
+5. RBAC + 不可变审计日志——治理基础
+
+**优先级 2（真正差异化的功能，证明为何要在 Dagster 之外构建此平台）：**
+6. 字段级血缘（先 Go 显式 API，再 SQL 解析器）——主要差异化
+7. 资产发布工作流（草稿 → 待审核 → 已批准/已发布）——治理差异化
+8. 物化时执行的列级掩码策略——访问控制差异化
+
+**优先级 3（有价值但非 MVP 阻塞）：**
+9. 数据质量规则 + 物化时评估
+10. GDPR/SOC2 合规审计导出
+11. 通过血缘的下游列策略继承
+
+**推迟：**
+- SQL 自动推断列血缘（复杂；先从显式 API 开始，之后添加 SQL 解析器）
+- PII 标签 → 策略传播（需要策略规则引擎；设计钩子但推迟实现）
+- 新鲜度 SLA → 治理桥接（nice-to-have；核心 SLA 告警对 MVP 已足够）
+
+---
+
+## 参考来源
+
+- Dagster 列血缘文档: https://docs.dagster.io/guides/build/assets/metadata-and-tags/column-level-lineage
+- DataHub SQL 解析器/列血缘: https://docs.datahub.com/docs/lineage/sql_parsing and https://datahub.com/blog/extracting-column-level-lineage-from-sql/
+- DataHub 血缘 API: https://docs.datahub.com/docs/api/tutorials/lineage
+- OpenMetadata 治理: https://docs.open-metadata.org/latest/how-to-guides/data-governance
+- OpenMetadata 词汇表审批工作流: https://docs.open-metadata.org/latest/how-to-guides/data-governance/glossary/approval
+- Collibra 治理: https://www.collibra.com/products/data-governance
 - Apache Atlas: https://atlas.apache.org/
-- Column masking patterns (Unity Catalog): https://docs.databricks.com/aws/en/data-governance/unity-catalog/filters-and-masks/
-- BigQuery column-level security: https://cloud.google.com/bigquery/docs/column-level-security
-- DataHub 2026 features overview: https://atlan.com/know/data-catalog/datahub/column-level-lineage/
-- Dagster data governance gaps: https://www.secoda.co/learn/dagster-data-governance
-- Open source data governance landscape 2025: https://atlan.com/open-source-data-governance-tools/
+- 列掩码模式（Unity Catalog）: https://docs.databricks.com/aws/en/data-governance/unity-catalog/filters-and-masks/
+- BigQuery 列级安全: https://cloud.google.com/bigquery/docs/column-level-security
+- DataHub 2026 功能概览: https://atlan.com/know/data-catalog/datahub/column-level-lineage/
+- Dagster 数据治理差距: https://www.secoda.co/learn/dagster-data-governance
+- 2025 年开源数据治理全景: https://atlan.com/open-source-data-governance-tools/

@@ -1,343 +1,343 @@
-# Domain Pitfalls
+# 领域陷阱
 
-**Domain:** Data Orchestration + Governance Platform (Go-native, Dagster-inspired)
-**Researched:** 2026-04-29
-**Confidence:** HIGH for execution engine and lineage pitfalls (verified against Dagster issues and multiple authoritative sources); MEDIUM for governance workflow pitfalls (good sources, fewer Go-specific precedents); HIGH for Go-specific pitfalls (well-documented language patterns)
-
----
-
-## Critical Pitfalls
-
-These mistakes cause rewrites, data loss, or adoption failure.
+**领域：** 数据编排 + 治理平台（Go 原生，Dagster 启发）
+**调研日期：** 2026-04-29
+**可信度：** 执行引擎和血缘陷阱 HIGH（已对照 Dagster issue 和多个权威来源验证）；治理工作流陷阱 MEDIUM（来源可靠，Go 特定先例较少）；Go 特定陷阱 HIGH（有完善的语言模式文档）
 
 ---
 
-### Pitfall 1: Execution State Machine Without Atomic Transitions
+## 关键陷阱
 
-**What goes wrong:** Run state transitions (QUEUED -> STARTING -> RUNNING -> COMPLETED/FAILED) are written as non-atomic multi-step database operations. Under concurrent scheduler ticks or crash-recovery, the same run can be double-started, producing duplicate materializations of the same asset partition.
-
-**Why it happens:** Developers write `SELECT ... WHERE state = 'QUEUED'` followed by `UPDATE state = 'RUNNING'` as two separate statements. Between those two statements, a second scheduler worker can pick up the same run.
-
-**Evidence from production:** Dagster issue #15155 documents this exact pattern — duplicate runs in backfills when using `DefaultRunLauncher` with `QueuedRunCoordinator` and `tag_concurrency_limits`. The bug survived multiple releases because it only manifests at 26+ partitions.
-
-**Consequences:** Duplicate writes to production tables. Cost explosions on BigQuery/Snowflake (two full scans for same partition). Impossible to audit which materialization is "the one."
-
-**Prevention:**
-- Use `SELECT ... FOR UPDATE SKIP LOCKED` (PostgreSQL) or equivalent optimistic locking to claim a run atomically
-- Assign each run a monotonic sequence number at creation, reject any launcher that attempts to start a run not in the expected state
-- Model the state machine explicitly as an enum in the database with a `CHECK` constraint; never allow backwards transitions except via a dedicated `reset` operation
-- Write a test that spawns 50 goroutines all trying to claim the same queued run simultaneously — only one should succeed
-
-**Detection warning signs:**
-- Run count in DB does not match expected partition count after backfill
-- Duplicate asset materialization events in the audit log for the same partition key + run ID
-- Unexpectedly high warehouse query costs after a backfill
-
-**Phase that should address it:** Execution engine core (Phase 1 / earliest milestone). Fix before writing any higher-level scheduler logic.
+这些错误会导致重写、数据丢失或采用失败。
 
 ---
 
-### Pitfall 2: Concurrency Limit Logic Spread Across Multiple Layers
+### 陷阱 1：执行状态机没有原子性转换
 
-**What goes wrong:** Concurrency is enforced in more than one place — run coordinator, op executor, and resource manager — with no single source of truth. Limits interact unexpectedly. In Dagster, the interaction between run-tag concurrency limits and op-level concurrency limits causes backfills to hang permanently (issue #25743, confirmed in production as of Dagster 1.8.13+).
+**问题描述：** 运行状态转换（QUEUED -> STARTING -> RUNNING -> COMPLETED/FAILED）以非原子的多步骤数据库操作写入。在并发调度 tick 或崩溃恢复情况下，同一次运行可能被双重启动，产生同一资产分区的重复物化。
 
-**Why it happens:** Each new concurrency feature is bolted onto the existing scheduler rather than going through a unified token/slot system. The first feature works. The second feature interacts with the first in unexpected ways.
+**发生原因：** 开发者将 `SELECT ... WHERE state = 'QUEUED'` 后跟 `UPDATE state = 'RUNNING'` 写成两条独立语句。在这两条语句之间，第二个调度器 worker 可以拿到同一次运行。
 
-**Consequences:** Backfill jobs become permanently stuck. Operators discover this by noticing that queued runs never start — there is no error, just silence. Recovery requires manual database intervention or configuration changes that break other limits.
+**生产证据：** Dagster issue #15155 记录了这个确切模式——使用 `DefaultRunLauncher` 和 `QueuedRunCoordinator` 及 `tag_concurrency_limits` 时回填中出现重复运行。该 bug 历经多个版本才被发现，因为只在超过 26 个分区时才出现。
 
-**Prevention:**
-- Design one centralized concurrency token system at the beginning. Every source of concurrency control (run-level, op-level, resource-level) draws from and returns to the same token pool.
-- Implement the token system as a table with row-level locking. No in-memory counters — they do not survive crashes.
-- Write an integration test that exercises all three concurrency dimensions simultaneously before declaring the scheduler stable.
+**后果：** 重复写入生产表。BigQuery/Snowflake 成本爆炸（同一分区两次全量扫描）。无法审计哪次物化是"那次"。
 
-**Detection warning signs:**
-- Runs stay in QUEUED state indefinitely with no error
-- Concurrency pool shows available slots but runs are not dequeued
-- UI claims limits are applied but behavior does not match configured values
+**预防措施：**
+- 使用 `SELECT ... FOR UPDATE SKIP LOCKED`（PostgreSQL）或等效的乐观锁来原子性地认领运行
+- 在创建时为每次运行分配单调递增的序列号，拒绝任何尝试启动不处于预期状态的运行的启动器
+- 在数据库中将状态机显式建模为带 `CHECK` 约束的枚举；除通过专用 `reset` 操作外，永远不允许反向转换
+- 编写一个测试：同时生成 50 个 goroutine 尝试认领同一个排队运行——只有一个应该成功
 
-**Phase that should address it:** Execution engine concurrency design. Do not add op-level concurrency after run-level concurrency — design both in the same phase.
+**检测警告信号：**
+- 回填后数据库中的运行数量与预期分区数不匹配
+- 审计日志中同一分区键 + 运行 ID 有重复的资产物化事件
+- 回填后仓库查询成本意外升高
 
----
-
-### Pitfall 3: Field-Level Lineage Captured at Declaration Time Only
-
-**What goes wrong:** Field-level lineage is captured once when the asset is defined (static declaration) and never updated when the asset's transformation logic changes. The lineage graph becomes stale. A perfect lineage graph that is 3 months stale is worse than no graph because it creates false confidence.
-
-**Why it happens:** Capturing lineage from SQL at runtime requires parsing SQL dialects (a hard problem). Teams take the shortcut of requiring users to declare lineage in code at definition time. Users stop updating declarations as logic evolves. There is no enforcement mechanism.
-
-**Evidence from the ecosystem:** dbt column-level lineage discussion (#4458 in dbt-core) documents the SQL parsing challenge. Multiple lineage tools promote automation but fail silently on SELECT *, CTEs, stored procedures, and dialect-specific syntax (Oracle, Snowflake QUALIFY, BigQuery EXCEPT).
-
-**Consequences:** Impact analysis (which downstream columns are affected if I change field X?) returns wrong answers. Governance decisions based on lineage are unsound. GDPR deletion requests that should propagate to derived fields are missed.
-
-**Prevention:**
-- Adopt a hybrid approach: declarative annotations at asset definition time (user specifies column mappings explicitly) PLUS optional SQL parsing as a supplementary signal, never as sole source of truth
-- Implement a lineage version number per asset. When an asset is re-materialized with a different code hash, prompt (or require) lineage re-declaration. Do not silently keep old lineage.
-- Use OpenLineage-compatible event schema so lineage events carry a `runId` and `eventTime` — consumers can detect staleness
-- Treat `SELECT *` as a declaration of full column pass-through AND record it as "unknown expansion" that triggers a schema-refresh query on materialization
-
-**Detection warning signs:**
-- Asset code hash has changed but lineage graph shows no corresponding update
-- Column names in lineage graph do not match current schema (stale column names)
-- Users report impact analysis results that contradict reality
-
-**Phase that should address it:** Lineage capture milestone. Explicitly decide the static vs. runtime tradeoff before writing any lineage storage.
+**应在哪个阶段解决：** 执行引擎核心（第一阶段/最早里程碑）。在编写任何更高级别的调度器逻辑之前修复。
 
 ---
 
-### Pitfall 4: Graph Storage Chosen Too Late, Replaced Under Load
+### 陷阱 2：并发限制逻辑分散在多个层次
 
-**What goes wrong:** Lineage is initially stored in a simple adjacency list in PostgreSQL (edges table with `(from_asset, from_field, to_asset, to_field, run_id)` rows). This works at 10K edges. At 1M+ edges — a realistic number for a data platform with hundreds of assets across years of runs — queries for "all ancestors of field X" become full graph traversals that time out.
+**问题描述：** 并发在运行协调器、Op 执行器和资源管理器等多处强制执行，没有单一真实来源。限制以意外方式交互。在 Dagster 中，运行标签并发限制和 Op 级并发限制之间的交互导致回填永久挂起（issue #25743，在 Dagster 1.8.13+ 生产中确认）。
 
-**Why it happens:** Relational databases are the path of least resistance. The adjacency list model is easy to implement. Performance problems only manifest under real usage, usually 6-12 months after launch.
+**发生原因：** 每个新的并发功能被堆叠到现有调度器上，而不是通过统一的令牌/槽系统。第一个功能正常工作。第二个功能以意外方式与第一个交互。
 
-**Evidence from the ecosystem:** OpenMetadata deliberately avoids graph databases and uses PostgreSQL/Elasticsearch. They've shipped canvas-based rendering optimizations and backend filtering for 3000+ glossary terms — clear evidence that relational storage hits walls at scale. Neo4j supports native graph traversals but adds operational complexity.
+**后果：** 回填作业永久卡住。运维人员通过注意到排队运行永远不启动来发现这个问题——没有错误，只是沉默。恢复需要手动数据库干预或破坏其他限制的配置变更。
 
-**Consequences:** Either the lineage UI becomes unusable (timeouts) or engineering rewrites the storage layer mid-product, breaking the query API.
+**预防措施：**
+- 从一开始就设计一个集中的并发令牌系统。每个并发控制来源（运行级、Op 级、资源级）都从同一令牌池中申请和归还。
+- 将令牌系统实现为带行级锁的表。不要用内存计数器——它们在崩溃时不会持久化。
+- 在宣布调度器稳定之前，编写一个同时测试所有三个并发维度的集成测试。
 
-**Prevention:**
-- Use PostgreSQL with recursive CTEs (`WITH RECURSIVE`) for lineage traversals from the start. PostgreSQL's recursive CTE is not as fast as a native graph DB but is vastly faster than application-level traversal in a loop.
-- Add a materialized summary table for "direct upstream/downstream counts" per asset to support the UI listing without full traversal
-- Add depth limits to all lineage traversal queries (default max depth: 10). Deep traversals without a limit are a denial-of-service vector.
-- Benchmark at 500K edges before launch. If recursive CTE depth-10 queries exceed 200ms, plan a graph DB migration before going stable.
-- Structure edge rows to be append-only, never updated. This enables future migration to a dedicated graph store without reconciling mutable state.
+**检测警告信号：**
+- 运行无限期停留在 QUEUED 状态，没有错误
+- 并发池显示有可用槽但运行没有出队
+- UI 声称已应用限制但行为与配置值不匹配
 
-**Detection warning signs:**
-- Lineage queries slow down proportionally as the edge count grows (O(n) instead of O(depth))
-- UI lineage DAG rendering takes >2 seconds for assets with 20+ upstream dependencies
-- `EXPLAIN ANALYZE` on lineage traversal shows sequential scans instead of index-only scans
-
-**Phase that should address it:** Lineage storage design (early). Define the schema and run load tests before the lineage UI milestone.
+**应在哪个阶段解决：** 执行引擎并发设计阶段。不要在运行级并发之后添加 Op 级并发——在同一阶段设计两者。
 
 ---
 
-### Pitfall 5: Audit Logs That Are Queryable but Not Tamper-Evident
+### 陷阱 3：字段级血缘仅在声明时捕获
 
-**What goes wrong:** The audit log is implemented as a database table with `INSERT` statements. It is "immutable" only by convention (no application deletes rows). A compromised admin account, a misconfigured migration script, or a `DELETE FROM audit_log WHERE ...` run manually can erase evidence without leaving any trace.
+**问题描述：** 字段级血缘在资产定义时（静态声明）捕获一次，当资产的转换逻辑变更时从不更新。血缘图变得过时。一个完美但已过时 3 个月的血缘图比没有图更糟糕，因为它会产生虚假的置信感。
 
-**Why it happens:** Developers conflate "append-only by code path" with "tamper-evident." Real tamper-evidence requires cryptographic linkage between records — a hash chain or external write-once storage.
+**发生原因：** 在运行时从 SQL 捕获血缘需要解析 SQL 方言（这是个难题）。团队采用捷径，要求用户在定义时在代码中声明血缘。随着逻辑演进，用户停止更新声明。没有执行机制。
 
-**Consequences:** SOC 2 auditors will ask how you can prove the audit log has not been modified. The answer "we don't allow deletes in the API" is not sufficient. GDPR regulators require demonstrable evidence chain for data access events.
+**生态系统证据：** dbt-core 中的列级血缘讨论（#4458）记录了 SQL 解析挑战。多个血缘工具标榜自动化，但在 SELECT *、CTE、存储过程和方言特定语法（Oracle、Snowflake QUALIFY、BigQuery EXCEPT）上悄然失败。
 
-**Prevention:**
-- Implement a hash chain: each audit record stores `sha256(prev_record_hash || this_record_content)`. Verification is a sequential scan computing expected vs. stored hashes — any gap or mismatch detects tampering.
-- Use PostgreSQL row security policies to prevent `DELETE` and `UPDATE` on the audit table, even for the application's own database user. A separate migration-only user can do schema changes; the application user is insert-only.
-- For compliance-tier deployments, optionally write audit record hashes to a separate write-once store (S3 object lock, WORM storage). The main DB is queryable; the hash store is the proof.
-- Never store audit records in the same table that stores business data. Separate table, separate schema, separate backup policy.
-- Log the log: any access to the audit log itself (queries, exports) should produce an audit event.
+**后果：** 影响分析（如果我改变字段 X，哪些下游列受影响？）返回错误答案。基于血缘的治理决策不可靠。本应传播到派生字段的 GDPR 删除请求被遗漏。
 
-**Detection warning signs:**
-- No verification mechanism exists for hash chain integrity
-- Application DB user has `DELETE` permission on audit tables
-- Audit table is in the same schema/database as asset tables with the same migration user
+**预防措施：**
+- 采用混合方案：资产定义时的声明式注解（用户明确指定列映射）加上可选的 SQL 解析作为补充信号，永远不作为唯一真实来源
+- 每个资产实现血缘版本号。当资产以不同的代码哈希重新物化时，提示（或要求）重新声明血缘。不要静默保留旧血缘。
+- 使用兼容 OpenLineage 的事件 Schema，使血缘事件携带 `runId` 和 `eventTime`——消费者可以检测过时性
+- 将 `SELECT *` 视为完整列透传声明，并将其记录为"未知展开"，在物化时触发 Schema 刷新查询
 
-**Phase that should address it:** Compliance and audit milestone. The hash chain must be designed before any audit records are written — retrofitting it requires rewriting all existing records.
+**检测警告信号：**
+- 资产代码哈希已更改，但血缘图显示没有相应更新
+- 血缘图中的列名与当前 Schema 不匹配（过时的列名）
+- 用户报告影响分析结果与现实矛盾
 
----
-
-### Pitfall 6: Backfill Runs Without Resource Isolation
-
-**What goes wrong:** A large backfill (e.g., recompute 365 daily partitions of a heavy asset) is launched concurrently with normal scheduled runs. The backfill saturates CPU, DB connection pool, and downstream connector concurrency limits. Normal scheduled runs fail or time out. Users blame the platform.
-
-**Why it happens:** Backfills are treated as "just a lot of runs." The platform has no concept of run priority classes or resource pools. The connection pool size is fixed. 365 concurrent runs each acquiring a connection from the pool exhaust it immediately.
-
-**Evidence from production:** The Dagster docs have an entire "Managing Concurrency" guide specifically because this problem is ubiquitous. LakeFSM's backfill guide notes that "without partitioning, backfilling becomes compute heavy, making it expensive and prone to errors."
-
-**Consequences:** Production SLAs missed. Connector rate limits (BigQuery 300 concurrent requests/project) hit, causing cascading failures. Memory OOM in the executor process.
-
-**Prevention:**
-- Implement run priority queues from day one: `NORMAL`, `BACKFILL`, `CRITICAL`. The scheduler only promotes backfill runs if `NORMAL` and `CRITICAL` queues are empty or have headroom.
-- Assign a separate database connection pool (or connection limit) to backfill runs
-- Implement partition-aware backfill chunking: instead of enqueuing all 365 partitions at once, enqueue in batches of N (configurable, default 5). The next batch only starts when the previous batch completes.
-- Track backfill progress independently from individual run progress so a crash mid-backfill can be resumed without re-running completed partitions
-
-**Phase that should address it:** Partitioned assets and backfill milestone. Design the priority queue before implementing the backfill submit API.
+**应在哪个阶段解决：** 血缘捕获里程碑。在编写任何血缘存储代码之前，明确决定静态 vs 运行时的权衡。
 
 ---
 
-## Moderate Pitfalls
+### 陷阱 4：图存储选择太晚，在负载下被替换
+
+**问题描述：** 血缘最初以简单邻接表存储在 PostgreSQL 中（包含 `(from_asset, from_field, to_asset, to_field, run_id)` 行的边表）。在 1 万条边时工作正常。在超过 100 万条边时——对于拥有数百个资产、跨越多年运行的数据平台来说是现实数量——"字段 X 的所有祖先"查询变成超时的全图遍历。
+
+**发生原因：** 关系数据库是阻力最小的路径。邻接表模型易于实现。性能问题只在真实使用后才出现，通常是发布后 6-12 个月。
+
+**生态系统证据：** OpenMetadata 刻意避免图数据库，使用 PostgreSQL/Elasticsearch。他们针对 3000+ 词汇表术语发布了基于 Canvas 的渲染优化和后端过滤——清楚地表明关系存储在规模上会碰壁。Neo4j 支持原生图遍历，但增加了运维复杂性。
+
+**后果：** 血缘 UI 变得不可用（超时），或者工程团队在产品中途重写存储层，破坏查询 API。
+
+**预防措施：**
+- 从一开始就使用 PostgreSQL 的递归 CTE（`WITH RECURSIVE`）进行血缘遍历。PostgreSQL 的递归 CTE 不如原生图数据库快，但比应用层循环遍历快得多。
+- 为 UI 列表添加"直接上游/下游计数"的物化汇总表，无需完整遍历
+- 为所有血缘遍历查询添加深度限制（默认最大深度：10）。没有限制的深度遍历是拒绝服务攻击向量。
+- 在发布前以 50 万条边进行基准测试。如果递归 CTE 深度 10 的查询超过 200ms，在进入稳定版前制定图数据库迁移计划。
+- 将边行结构化为仅追加，永不更新。这使未来迁移到专用图存储成为可能，无需协调可变状态。
+
+**检测警告信号：**
+- 血缘查询随着边数增长而成比例变慢（O(n) 而非 O(深度)）
+- UI 血缘 DAG 对于有 20+ 上游依赖的资产渲染超过 2 秒
+- 血缘遍历的 `EXPLAIN ANALYZE` 显示顺序扫描而非仅索引扫描
+
+**应在哪个阶段解决：** 血缘存储设计阶段（早期）。在血缘 UI 里程碑之前定义 Schema 并运行负载测试。
 
 ---
 
-### Pitfall 7: Approval Workflows That Become Synchronous Bottlenecks
+### 陷阱 5：审计日志可查询但不防篡改
 
-**What goes wrong:** Every asset publication requires human approval. Approval requests pile up. The governance team becomes a bottleneck. Engineers work around the approval system by publishing to "staging" environments permanently. Governance becomes compliance theater.
+**问题描述：** 审计日志以带 `INSERT` 语句的数据库表实现。它"不可变"只是约定俗成（应用代码不删除行）。被入侵的管理员账号、配置错误的迁移脚本，或手动执行的 `DELETE FROM audit_log WHERE ...` 可以擦除证据而不留任何痕迹。
 
-**Evidence:** 2025 industry data shows data bottlenecks have increased 10% YoY, partially attributed to manual approval workflows. Organizations report employees waiting for manual approvals as a primary governance pain point.
+**发生原因：** 开发者将"代码路径中的追加式"与"防篡改"混为一谈。真正的防篡改需要记录之间的密码学关联——哈希链或外部只写存储。
 
-**Prevention:**
-- Implement automated pre-approval checks that run before human review: schema validation, quality rule checks, PII sensitivity scan. If all automated checks pass, the approval request starts in a better state.
-- Support approval bypass for low-risk assets (no PII, no compliance tags) with a configurable auto-approval policy
-- SLA timers: if an approval is not actioned within N hours, it escalates to a secondary approver or auto-approves with an escalation audit record
-- Make the approval queue visible to engineers (show current wait time) so the governance team's workload is transparent
+**后果：** SOC 2 审计员会询问您如何证明审计日志没有被修改。"我们在 API 中不允许删除"的答案是不够的。GDPR 监管机构要求数据访问事件的可证明证据链。
 
-**Phase that should address it:** Governance workflows milestone. Design the auto-approval and escalation paths before the happy path, not after.
+**预防措施：**
+- 实现哈希链：每条审计记录存储 `sha256(prev_record_hash || this_record_content)`。验证是从 seq=1 开始计算预期哈希与存储哈希的顺序扫描——任何间隙或不匹配都能检测到篡改。
+- 使用 PostgreSQL 行安全策略阻止应用自身数据库用户对审计表的 `DELETE` 和 `UPDATE`。单独的迁移用户可以做 Schema 更改；应用服务账号是仅插入的。
+- 对于合规级部署，可选地将审计记录哈希写入单独的只写存储（S3 对象锁、WORM 存储）。主数据库可查询；哈希存储是证明。
+- 永远不要将审计记录存储在与业务数据相同的表中。单独的表、单独的 Schema、单独的备份策略。
+- 记录日志的日志：任何对审计日志本身的访问（查询、导出）都应产生审计事件。
 
----
+**检测警告信号：**
+- 不存在哈希链完整性的验证机制
+- 应用数据库用户对审计表有 `DELETE` 权限
+- 审计表与资产表在同一 Schema/数据库中，使用相同的迁移用户
 
-### Pitfall 8: Column-Level Access Control That Doesn't Cover All Query Paths
-
-**What goes wrong:** Column masking is enforced at the platform's own query proxy, but analysts also query the underlying warehouse directly (Snowflake worksheet, BigQuery console, JDBC). The platform's masking is bypassed entirely. The access control appears to work in demos but fails in production.
-
-**Evidence:** Snowflake and BigQuery both document that dynamic data masking must be applied at the warehouse layer to be effective. A 2025 analysis notes "one off-policy exposure breaks the security model" and that enforcement must be consistent across all data endpoints.
-
-**Prevention:**
-- Do not implement a custom query proxy for masking. Use each warehouse's native column masking features (Snowflake dynamic data masking, BigQuery column-level security) and manage those policies from the platform.
-- The platform's role is to provision and sync masking policies to the warehouses, not to sit in the query path.
-- Document explicitly what is NOT covered: direct JDBC connections, warehouse console access, third-party BI tools. Treat this as a known boundary, not a gap.
-- Add a configuration check that warns if a warehouse connector's masking sync is failing
-
-**Phase that should address it:** Column-level access control milestone. Verify warehouse-native masking capabilities for each target connector before building the enforcement layer.
+**应在哪个阶段解决：** 合规和审计里程碑。哈希链必须在写入任何审计记录之前设计——后期改造需要重写所有现有记录。
 
 ---
 
-### Pitfall 9: Connector API Stability Broken by Internal Refactoring
+### 陷阱 6：回填运行没有资源隔离
 
-**What goes wrong:** The connector interface is initially defined quickly to get the first connectors working. Internal refactoring changes function signatures, context propagation, or error types. The interface changes break third-party connectors. Community adoption stalls. Once a connector ecosystem exists, breaking changes are fatal to community trust.
+**问题描述：** 大型回填（例如，重新计算一个繁重资产的 365 个日常分区）与正常计划运行并发启动。回填使 CPU、数据库连接池和下游连接器并发限制饱和。正常计划运行失败或超时。用户责怪平台。
 
-**Evidence:** The Airbyte CDK history and HashiCorp go-plugin history both demonstrate that API signature changes (even minor ones like adding a `bool` parameter) break all downstream implementations and require coordinated upgrades.
+**发生原因：** 回填被当作"只是很多次运行"。平台没有运行优先级类或资源池的概念。连接池大小是固定的。365 个并发运行各自从池中获取一个连接，立即耗尽连接池。
 
-**Prevention:**
-- Treat the connector interface as a public API from the first commit. Use semantic versioning. Any breaking change requires a major version bump.
-- Define the connector interface in a separate Go module (`github.com/org/platform/connector`) with its own `go.mod` so third parties can pin it independently of the main platform
-- Design the interface around stable primitives: `Read(ctx, query) (RowIterator, error)`, `Write(ctx, batch)`. Avoid passing internal structs that change as the platform evolves.
-- Write a compliance test suite that any connector must pass. This becomes the contract. Breaking the contract requires a new interface version, not a silent change.
-- Add a `Version() string` method to the interface so the platform can detect and warn about interface version mismatches at startup
+**生产证据：** Dagster 文档有一整个"管理并发"指南，专门因为这个问题无处不在。LakeFS 的回填指南指出"没有分区，回填变得计算密集，使其昂贵且容易出错"。
 
-**Phase that should address it:** Connector framework milestone (must be among the first milestones, before any connectors are built).
+**后果：** 生产 SLA 未达标。连接器速率限制（BigQuery 每项目 300 个并发请求）被触发，导致级联失败。执行器进程内存 OOM。
 
----
+**预防措施：**
+- 从第一天起实现运行优先级队列：`NORMAL`、`BACKFILL`、`CRITICAL`。调度器只有在 `NORMAL` 和 `CRITICAL` 队列为空或有余量时才提升回填运行。
+- 为回填运行分配单独的数据库连接池（或连接限制）
+- 实现分区感知的回填分块：不是一次性入队所有 365 个分区，而是以 N 个批次入队（可配置，默认 5 个）。只有上一批完成后，下一批才开始。
+- 独立于单个运行进度追踪回填进度，使中途崩溃的回填可以在不重新运行已完成分区的情况下恢复
 
-### Pitfall 10: Go Context Cancellation Not Propagated to External Queries
-
-**What goes wrong:** A pipeline run is cancelled (user-initiated or due to timeout). The Go context is cancelled. But the connector's SQL query to BigQuery or Snowflake is already in flight and has no cancellation path. The query continues running in the warehouse, consuming credits and holding locks. The run appears cancelled in the platform but the warehouse is still working.
-
-**Evidence:** This is a well-documented Go pattern problem. `goleak` and `go test -timeout` frequently reveal goroutines blocked on external IO after context cancellation because the IO call does not check `ctx.Done()`.
-
-**Prevention:**
-- Every connector `Read` and `Write` call must accept and propagate `context.Context` as the first argument. Never use `context.Background()` inside a connector implementation.
-- For warehouse connectors, use the warehouse's own cancellation mechanism: BigQuery has `jobs.cancel`, Snowflake has `CANCEL QUERY`. Call the warehouse cancellation API when the context is cancelled.
-- Use `select { case <-ctx.Done(): return ctx.Err(); case result := <-queryCh: ... }` pattern for all long-running queries
-- Add goroutine leak tests (using `goleak`) to the CI pipeline. A test that starts a run and cancels it must show zero leaked goroutines after cancellation.
-- Never use bare `time.Sleep` in pipeline code. Use `select { case <-time.After(d): case <-ctx.Done(): }` so cancellation always wins.
-
-**Phase that should address it:** Execution engine milestone, specifically when implementing the cancellation and retry paths.
+**应在哪个阶段解决：** 分区资产和回填里程碑。在实现回填提交 API 之前设计优先级队列。
 
 ---
 
-### Pitfall 11: Database Migrations in a Dirty State After Partial Failure
-
-**What goes wrong:** A migration runs, fails partway through, and leaves the database in an inconsistent state. The migration tool marks the schema version as "dirty." The platform will not start until the dirty state is manually resolved. In production, this means downtime while an engineer diagnoses and force-sets the migration version.
-
-**Evidence:** `golang-migrate` explicitly documents this with its "dirty flag" behavior. The tool refuses to apply further migrations after a partial failure until the operator runs `migrate force <version>`, which is a manual, dangerous operation.
-
-**Prevention:**
-- Wrap every migration in an explicit transaction. If the database supports transactional DDL (PostgreSQL does), any failure will roll back cleanly and leave no dirty state.
-- Never write migrations that combine DDL (which must be transactional) with data migrations in the same migration file. Separate schema changes from data transformations.
-- Test every migration with a rollback: `migrate up 1 && migrate down 1` must be a passing CI step.
-- Use `goose` with `-- +goose Up` / `-- +goose Down` annotations and `-- +goose NO TRANSACTION` only when truly necessary (some index builds). Default to transactional.
-- Have a documented runbook for the "dirty migration" recovery scenario. Do not discover the recovery procedure during a production incident.
-
-**Phase that should address it:** Infrastructure setup (earliest milestone). Establish migration tooling and conventions before writing the first migration.
+## 中等陷阱
 
 ---
 
-## Minor Pitfalls
+### 陷阱 7：审批工作流成为同步瓶颈
+
+**问题描述：** 每次资产发布都需要人工审批。审批请求堆积。治理团队成为瓶颈。工程师通过永久发布到"暂存"环境绕过审批系统。治理沦为合规表演。
+
+**证据：** 2025 年行业数据显示数据瓶颈同比增加 10%，部分归因于人工审批工作流。组织报告员工等待人工审批是主要的治理痛点。
+
+**预防措施：**
+- 在人工审核之前实现自动预审批检查：Schema 验证、质量规则检查、PII 敏感性扫描。如果所有自动检查通过，审批请求以更好的状态开始。
+- 支持低风险资产（无 PII、无合规标签）的审批绕过，带可配置的自动审批策略
+- SLA 计时器：如果审批在 N 小时内未被处理，升级到二级审批人或带升级审计记录自动审批
+- 使审批队列对工程师可见（显示当前等待时间），使治理团队的工作负载透明
+
+**应在哪个阶段解决：** 治理工作流里程碑。在设计正常路径之前，先设计自动审批和升级路径，而非之后。
 
 ---
 
-### Pitfall 12: Lineage Graph Visualization Becomes Unusable at Scale
+### 陷阱 8：列级访问控制没有覆盖所有查询路径
 
-**What goes wrong:** The frontend renders the full lineage graph for an asset with 50+ upstream dependencies by default. The browser tab hangs. Users blame the platform and stop using the lineage feature.
+**问题描述：** 列掩码在平台自己的查询代理处执行，但分析师也直接查询底层仓库（Snowflake worksheet、BigQuery console、JDBC）。平台的掩码被完全绕过。访问控制在演示中看起来有效，但在生产中失败。
 
-**Prevention:**
-- Default to showing 1-2 hops from the selected asset. Deeper traversal is opt-in.
-- Implement server-side graph pagination and filtering before building the visualization layer.
-- Add depth limits to all lineage API responses as non-optional query parameters.
+**证据：** Snowflake 和 BigQuery 都记录了动态数据掩码必须在仓库层应用才能有效。2025 年的一项分析指出"一次违规暴露就破坏了安全模型"，执行必须在所有数据端点保持一致。
 
-**Phase that should address it:** Lineage UI milestone.
+**预防措施：**
+- 不要为掩码实现自定义查询代理。使用每个仓库的原生列掩码功能（Snowflake 动态数据掩码、BigQuery 列级安全），并从平台管理这些策略。
+- 平台的角色是向仓库预置和同步掩码策略，而不是坐在查询路径中。
+- 明确记录什么是不覆盖的：直接 JDBC 连接、仓库控制台访问、第三方 BI 工具。将其视为已知边界，而非差距。
+- 添加配置检查，当仓库连接器的掩码同步失败时发出警告
 
----
-
-### Pitfall 13: Quality Rule Evaluation Blocking Asset Materialization
-
-**What goes wrong:** Data quality rules run synchronously as part of the asset materialization step. A slow quality check (e.g., a COUNT DISTINCT on a billion-row table) delays the completion of the asset and blocks downstream assets that depend on it.
-
-**Prevention:**
-- Run quality checks asynchronously after materialization completes. The asset is marked "materialized" when data is written; quality check results are attached as metadata afterward.
-- Allow marking quality checks as blocking (must pass before downstream assets can start) or non-blocking (informational).
-
-**Phase that should address it:** Data quality milestone.
+**应在哪个阶段解决：** 列级访问控制里程碑。在构建执行层之前，验证每个目标连接器的仓库原生掩码功能。
 
 ---
 
-### Pitfall 14: Trying to Be Catalog, Orchestrator, AND Governance in One Sprint
+### 陷阱 9：连接器 API 稳定性被内部重构破坏
 
-**What goes wrong:** The first milestone attempts to ship orchestration + lineage + governance + catalog simultaneously. None of the features reach MVP quality. The codebase has cross-cutting dependencies that make individual features impossible to test in isolation.
+**问题描述：** 连接器接口最初快速定义，以使第一批连接器运行起来。内部重构改变了函数签名、上下文传播或错误类型。接口变更破坏第三方连接器。社区采用停滞。一旦连接器生态系统存在，破坏性变更对社区信任是致命的。
 
-**Evidence:** This is the most common cause of open-source data platform abandonment. Projects like Amundsen, Apache Atlas, and early versions of DataHub all struggled with scope — they tried to be comprehensive before being good at any single thing.
+**证据：** Airbyte CDK 历史和 HashiCorp go-plugin 历史都证明，API 签名变更（即使是像添加一个 `bool` 参数这样微小的变更）会破坏所有下游实现，需要协调升级。
 
-**Prevention:**
-- Execution engine first, everything else second. A data governance platform that cannot reliably run pipelines is useless regardless of how good its catalog is.
-- Define hard vertical slices: Phase 1 = execution engine (no governance UI), Phase 2 = lineage (no quality rules), etc.
-- Enforce that each phase ships a working vertical slice to a real user, not just a demo.
+**预防措施：**
+- 从第一次提交起就将连接器接口视为公共 API。使用语义版本化。任何破坏性变更都需要主版本号升级。
+- 在独立的 Go 模块（`github.com/org/platform/connector`）中定义连接器接口，带自己的 `go.mod`，使第三方可以独立于主平台固定版本
+- 围绕稳定原语设计接口：`Read(ctx, query) (RowIterator, error)`、`Write(ctx, batch)`。避免传递随平台演进而变化的内部结构体。
+- 编写任何连接器都必须通过的合规测试套件。这成为契约。破坏契约需要新的接口版本，而非静默变更。
+- 向接口添加 `Version() string` 方法，使平台可以在启动时检测并警告接口版本不匹配
 
-**Phase that should address it:** Project planning (roadmap). This is an architectural discipline decision, not a code decision.
-
----
-
-### Pitfall 15: PII Sensitivity Tags Not Propagated Through Lineage
-
-**What goes wrong:** A field is tagged as PII in the metadata catalog. A downstream asset derives a new field from it. The PII tag is not automatically applied to the derived field. A governance report claims the derived field is non-PII. GDPR deletion requests miss downstream derived fields.
-
-**Prevention:**
-- Implement PII tag propagation as a first-class concept during lineage capture. When lineage is recorded, evaluate propagation rules (e.g., any column derived from a PII column inherits the PII tag unless explicitly overridden).
-- Surface tag propagation events in the audit log.
-
-**Phase that should address it:** Lineage + metadata integration milestone.
+**应在哪个阶段解决：** 连接器框架里程碑（必须是最早的里程碑之一，在任何连接器构建之前）。
 
 ---
 
-## Phase-Specific Warnings
+### 陷阱 10：Go Context 取消未传播到外部查询
 
-| Phase Topic | Likely Pitfall | Mitigation |
-|-------------|----------------|------------|
-| Execution engine core | Non-atomic state transitions causing duplicate runs | Use `SELECT FOR UPDATE SKIP LOCKED` from day one |
-| Scheduler + concurrency | Multi-layer concurrency limits that interact badly | Build a single token system; do not add layers incrementally |
-| Partitions + backfill | No resource isolation between backfill and normal runs | Priority queue before backfill submit API |
-| Lineage storage design | Adjacency list that times out at 500K+ edges | PostgreSQL recursive CTEs + depth limits + benchmark before UI |
-| Lineage capture | Static declarations become stale | Tie lineage version to code hash; detect drift on materialization |
-| Field-level lineage | SQL parser fails on dialects and SELECT * | Hybrid: explicit declaration + supplementary parsing with fallback |
-| Connector API | Breaking changes destroy third-party connectors | Separate module, semantic versioning, compliance test suite |
-| Column access control | Platform proxy bypassed by direct warehouse queries | Use warehouse-native masking, not a proxy |
-| Audit log | Append-only by convention, not cryptographically | Hash chain + PostgreSQL row security; design before first write |
-| Approval workflows | Human approval becomes a bottleneck | Auto-approve rules + SLA escalation before happy-path approval |
-| Go context propagation | Cancelled runs leave warehouse queries running | `ctx.Done()` + warehouse cancellation API in every connector |
-| Database migrations | Dirty state on partial failure | Transactional migrations only; separate DDL from data migrations |
-| Governance UI | Column masking tested only via platform, not warehouse native | Verify each connector's native masking before building enforcement |
-| Overall roadmap | Shipping all features simultaneously | Hard vertical slices; execution engine ships alone first |
+**问题描述：** 流水线运行被取消（用户发起或超时）。Go context 被取消。但连接器发往 BigQuery 或 Snowflake 的 SQL 查询已经在运行，没有取消路径。查询继续在仓库中运行，消耗积分并持有锁。运行在平台中看起来已取消，但仓库仍在工作。
+
+**证据：** 这是有完善文档的 Go 模式问题。`goleak` 和 `go test -timeout` 经常在 context 取消后发现被阻塞在外部 IO 上的 goroutine，因为 IO 调用没有检查 `ctx.Done()`。
+
+**预防措施：**
+- 每个连接器的 `Read` 和 `Write` 调用必须接受并传播 `context.Context` 作为第一个参数。永远不要在连接器实现中使用 `context.Background()`。
+- 对于仓库连接器，使用仓库自身的取消机制：BigQuery 有 `jobs.cancel`，Snowflake 有 `CANCEL QUERY`。当 context 取消时调用仓库取消 API。
+- 对所有长时间运行的查询使用 `select { case <-ctx.Done(): return ctx.Err(); case result := <-queryCh: ... }` 模式
+- 在 CI 流水线中添加 goroutine 泄漏测试（使用 `goleak`）。一个启动运行并取消它的测试，在取消后必须显示零泄漏的 goroutine。
+- 永远不要在流水线代码中使用裸 `time.Sleep`。使用 `select { case <-time.After(d): case <-ctx.Done(): }` 使取消总是生效。
+
+**应在哪个阶段解决：** 执行引擎里程碑，特别是实现取消和重试路径时。
 
 ---
 
-## Sources
+### 陷阱 11：部分失败后数据库迁移处于脏状态
 
-- Dagster issue #25743 — QueuedRunCoordinator concurrency interaction bug (November 2024): https://github.com/dagster-io/dagster/issues/25743
-- Dagster issue #15155 — Duplicate runs in backfill: https://github.com/dagster-io/dagster/issues/15155
-- Dagster issue #23508 — Global concurrency_key limits not affecting asset materialization (August 2024): https://github.com/dagster-io/dagster/issues/23508
-- Dagster Managing Concurrency docs: https://docs.dagster.io/guides/operate/managing-concurrency
-- dbt-core discussion #4458 — Column-level lineage SQL parsing challenges: https://github.com/dbt-labs/dbt-core/discussions/4458
-- Data Lineage Best Practices 2025 (datadef.io): https://datadef.io/guides/en/data-lineage-best-practices
-- Data Lineage: Challenges and Trends 2025 (datacrossroads.nl): https://datacrossroads.nl/2025/10/01/part-1-technological-challenges-data-lineage/
-- Data Lineage in 2025 (seemoredata.io): https://seemoredata.io/blog/data-lineage-in-2025-examples-techniques-best-practices/
-- Compliance by Design: 18 Tips for Tamper-Proof Audit Logs (Mattermost): https://mattermost.com/blog/compliance-by-design-18-tips-to-implement-tamper-proof-audit-logs/
-- OpenMetadata vs DataHub (Atlan 2025): https://atlan.com/openmetadata-vs-datahub/
-- Snowflake dynamic data masking pitfalls (k2view): https://www.k2view.com/blog/snowflake-dynamic-data-masking/
-- Column-level access control (hoop.dev): https://hoop.dev/blog/column-level-access-control-protecting-sensitive-data-one-field-at-a-time
-- Backfilling Data Guide (LakeFS): https://lakefs.io/blog/backfilling-data-foolproof-guide/
-- 5 Common Pitfalls in Data Orchestration (Credencys): https://www.credencys.com/blog/5-common-pitfalls-in-data-orchestration-and-how-to-avoid-them/
-- golang-migrate dirty state documentation: https://betterstack.com/community/guides/scaling-go/golang-migrate/
-- goose vs golang-migrate (Leapcell): https://leapcell.io/blog/goose-vs-gorm-migrations-choosing-the-right-database-migration-tool-for-your-go-project
-- HashiCorp go-plugin breaking change (openbao PR #827): https://github.com/openbao/openbao/pull/827
-- Go context cancellation and goroutine leaks (2024): https://dev.to/serifcolakel/go-concurrency-mastery-preventing-goroutine-leaks-with-context-timeout-cancellation-best-1lg0
-- Rethinking Tamper-Evident Logging (ACM CCS 2025): https://dl.acm.org/doi/10.1145/3719027.3765024
-- Automated data governance and bottleneck patterns (OvalEdge 2025): https://www.ovaledge.com/blog/automated-data-governance
-- State of Enterprise Data Governance 2025 (Board.org): https://board.org/data/resources/what-we-learned-from-the-2025-state-of-enterprise-data-governance-report/
+**问题描述：** 迁移运行，中途失败，使数据库处于不一致状态。迁移工具将 Schema 版本标记为"脏"。平台在脏状态手动解决之前不会启动。在生产中，这意味着停机时间，等待工程师诊断并强制设置迁移版本。
+
+**证据：** `golang-migrate` 用其"脏标志"行为明确记录了这一点。工具在部分失败后拒绝应用进一步的迁移，直到运维人员运行 `migrate force <version>`，这是一个手动的、危险的操作。
+
+**预防措施：**
+- 将每次迁移包装在显式事务中。如果数据库支持事务性 DDL（PostgreSQL 支持），任何失败都会干净地回滚，不留脏状态。
+- 永远不要写在同一迁移文件中结合 DDL（必须是事务性的）和数据迁移的迁移。将 Schema 变更与数据转换分开。
+- 测试每次迁移的回滚：`migrate up 1 && migrate down 1` 必须是通过的 CI 步骤。
+- 使用带 `-- +goose Up` / `-- +goose Down` 注解的 `goose`，只在真正必要时使用 `-- +goose NO TRANSACTION`（某些索引构建）。默认使用事务性迁移。
+- 为"脏迁移"恢复场景准备有文档的运行手册。不要在生产事故期间发现恢复程序。
+
+**应在哪个阶段解决：** 基础设施搭建（最早里程碑）。在编写第一次迁移之前建立迁移工具链和约定。
+
+---
+
+## 次要陷阱
+
+---
+
+### 陷阱 12：血缘图可视化在规模上变得不可用
+
+**问题描述：** 前端默认渲染一个有 50+ 上游依赖的资产的完整血缘图。浏览器标签页卡死。用户责怪平台并停止使用血缘功能。
+
+**预防措施：**
+- 默认显示从所选资产出发 1-2 跳的范围。更深的遍历是可选择启用的。
+- 在构建可视化层之前实现服务端图分页和过滤。
+- 为所有血缘 API 响应添加深度限制作为不可选的查询参数。
+
+**应在哪个阶段解决：** 血缘 UI 里程碑。
+
+---
+
+### 陷阱 13：质量规则评估阻塞资产物化
+
+**问题描述：** 数据质量规则作为资产物化步骤的一部分同步运行。慢速质量检查（例如，对十亿行表的 COUNT DISTINCT）延迟资产完成，并阻塞依赖它的下游资产。
+
+**预防措施：**
+- 物化完成后异步运行质量检查。当数据写入时，资产被标记为"已物化"；质量检查结果之后作为元数据附加。
+- 允许将质量检查标记为阻塞（在下游资产开始之前必须通过）或非阻塞（仅供参考）。
+
+**应在哪个阶段解决：** 数据质量里程碑。
+
+---
+
+### 陷阱 14：在一个冲刺中试图同时成为目录、编排器和治理系统
+
+**问题描述：** 第一个里程碑试图同时交付编排 + 血缘 + 治理 + 目录。没有任何功能达到 MVP 质量。代码库有跨领域依赖，使单个功能无法孤立测试。
+
+**证据：** 这是开源数据平台被放弃最常见的原因。Amundsen、Apache Atlas 等项目和 DataHub 早期版本都在范围上挣扎——它们在任何单一方面做好之前就试图全面覆盖。
+
+**预防措施：**
+- 执行引擎优先，其他一切其次。一个无法可靠运行流水线的数据治理平台无论目录多好都是无用的。
+- 定义严格的垂直切片：第一阶段 = 执行引擎（无治理 UI），第二阶段 = 血缘（无质量规则），等等。
+- 强制要求每个阶段向真实用户交付一个有效的垂直切片，而非仅仅是演示。
+
+**应在哪个阶段解决：** 项目规划（路线图）。这是架构纪律决策，而非代码决策。
+
+---
+
+### 陷阱 15：PII 敏感性标签未通过血缘传播
+
+**问题描述：** 元数据目录中一个字段被标注为 PII。一个下游资产从它派生出一个新字段。PII 标签没有自动应用到派生字段。治理报告声称派生字段非 PII。GDPR 删除请求遗漏了下游派生字段。
+
+**预防措施：**
+- 在血缘捕获期间将 PII 标签传播作为一等概念实现。当血缘被记录时，评估传播规则（例如，任何从 PII 列派生的列继承 PII 标签，除非明确覆盖）。
+- 在审计日志中显示标签传播事件。
+
+**应在哪个阶段解决：** 血缘 + 元数据集成里程碑。
+
+---
+
+## 阶段特定警告
+
+| 阶段主题 | 常见陷阱 | 缓解措施 |
+|---------|---------|---------|
+| 执行引擎核心 | 非原子状态转换导致重复运行 | 从第一天起使用 `SELECT FOR UPDATE SKIP LOCKED` |
+| 调度器 + 并发 | 多层并发限制相互作用不良 | 构建单一令牌系统；不要增量添加层次 |
+| 分区 + 回填 | 回填和正常运行之间没有资源隔离 | 在回填提交 API 之前实现优先级队列 |
+| 血缘存储设计 | 邻接表在 50 万+ 条边时超时 | PostgreSQL 递归 CTE + 深度限制 + UI 之前进行基准测试 |
+| 血缘捕获 | 静态声明变得过时 | 将血缘版本绑定到代码哈希；在物化时检测漂移 |
+| 字段级血缘 | SQL 解析器在方言和 SELECT * 上失败 | 混合方案：显式声明 + 带回退的补充解析 |
+| 连接器 API | 破坏性变更摧毁第三方连接器 | 独立模块、语义版本化、合规测试套件 |
+| 列访问控制 | 平台代理被直接仓库查询绕过 | 使用仓库原生掩码，而非代理 |
+| 审计日志 | 约定追加式，非密码学保证 | 哈希链 + PostgreSQL 行安全；在第一次写入前设计 |
+| 审批工作流 | 人工审批成为瓶颈 | 自动审批规则 + SLA 升级优先于正常路径审批 |
+| Go context 传播 | 已取消的运行在仓库中留下正在运行的查询 | 每个连接器中的 `ctx.Done()` + 仓库取消 API |
+| 数据库迁移 | 部分失败时脏状态 | 仅使用事务性迁移；将 DDL 与数据迁移分开 |
+| 治理 UI | 列掩码仅通过平台测试，非仓库原生 | 在构建执行层之前验证每个连接器的原生掩码 |
+| 整体路线图 | 同时交付所有功能 | 严格的垂直切片；执行引擎单独先行交付 |
+
+---
+
+## 参考来源
+
+- Dagster issue #25743 — QueuedRunCoordinator 并发交互 bug（2024 年 11 月）: https://github.com/dagster-io/dagster/issues/25743
+- Dagster issue #15155 — 回填中的重复运行: https://github.com/dagster-io/dagster/issues/15155
+- Dagster issue #23508 — 全局 concurrency_key 限制不影响资产物化（2024 年 8 月）: https://github.com/dagster-io/dagster/issues/23508
+- Dagster 管理并发文档: https://docs.dagster.io/guides/operate/managing-concurrency
+- dbt-core 讨论 #4458 — 列级血缘 SQL 解析挑战: https://github.com/dbt-labs/dbt-core/discussions/4458
+- 数据血缘最佳实践 2025（datadef.io）: https://datadef.io/guides/en/data-lineage-best-practices
+- 数据血缘：2025 年挑战与趋势（datacrossroads.nl）: https://datacrossroads.nl/2025/10/01/part-1-technological-challenges-data-lineage/
+- 2025 年的数据血缘（seemoredata.io）: https://seemoredata.io/blog/data-lineage-in-2025-examples-techniques-best-practices/
+- 合规性设计：防篡改审计日志的 18 条提示（Mattermost）: https://mattermost.com/blog/compliance-by-design-18-tips-to-implement-tamper-proof-audit-logs/
+- OpenMetadata vs DataHub（Atlan 2025）: https://atlan.com/openmetadata-vs-datahub/
+- Snowflake 动态数据掩码陷阱（k2view）: https://www.k2view.com/blog/snowflake-dynamic-data-masking/
+- 列级访问控制（hoop.dev）: https://hoop.dev/blog/column-level-access-control-protecting-sensitive-data-one-field-at-a-time
+- 数据回填指南（LakeFS）: https://lakefs.io/blog/backfilling-data-foolproof-guide/
+- 数据编排中的 5 个常见陷阱（Credencys）: https://www.credencys.com/blog/5-common-pitfalls-in-data-orchestration-and-how-to-avoid-them/
+- golang-migrate 脏状态文档: https://betterstack.com/community/guides/scaling-go/golang-migrate/
+- goose vs golang-migrate（Leapcell）: https://leapcell.io/blog/goose-vs-gorm-migrations-choosing-the-right-database-migration-tool-for-your-go-project
+- HashiCorp go-plugin 破坏性变更（openbao PR #827）: https://github.com/openbao/openbao/pull/827
+- Go context 取消和 goroutine 泄漏（2024）: https://dev.to/serifcolakel/go-concurrency-mastery-preventing-goroutine-leaks-with-context-timeout-cancellation-best-1lg0
+- 防篡改日志的再思考（ACM CCS 2025）: https://dl.acm.org/doi/10.1145/3719027.3765024
+- 自动化数据治理与瓶颈模式（OvalEdge 2025）: https://www.ovaledge.com/blog/automated-data-governance
+- 2025 企业数据治理现状（Board.org）: https://board.org/data/resources/what-we-learned-from-the-2025-state-of-enterprise-data-governance-report/
