@@ -1,213 +1,213 @@
-# Requirements: Data Governance Platform
+# 需求：数据治理平台
 
-**Defined:** 2026-04-29
-**Core Value:** A data practitioner can define, run, and govern data assets in code — and every downstream consumer can trust what they're working with, trace where it came from to the field level, and know who is allowed to see it.
+**定义日期：** 2026-04-29
+**核心价值：** 数据从业者可以用代码定义、运行并治理数据资产——每一位下游使用者都能信任所用数据、追溯其字段级来源，并清楚地知道谁有权访问。
 
-## v1 Requirements
+## v1 需求
 
-### Foundation (CORE)
+### 基础设施 (CORE)
 
-- [ ] **CORE-01**: Platform stores all state in PostgreSQL and exposes a storage abstraction for testing
-- [ ] **CORE-02**: Platform manages schema migrations via Atlas (ent-driven, versioned, no dirty-state corruption)
-- [ ] **CORE-03**: Platform emits a structured event log (run started, step completed, quality passed, etc.) append-only to the database
-- [ ] **CORE-04**: Platform can be started and run as a single binary (Docker Compose for dev, Kubernetes for prod)
-- [ ] **CORE-05**: Platform exposes a REST + gRPC API for CLI and SDK integration
+- [ ] **CORE-01**：平台将所有状态存储在 PostgreSQL 中，并暴露存储抽象层用于测试
+- [ ] **CORE-02**：平台通过 Atlas（ent 驱动、版本化、无脏状态损坏）管理 Schema 迁移
+- [ ] **CORE-03**：平台向数据库追加发出结构化事件日志（运行启动、步骤完成、质量通过等），写入后不可修改
+- [ ] **CORE-04**：平台可以单二进制形式启动运行（开发用 Docker Compose，生产用 Kubernetes）
+- [ ] **CORE-05**：平台暴露 REST + gRPC API，供 CLI 和 SDK 集成
 
-### Authentication (AUTH)
+### 认证 (AUTH)
 
-- [ ] **AUTH-01**: User can create an account with email and password
-- [ ] **AUTH-02**: Admin can invite users via email
-- [ ] **AUTH-03**: User can log in and receive a JWT session token
-- [ ] **AUTH-04**: User session expires and requires re-authentication after configurable TTL
+- [ ] **AUTH-01**：用户可用邮箱和密码创建账号
+- [ ] **AUTH-02**：管理员可通过邮件邀请用户
+- [ ] **AUTH-03**：用户可登录并获取 JWT 会话令牌
+- [ ] **AUTH-04**：用户会话在可配置的 TTL 后过期，需重新认证
 
-### Orchestration (ORCH)
+### 编排 (ORCH)
 
-- [ ] **ORCH-01**: Data engineer can define a data asset in Go code with an explicit list of upstream asset dependencies
-- [ ] **ORCH-02**: Data engineer can implement a `Materialize` function on an asset that the platform calls to produce the asset
-- [ ] **ORCH-03**: Platform resolves the full asset dependency DAG and executes assets in topological order
-- [ ] **ORCH-04**: Platform retries failed asset materializations with configurable backoff (max retries, delay, jitter)
-- [ ] **ORCH-05**: Data engineer can attach a cron schedule to an asset for automatic periodic materialization
-- [ ] **ORCH-06**: Data engineer can define an event sensor that triggers asset materialization when an external condition is met
-- [ ] **ORCH-07**: Data engineer can define time-based partitioned assets (daily, weekly, monthly)
-- [ ] **ORCH-08**: Data engineer can define categorical partitioned assets (e.g., per-region, per-customer)
-- [ ] **ORCH-09**: Platform enforces a concurrency limit via a unified token pool (prevents duplicate and runaway runs)
-- [ ] **ORCH-10**: Data engineer can trigger ad-hoc asset materialization via CLI or UI
+- [ ] **ORCH-01**：数据工程师可在 Go 代码中定义数据资产，并显式列出上游资产依赖
+- [ ] **ORCH-02**：数据工程师可在资产上实现 `Materialize` 函数，平台调用该函数生产资产
+- [ ] **ORCH-03**：平台解析完整资产依赖 DAG 并按拓扑顺序执行资产
+- [ ] **ORCH-04**：平台在资产物化失败时按可配置的退避策略重试（最大重试次数、延迟、抖动）
+- [ ] **ORCH-05**：数据工程师可为资产附加 cron 调度，实现自动周期性物化
+- [ ] **ORCH-06**：数据工程师可定义事件传感器，在外部条件满足时触发资产物化
+- [ ] **ORCH-07**：数据工程师可定义基于时间的分区资产（日、周、月）
+- [ ] **ORCH-08**：数据工程师可定义类别分区资产（如按区域、按客户）
+- [ ] **ORCH-09**：平台通过统一 token 池执行并发限制（防止重复和失控运行）
+- [ ] **ORCH-10**：数据工程师可通过 CLI 或 UI 按需触发资产物化
 
-### Lineage (LINE)
+### 血缘 (LINE)
 
-- [ ] **LINE-01**: Platform automatically captures asset-to-asset lineage edges from asset dependency declarations
-- [ ] **LINE-02**: Data engineer can declare column-level lineage in Go code (output column X derived from input column Y on asset Z)
-- [ ] **LINE-03**: Platform stores lineage as an adjacency list in PostgreSQL traversable via recursive CTE
-- [ ] **LINE-04**: User can view the full asset lineage graph as an interactive DAG in the UI
-- [ ] **LINE-05**: User can drill into a node in the lineage DAG to see column-level lineage for that asset
-- [ ] **LINE-06**: User can run an impact analysis: given a field, see all downstream assets and columns that depend on it
+- [ ] **LINE-01**：平台自动从资产依赖声明中捕获资产到资产的血缘边
+- [ ] **LINE-02**：数据工程师可在 Go 代码中声明列级血缘（输出列 X 来源于资产 Z 的输入列 Y）
+- [ ] **LINE-03**：平台将血缘以邻接表形式存储在 PostgreSQL 中，可通过递归 CTE 遍历
+- [ ] **LINE-04**：用户可在 UI 中将完整资产血缘图查看为交互式 DAG
+- [ ] **LINE-05**：用户可在血缘 DAG 中下钻到某节点，查看该资产的列级血缘
+- [ ] **LINE-06**：用户可运行影响分析：给定某字段，查看所有依赖它的下游资产和列
 
-### Data Quality (QUAL)
+### 数据质量 (QUAL)
 
-- [ ] **QUAL-01**: Data engineer can define quality rules on an asset in Go code (null rate, range bounds, custom SQL assertion)
-- [ ] **QUAL-02**: Platform evaluates all quality rules for an asset after each successful materialization
-- [ ] **QUAL-03**: Platform marks an asset materialization as quality-failed if any rule fails, and surfaces the failure in the UI
-- [ ] **QUAL-04**: Data engineer can configure SLA thresholds per asset (e.g., must materialize within N hours of schedule)
-- [ ] **QUAL-05**: Platform sends an alert (webhook/email) when a quality rule fails or an SLA is breached
-- [ ] **QUAL-06**: User can view per-asset quality history as a trend chart in the UI
+- [ ] **QUAL-01**：数据工程师可在 Go 代码中为资产定义质量规则（空值率、范围边界、自定义 SQL 断言）
+- [ ] **QUAL-02**：平台在每次资产成功物化后评估所有质量规则
+- [ ] **QUAL-03**：若任意规则失败，平台将该次资产物化标记为质量失败，并在 UI 中显示失败详情
+- [ ] **QUAL-04**：数据工程师可为资产配置 SLA 阈值（如必须在计划后 N 小时内完成物化）
+- [ ] **QUAL-05**：质量规则失败或 SLA 违反时，平台发送告警（webhook/邮件）
+- [ ] **QUAL-06**：用户可在 UI 中查看每个资产的质量历史趋势图
 
-### Metadata (META)
+### 元数据 (META)
 
-- [ ] **META-01**: Platform automatically captures table/column schema metadata after each asset materialization
-- [ ] **META-02**: Platform diffs schema between versions and records any breaking changes (column removal, type change)
-- [ ] **META-03**: User can add a description, owner, and tags to any asset, table, or column via UI or API
-- [ ] **META-04**: User can search the data catalog by asset name, column name, tag, owner, or description
-- [ ] **META-05**: Platform surfaces a schema evolution timeline showing when each column was added, changed, or removed
+- [ ] **META-01**：每次资产物化后，平台自动捕获表/列 Schema 元数据
+- [ ] **META-02**：平台对各版本 Schema 做 diff，并记录任何破坏性变更（列删除、类型变更）
+- [ ] **META-03**：用户可通过 UI 或 API 为任意资产、表或列添加描述、负责人和标签
+- [ ] **META-04**：用户可按资产名称、列名、标签、负责人或描述搜索数据目录
+- [ ] **META-05**：平台呈现 Schema 演化时间线，展示每列的添加、变更或删除时间
 
-### Access Control (RBAC)
+### 访问控制 (RBAC)
 
-- [ ] **RBAC-01**: Admin can define named roles (e.g., data-engineer, analyst, governance-team)
-- [ ] **RBAC-02**: Admin can assign users to one or more roles
-- [ ] **RBAC-03**: Admin can define a column-level access policy specifying which roles can access which columns on which assets
-- [ ] **RBAC-04**: Platform syncs column masking policies to Snowflake dynamic data masking and BigQuery column-level security APIs
-- [ ] **RBAC-05**: Platform enforces column masking at pipeline materialization time for non-warehouse connectors (masked values written to sink)
-- [ ] **RBAC-06**: All data access events, policy changes, and user actions are written to an append-only, hash-chain audit log
+- [ ] **RBAC-01**：管理员可定义命名角色（如 data-engineer、analyst、governance-team）
+- [ ] **RBAC-02**：管理员可将用户分配到一个或多个角色
+- [ ] **RBAC-03**：管理员可定义列级访问策略，指定哪些角色可访问哪些资产的哪些列
+- [ ] **RBAC-04**：平台将列掩码策略同步到 Snowflake 动态数据掩码和 BigQuery 列级安全 API
+- [ ] **RBAC-05**：对于非数仓连接器，平台在 pipeline 物化时执行列掩码（掩码后的值写入目标）
+- [ ] **RBAC-06**：所有数据访问事件、策略变更和用户操作写入追加式哈希链审计日志
 
-### Governance Workflows (GOV)
+### 治理工作流 (GOV)
 
-- [ ] **GOV-01**: Data engineer can submit an asset for governance review, transitioning it from Draft to In Review state
-- [ ] **GOV-02**: Platform assigns the review to configured governance-team reviewers and notifies them
-- [ ] **GOV-03**: Reviewer can approve or reject an asset with a required comment; approval transitions asset to Active, rejection returns it to Draft
-- [ ] **GOV-04**: Platform notifies the submitter of the review decision with the reviewer's comment
-- [ ] **GOV-05**: All approval decisions, reviewer identities, and timestamps are recorded in the audit log
-- [ ] **GOV-06**: Admin can export the full audit log as a structured file (JSON/CSV) for GDPR/SOC2 compliance reporting
-- [ ] **GOV-07**: Admin can configure data retention policies (TTL) for asset materializations and audit log records
+- [ ] **GOV-01**：数据工程师可提交资产进行治理审核，将其从 Draft 状态转换为 In Review 状态
+- [ ] **GOV-02**：平台将审核分配给已配置的治理团队审核者并通知他们
+- [ ] **GOV-03**：审核者可携带必填评论批准或驳回资产；批准将资产转为 Active，驳回返回 Draft
+- [ ] **GOV-04**：平台将审核决策和审核者评论通知提交者
+- [ ] **GOV-05**：所有审批决策、审核者身份和时间戳记录在审计日志中
+- [ ] **GOV-06**：管理员可将完整审计日志导出为结构化文件（JSON/CSV），用于 GDPR/SOC2 合规报告
+- [ ] **GOV-07**：管理员可为资产物化和审计日志记录配置数据保留策略（TTL）
 
-### Connectors (CONN)
+### 连接器 (CONN)
 
-- [ ] **CONN-01**: Platform provides a PostgreSQL connector (read/write assets, auto schema capture, quality assertion execution)
-- [ ] **CONN-02**: Platform provides a MySQL connector (read/write assets, auto schema capture)
-- [ ] **CONN-03**: Platform provides a BigQuery connector (read/write assets, schema capture, masking policy sync)
-- [ ] **CONN-04**: Platform provides a Snowflake connector (read/write assets, schema capture, dynamic data masking sync)
-- [ ] **CONN-05**: Platform provides an S3 connector (read/write assets as Parquet/CSV/JSON)
-- [ ] **CONN-06**: Platform provides a GCS connector (read/write assets as Parquet/CSV/JSON)
-- [ ] **CONN-07**: Platform provides an HDFS connector (read/write assets)
-- [ ] **CONN-08**: Platform exposes a stable, versioned Go connector interface (via hashicorp/go-plugin) that third parties can implement to add new connectors
+- [ ] **CONN-01**：平台提供 PostgreSQL 连接器（读写资产、自动捕获 Schema、执行质量断言）
+- [ ] **CONN-02**：平台提供 MySQL 连接器（读写资产、自动捕获 Schema）
+- [ ] **CONN-03**：平台提供 BigQuery 连接器（读写资产、捕获 Schema、同步掩码策略）
+- [ ] **CONN-04**：平台提供 Snowflake 连接器（读写资产、捕获 Schema、同步动态数据掩码）
+- [ ] **CONN-05**：平台提供 S3 连接器（读写资产，格式为 Parquet/CSV/JSON）
+- [ ] **CONN-06**：平台提供 GCS 连接器（读写资产，格式为 Parquet/CSV/JSON）
+- [ ] **CONN-07**：平台提供 HDFS 连接器（读写资产）
+- [ ] **CONN-08**：平台暴露稳定的版本化 Go 连接器接口（通过 hashicorp/go-plugin），第三方可实现该接口添加新连接器
 
 ### Web UI (UI)
 
-- [ ] **UI-01**: User can view all assets, their current state, last materialization time, and quality status in a dashboard
-- [ ] **UI-02**: User can view run history and execution logs per asset
-- [ ] **UI-03**: User can browse the data catalog with search, filter by tag/owner, and view asset/column metadata
-- [ ] **UI-04**: User can view the lineage DAG with interactive navigation and column-level drill-down
-- [ ] **UI-05**: User can view quality score trends and active alerts per asset
-- [ ] **UI-06**: Governance team can view and action pending approval requests from a governance inbox
-- [ ] **UI-07**: Admin can manage users, roles, and column-level access policies from the UI
+- [ ] **UI-01**：用户可在仪表盘中查看所有资产的当前状态、最近物化时间和质量状态
+- [ ] **UI-02**：用户可查看每个资产的运行历史和执行日志
+- [ ] **UI-03**：用户可浏览数据目录，支持搜索、按标签/负责人筛选，查看资产/列元数据
+- [ ] **UI-04**：用户可查看带交互式导航和列级下钻的血缘 DAG
+- [ ] **UI-05**：用户可查看每个资产的质量分数趋势和活跃告警
+- [ ] **UI-06**：治理团队可在治理收件箱中查看待审批请求并执行操作
+- [ ] **UI-07**：管理员可在 UI 中管理用户、角色和列级访问策略
 
-## v2 Requirements
+## v2 需求
 
-### SDK Ecosystem
+### SDK 生态
 
-- **SDK-01**: Python SDK — define assets in Python and register them with the Go platform
-- **SDK-02**: dbt integration — treat dbt models as first-class assets with auto lineage from dbt manifest
+- **SDK-01**：Python SDK —— 在 Python 中定义资产并注册到 Go 平台
+- **SDK-02**：dbt 集成 —— 将 dbt 模型视为一等资产，从 dbt manifest 自动获取血缘
 
-### Advanced Lineage
+### 高级血缘
 
-- **ALINE-01**: SQL-inferred field-level lineage — automatically extract column lineage from SQL queries via AST parsing (no user declaration required)
-- **ALINE-02**: OpenLineage event ingest — accept OpenLineage events from external tools (Spark, Airflow) to extend the lineage graph
+- **ALINE-01**：SQL 推断字段级血缘 —— 通过 AST 解析自动从 SQL 查询提取列血缘（无需用户声明）
+- **ALINE-02**：OpenLineage 事件摄取 —— 接受来自外部工具（Spark、Airflow）的 OpenLineage 事件以扩展血缘图
 
-### Advanced Governance
+### 高级治理
 
-- **AGOV-01**: Row-level security policies — restrict which roles can see which rows based on row-level attribute conditions
-- **AGOV-02**: Data classification tagging — auto-classify columns as PII, PHI, SENSITIVE using pattern matching
+- **AGOV-01**：行级安全策略 —— 根据行级属性条件限制哪些角色可见哪些行
+- **AGOV-02**：数据分类标记 —— 通过模式匹配自动将列分类为 PII、PHI、SENSITIVE
 
-### Platform
+### 平台
 
-- **PLAT-01**: Multi-worker distributed execution — run asset materializations on separate worker machines
-- **PLAT-02**: SSO / OAuth2 integration (OIDC) — allow users to log in via corporate identity provider
+- **PLAT-01**：多 worker 分布式执行 —— 在独立 worker 机器上运行资产物化
+- **PLAT-02**：SSO / OAuth2 集成（OIDC）—— 允许用户通过企业身份提供商登录
 
-## Out of Scope
+## 超出范围
 
-| Feature | Reason |
-|---------|--------|
-| Python runtime in core | Go-only constraint; Python SDK is v2, optional |
-| Query-time column masking proxy | A proxy is bypassed by direct warehouse connections; warehouse-native sync is safer and correct |
-| Built-in compute (Spark jobs, dbt runs) | Platform orchestrates and tracks; execution is delegated to external systems |
-| Multi-tenant SaaS hosting | Open-source self-hosted only for v1 |
-| Row-level security | Column-level is the scope; row-level complexity is disproportionate for v1 |
-| Cell-level access control | Below column-level; impractical to enforce at platform layer |
-| Realtime streaming assets (Kafka, Flink) | Batch-centric model for v1; streaming adds significant complexity |
-| Mobile app | Web UI is sufficient; no mobile-specific use cases identified |
+| 功能 | 原因 |
+|------|------|
+| 核心中的 Python 运行时 | 纯 Go 约束；Python SDK 是 v2，可选 |
+| 查询时列掩码代理 | 代理可被直连数仓的连接绕过；数仓原生同步更安全可靠 |
+| 内置计算（Spark 作业、dbt 运行） | 平台负责编排和追踪；执行委托给外部系统 |
+| 多租户 SaaS 托管 | v1 仅支持开源自托管 |
+| 行级安全 | 列级是范围；行级复杂度对 v1 不成比例 |
+| 单元格级访问控制 | 低于列级；在平台层执行不切实际 |
+| 实时流资产（Kafka、Flink） | v1 采用批处理模型；流式处理增加大量复杂度 |
+| 移动端应用 | Web UI 已足够；未发现移动端专属用例 |
 
-## Traceability
+## 可追溯性
 
-| Requirement | Phase | Status |
-|-------------|-------|--------|
-| CORE-01 | Phase 1 | Pending |
-| CORE-02 | Phase 1 | Pending |
-| CORE-03 | Phase 1 | Pending |
-| CORE-04 | Phase 1 | Pending |
-| CORE-05 | Phase 1 | Pending |
-| AUTH-01 | Phase 1 | Pending |
-| AUTH-02 | Phase 1 | Pending |
-| AUTH-03 | Phase 1 | Pending |
-| AUTH-04 | Phase 1 | Pending |
-| CONN-08 | Phase 1 | Pending |
-| ORCH-01 | Phase 2 | Pending |
-| ORCH-02 | Phase 2 | Pending |
-| ORCH-03 | Phase 2 | Pending |
-| ORCH-04 | Phase 2 | Pending |
-| ORCH-09 | Phase 2 | Pending |
-| ORCH-10 | Phase 2 | Pending |
-| CONN-01 | Phase 2 | Pending |
-| CONN-02 | Phase 2 | Pending |
-| CONN-03 | Phase 2 | Pending |
-| CONN-04 | Phase 2 | Pending |
-| CONN-05 | Phase 2 | Pending |
-| CONN-06 | Phase 2 | Pending |
-| CONN-07 | Phase 2 | Pending |
-| ORCH-05 | Phase 3 | Pending |
-| ORCH-06 | Phase 3 | Pending |
-| ORCH-07 | Phase 3 | Pending |
-| ORCH-08 | Phase 3 | Pending |
-| LINE-01 | Phase 4 | Pending |
-| LINE-02 | Phase 4 | Pending |
-| LINE-03 | Phase 4 | Pending |
-| LINE-06 | Phase 4 | Pending |
-| META-01 | Phase 4 | Pending |
-| META-02 | Phase 4 | Pending |
-| META-03 | Phase 4 | Pending |
-| META-05 | Phase 4 | Pending |
-| RBAC-01 | Phase 5 | Pending |
-| RBAC-02 | Phase 5 | Pending |
-| RBAC-03 | Phase 5 | Pending |
-| RBAC-04 | Phase 5 | Pending |
-| RBAC-05 | Phase 5 | Pending |
-| RBAC-06 | Phase 5 | Pending |
-| GOV-01 | Phase 5 | Pending |
-| GOV-02 | Phase 5 | Pending |
-| GOV-03 | Phase 5 | Pending |
-| GOV-04 | Phase 5 | Pending |
-| GOV-05 | Phase 5 | Pending |
-| GOV-06 | Phase 5 | Pending |
-| GOV-07 | Phase 5 | Pending |
-| QUAL-01 | Phase 5 | Pending |
-| QUAL-02 | Phase 5 | Pending |
-| QUAL-03 | Phase 5 | Pending |
-| QUAL-04 | Phase 5 | Pending |
-| QUAL-05 | Phase 5 | Pending |
-| LINE-04 | Phase 6 | Pending |
-| LINE-05 | Phase 6 | Pending |
-| QUAL-06 | Phase 6 | Pending |
-| META-04 | Phase 6 | Pending |
-| UI-01 | Phase 6 | Pending |
-| UI-02 | Phase 6 | Pending |
-| UI-03 | Phase 6 | Pending |
-| UI-04 | Phase 6 | Pending |
-| UI-05 | Phase 6 | Pending |
-| UI-06 | Phase 6 | Pending |
-| UI-07 | Phase 6 | Pending |
+| 需求 | 阶段 | 状态 |
+|------|------|------|
+| CORE-01 | 阶段 1 | 待处理 |
+| CORE-02 | 阶段 1 | 待处理 |
+| CORE-03 | 阶段 1 | 待处理 |
+| CORE-04 | 阶段 1 | 待处理 |
+| CORE-05 | 阶段 1 | 待处理 |
+| AUTH-01 | 阶段 1 | 待处理 |
+| AUTH-02 | 阶段 1 | 待处理 |
+| AUTH-03 | 阶段 1 | 待处理 |
+| AUTH-04 | 阶段 1 | 待处理 |
+| CONN-08 | 阶段 1 | 待处理 |
+| ORCH-01 | 阶段 2 | 待处理 |
+| ORCH-02 | 阶段 2 | 待处理 |
+| ORCH-03 | 阶段 2 | 待处理 |
+| ORCH-04 | 阶段 2 | 待处理 |
+| ORCH-09 | 阶段 2 | 待处理 |
+| ORCH-10 | 阶段 2 | 待处理 |
+| CONN-01 | 阶段 2 | 待处理 |
+| CONN-02 | 阶段 2 | 待处理 |
+| CONN-03 | 阶段 2 | 待处理 |
+| CONN-04 | 阶段 2 | 待处理 |
+| CONN-05 | 阶段 2 | 待处理 |
+| CONN-06 | 阶段 2 | 待处理 |
+| CONN-07 | 阶段 2 | 待处理 |
+| ORCH-05 | 阶段 3 | 待处理 |
+| ORCH-06 | 阶段 3 | 待处理 |
+| ORCH-07 | 阶段 3 | 待处理 |
+| ORCH-08 | 阶段 3 | 待处理 |
+| LINE-01 | 阶段 4 | 待处理 |
+| LINE-02 | 阶段 4 | 待处理 |
+| LINE-03 | 阶段 4 | 待处理 |
+| LINE-06 | 阶段 4 | 待处理 |
+| META-01 | 阶段 4 | 待处理 |
+| META-02 | 阶段 4 | 待处理 |
+| META-03 | 阶段 4 | 待处理 |
+| META-05 | 阶段 4 | 待处理 |
+| RBAC-01 | 阶段 5 | 待处理 |
+| RBAC-02 | 阶段 5 | 待处理 |
+| RBAC-03 | 阶段 5 | 待处理 |
+| RBAC-04 | 阶段 5 | 待处理 |
+| RBAC-05 | 阶段 5 | 待处理 |
+| RBAC-06 | 阶段 5 | 待处理 |
+| GOV-01 | 阶段 5 | 待处理 |
+| GOV-02 | 阶段 5 | 待处理 |
+| GOV-03 | 阶段 5 | 待处理 |
+| GOV-04 | 阶段 5 | 待处理 |
+| GOV-05 | 阶段 5 | 待处理 |
+| GOV-06 | 阶段 5 | 待处理 |
+| GOV-07 | 阶段 5 | 待处理 |
+| QUAL-01 | 阶段 5 | 待处理 |
+| QUAL-02 | 阶段 5 | 待处理 |
+| QUAL-03 | 阶段 5 | 待处理 |
+| QUAL-04 | 阶段 5 | 待处理 |
+| QUAL-05 | 阶段 5 | 待处理 |
+| LINE-04 | 阶段 6 | 待处理 |
+| LINE-05 | 阶段 6 | 待处理 |
+| QUAL-06 | 阶段 6 | 待处理 |
+| META-04 | 阶段 6 | 待处理 |
+| UI-01 | 阶段 6 | 待处理 |
+| UI-02 | 阶段 6 | 待处理 |
+| UI-03 | 阶段 6 | 待处理 |
+| UI-04 | 阶段 6 | 待处理 |
+| UI-05 | 阶段 6 | 待处理 |
+| UI-06 | 阶段 6 | 待处理 |
+| UI-07 | 阶段 6 | 待处理 |
 
-**Coverage:**
-- v1 requirements: 64 total
-- Mapped to phases: 64
-- Unmapped: 0 ✓
+**覆盖情况：**
+- v1 需求：共 64 条
+- 已映射到阶段：64 条
+- 未映射：0 ✓
 
 ---
-*Requirements defined: 2026-04-29*
-*Last updated: 2026-04-29 after roadmap creation (corrected count from 57 to 64)*
+*需求定义日期：2026-04-29*
+*最后更新：2026-04-29，路线图创建后（数量从 57 修正为 64）*

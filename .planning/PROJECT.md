@@ -1,122 +1,122 @@
-# Data Governance Platform
+# 数据治理平台
 
-## What This Is
+## 项目简介
 
-An open-source data governance platform written in Go, inspired by Dagster's asset-centric architecture. It combines data orchestration (software-defined assets, pipeline scheduling, execution engine) with enterprise-grade governance (field-level lineage, data quality rules, metadata catalog, column-level access control, and approval workflows). Designed for data engineers who build pipelines, analysts who explore data, and governance teams who enforce policies — all from a single platform.
+这是一个用 Go 编写的开源数据治理平台，灵感来源于 Dagster 的资产中心架构。平台将数据编排（软件定义资产、pipeline 调度、执行引擎）与企业级治理能力（字段级血缘、数据质量规则、元数据目录、列级访问控制、审批工作流）融为一体。面向三类用户：构建 pipeline 的数据工程师、探索数据的分析师，以及制定和执行数据策略的治理团队——一个平台满足所有需求。
 
-## Core Value
+## 核心价值
 
-A data practitioner can define, run, and govern data assets in code — and every downstream consumer can trust what they're working with, trace where it came from to the field level, and know who is allowed to see it.
+数据从业者可以用代码定义、运行并治理数据资产——每一位下游使用者都能信任所用数据、追溯其字段级来源，并清楚地知道谁有权访问。
 
-## Requirements
+## 需求
 
-### Validated
+### 已验证
 
-(None yet — ship to validate)
+（暂无——交付后验证）
 
-### Active
+### 进行中
 
-**Orchestration Engine**
-- [ ] User can define data assets in Go code with explicit upstream dependencies
-- [ ] Platform resolves and executes assets in dependency order
-- [ ] User can schedule asset materialization via cron or event triggers
-- [ ] Platform retries failed asset materializations with configurable backoff
-- [ ] User can define partitioned assets (time-based, categorical)
+**编排引擎**
+- [ ] 用户可在 Go 代码中定义数据资产，并显式声明上游依赖
+- [ ] 平台按依赖顺序解析并执行资产
+- [ ] 用户可通过 cron 或事件触发调度资产物化
+- [ ] 平台在资产物化失败时按可配置的退避策略自动重试
+- [ ] 用户可定义分区资产（基于时间或类别）
 
-**Data Lineage**
-- [ ] Platform automatically captures table-level lineage from asset definitions
-- [ ] Platform captures field-level lineage (which output columns derive from which input columns)
-- [ ] User can visualize lineage as an interactive DAG in the UI
-- [ ] User can trace impact of a field change downstream (impact analysis)
+**数据血缘**
+- [ ] 平台自动从资产定义中捕获表级血缘
+- [ ] 平台捕获字段级血缘（输出列由哪些输入列派生）
+- [ ] 用户可在 UI 中将血缘可视化为交互式 DAG
+- [ ] 用户可追踪字段变更对下游的影响（影响分析）
 
-**Data Quality**
-- [ ] User can define quality rules on assets (null checks, range checks, custom SQL assertions)
-- [ ] Platform evaluates quality rules on each asset materialization
-- [ ] Platform sends alerts when quality rules fail or SLAs are breached
-- [ ] User can view quality history and trend per asset
+**数据质量**
+- [ ] 用户可在资产上定义质量规则（空值检查、范围检查、自定义 SQL 断言）
+- [ ] 平台在每次资产物化时评估质量规则
+- [ ] 质量规则失败或 SLA 违反时，平台发送告警
+- [ ] 用户可查看每个资产的质量历史和趋势
 
-**Metadata Management**
-- [ ] Platform auto-discovers and registers schema metadata on asset materialization
-- [ ] User can annotate assets, tables, and fields with descriptions and tags
-- [ ] User can search the data catalog by name, tag, owner, or description
-- [ ] Platform tracks schema evolution (diff between versions)
+**元数据管理**
+- [ ] 资产物化时，平台自动发现并注册 Schema 元数据
+- [ ] 用户可为资产、表和字段添加描述和标签
+- [ ] 用户可按名称、标签、负责人或描述搜索数据目录
+- [ ] 平台追踪 Schema 演化（各版本差异）
 
-**Access Control**
-- [ ] Admin can define roles and assign users to roles
-- [ ] Admin can set column-level access policies (specific roles can only see specific columns)
-- [ ] Platform enforces column masking / redaction at query time based on role
-- [ ] All access events are written to an immutable audit log
+**访问控制**
+- [ ] 管理员可定义角色并将用户分配到角色
+- [ ] 管理员可设置列级访问策略（特定角色只能访问特定列）
+- [ ] 平台根据角色对列进行掩码/脱敏处理
+- [ ] 所有访问事件写入不可篡改的审计日志
 
-**Governance Workflows**
-- [ ] User can submit a data asset for governance review before publishing
-- [ ] Governance team can approve or reject asset publication with comments
-- [ ] Platform sends notifications on approval request and decision
-- [ ] All approval decisions are recorded in the audit log
+**治理工作流**
+- [ ] 用户可在发布前将数据资产提交治理审核
+- [ ] 治理团队可携带评论批准或驳回资产发布申请
+- [ ] 平台在审批请求和决策时发送通知
+- [ ] 所有审批决策记录在审计日志中
 
-**Compliance & Audit**
-- [ ] Platform maintains a complete, tamper-evident audit trail of all data access and mutations
-- [ ] User can export audit logs for GDPR / SOC2 compliance reporting
-- [ ] Platform supports data retention policies (TTL on assets and audit records)
+**合规与审计**
+- [ ] 平台维护完整、防篡改的数据访问和变更审计链
+- [ ] 用户可导出审计日志，用于 GDPR / SOC2 合规报告
+- [ ] 平台支持数据保留策略（资产和审计记录的 TTL）
 
-**Connectors**
-- [ ] Platform connects to PostgreSQL and MySQL as source/sink
-- [ ] Platform connects to BigQuery and Snowflake as source/sink
-- [ ] Platform connects to S3, GCS, and HDFS as source/sink
-- [ ] Connector interface is extensible (users can implement custom connectors in Go)
+**连接器**
+- [ ] 平台连接 PostgreSQL 和 MySQL 作为数据源/目标
+- [ ] 平台连接 BigQuery 和 Snowflake 作为数据源/目标
+- [ ] 平台连接 S3、GCS 和 HDFS 作为数据源/目标
+- [ ] 连接器接口可扩展（用户可用 Go 实现自定义连接器）
 
-**Observability UI**
-- [ ] User can view all assets, their status, and last materialization time
-- [ ] User can view execution run history and logs per asset
-- [ ] User can view the full lineage graph with field-level drill-down
-- [ ] User can view quality scores and alerts dashboard
+**可观测性 UI**
+- [ ] 用户可查看所有资产、其状态和最近物化时间
+- [ ] 用户可查看每个资产的执行运行历史和日志
+- [ ] 用户可查看包含字段级下钻的完整血缘图
+- [ ] 用户可查看质量分数和告警仪表盘
 
-### Out of Scope
+### 超出范围
 
-- Python SDK — Go-first; Python bindings deferred post-stable API
-- Row-level security — column-level is the initial scope; row-level is a future extension
-- Built-in compute execution (Spark, dbt runs) — platform orchestrates and tracks; execution is delegated to external systems
-- Multi-tenant SaaS hosting — open-source self-hosted only for v1
+- Python SDK — Go 优先；Python 绑定推迟到 API 稳定后
+- 行级安全 — 初始范围为列级；行级是未来扩展
+- 内置计算执行（Spark、dbt 运行）— 平台负责编排和追踪；实际执行委托给外部系统
+- 多租户 SaaS 托管 — v1 仅支持开源自托管
 
-## Context
+## 背景
 
-- **Inspiration**: Dagster (Python) — asset-centric model, rich UI, strong observability. This project replicates and extends with Go-native implementation and stronger governance primitives.
-- **Key gap Dagster doesn't fill**: field-level lineage, approval workflows, column-level access control, and compliance audit trails.
-- **Language**: Go backend. Frontend stack TBD (likely React + TypeScript for the UI).
-- **Deployment target**: Open source, self-hosted (Docker Compose / Kubernetes).
-- **Reference reading**: Dagster source at https://github.com/dagster-io/dagster and docs at https://docs.dagster.io/
+- **灵感来源**：Dagster（Python）—— 资产中心模型、丰富的 UI、强大的可观测性。本项目以 Go 原生实现进行复制和扩展，并增强治理原语。
+- **Dagster 未覆盖的关键缺口**：字段级血缘、审批工作流、列级访问控制和合规审计链。
+- **语言**：Go 后端。前端技术栈待定（UI 可能采用 React + TypeScript）。
+- **部署目标**：开源，自托管（Docker Compose / Kubernetes）。
+- **参考资料**：Dagster 源码 https://github.com/dagster-io/dagster，文档 https://docs.dagster.io/
 
-## Constraints
+## 约束
 
-- **Tech Stack**: Go backend (no Python runtime dependency in core) — Go is the team's primary language
-- **Open Source**: Apache 2.0 or similar permissive license — target community adoption
-- **Self-contained**: Must run on a single machine for development (Docker Compose)
-- **Connector extensibility**: Connector interface must be a stable public API from day one — third-party connectors are a key adoption driver
+- **技术栈**：Go 后端（核心不依赖 Python 运行时）—— Go 是团队主要语言
+- **开源**：Apache 2.0 或类似宽松许可证 —— 目标是社区采用
+- **自包含**：开发环境必须在单机上运行（Docker Compose）
+- **连接器可扩展性**：连接器接口从第一天起就必须是稳定的公开 API —— 第三方连接器是采用的关键驱动力
 
-## Key Decisions
+## 关键决策
 
-| Decision | Rationale | Outcome |
-|----------|-----------|---------|
-| Asset-centric model (not task-centric) | Dagster proved assets are a better mental model for data work than arbitrary tasks — lineage and governance map naturally to assets | — Pending |
-| Go-only core, no Python runtime | Eliminates Python dependency for operators; SDK can be added later once API is stable | — Pending |
-| Field-level lineage as first-class feature | Dagster stops at asset level; field-level is the main differentiator for governance use cases | — Pending |
-| Open source (self-hosted) for v1 | Maximize adoption and community trust before commercial features | — Pending |
+| 决策 | 理由 | 结果 |
+|------|------|------|
+| 资产中心模型（非任务中心） | Dagster 已证明资产是数据工作比任意任务更好的心智模型 —— 血缘和治理能自然映射到资产 | — 待定 |
+| 纯 Go 核心，无 Python 运行时 | 消除运维人员的 Python 依赖；API 稳定后可再添加 SDK | — 待定 |
+| 字段级血缘作为一等特性 | Dagster 仅停留在资产级；字段级是治理场景的主要差异化点 | — 待定 |
+| v1 开源（自托管） | 在商业化之前最大化社区采用率和信任度 | — 待定 |
 
-## Evolution
+## 演化
 
-This document evolves at phase transitions and milestone boundaries.
+本文档在阶段转换和里程碑边界时更新。
 
-**After each phase transition** (via `/gsd-transition`):
-1. Requirements invalidated? → Move to Out of Scope with reason
-2. Requirements validated? → Move to Validated with phase reference
-3. New requirements emerged? → Add to Active
-4. Decisions to log? → Add to Key Decisions
-5. "What This Is" still accurate? → Update if drifted
+**每次阶段转换后**（通过 `/gsd-transition`）：
+1. 需求被推翻？→ 携带原因移入"超出范围"
+2. 需求已验证？→ 携带阶段引用移入"已验证"
+3. 出现新需求？→ 添加到"进行中"
+4. 有决策需要记录？→ 添加到"关键决策"
+5. "项目简介"仍然准确？→ 若有偏差则更新
 
-**After each milestone** (via `/gsd-complete-milestone`):
-1. Full review of all sections
-2. Core Value check — still the right priority?
-3. Audit Out of Scope — reasons still valid?
-4. Update Context with current state
+**每个里程碑后**（通过 `/gsd-complete-milestone`）：
+1. 全面审查所有章节
+2. 核心价值检查 —— 优先级仍然正确吗？
+3. 审查"超出范围" —— 排除理由仍然有效吗？
+4. 用当前状态更新背景
 
 ---
-*Last updated: 2026-04-29 after initialization*
+*最后更新：2026-04-29，初始化后*

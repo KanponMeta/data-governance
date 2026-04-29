@@ -1,113 +1,113 @@
-# Roadmap: Data Governance Platform
+# 路线图：数据治理平台
 
-## Overview
+## 概述
 
-Six phases take the platform from a bare Go module to a fully operational data governance and orchestration system. Phase 1 lays the storage and authentication skeleton that every later component depends on. Phase 2 delivers the core execution engine — the platform's reason to exist — including all first-party connectors. Phase 3 adds scheduling, sensors, and partitions to enable production use. Phase 4 captures field-level lineage and schema evolution, the primary technical differentiator over Dagster. Phase 5 builds the governance engine: RBAC, column masking, approval workflows, tamper-evident audit, and data quality. Phase 6 assembles the web UI and completes the API surface once all backend models are stable.
+六个阶段将平台从一个裸的 Go 模块演进为完整可用的数据治理与编排系统。阶段 1 奠定存储和认证骨架，后续所有组件都依赖于此。阶段 2 交付核心执行引擎 —— 平台存在的理由 —— 包含所有一方连接器。阶段 3 增加调度、传感器和分区，支撑生产用途。阶段 4 捕获字段级血缘和 Schema 演化，这是相较 Dagster 的主要技术差异化点。阶段 5 构建治理引擎：RBAC、列掩码、审批工作流、防篡改审计和数据质量。阶段 6 在所有后端模型稳定后组装 Web UI 并完善 API 接口。
 
-## Phases
+## 阶段列表
 
-**Phase Numbering:**
-- Integer phases (1, 2, 3): Planned milestone work
-- Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
+**阶段编号规则：**
+- 整数阶段（1、2、3）：计划内里程碑工作
+- 小数阶段（2.1、2.2）：紧急插入（标记为 INSERTED）
 
-Decimal phases appear between their surrounding integers in numeric order.
+小数阶段按数字顺序出现在相邻整数阶段之间。
 
-- [ ] **Phase 1: Foundation** - Storage, migrations, event log, auth, connector interface, single binary + API stubs
-- [ ] **Phase 2: Execution Engine** - Asset definitions, DAG execution, retry, concurrency token pool, all first-party connectors
-- [ ] **Phase 3: Scheduling, Sensors, and Partitions** - Cron daemon, event sensors, time/categorical partitions, backfill
-- [ ] **Phase 4: Lineage and Schema** - Asset + field-level lineage, schema auto-discovery, schema evolution, impact analysis
-- [ ] **Phase 5: Governance Engine** - RBAC, column masking, approval workflows, hash-chain audit log, data quality rules
-- [ ] **Phase 6: Web UI and API** - Complete REST/gRPC API, React SPA, asset dashboard, lineage DAG, governance inbox
+- [ ] **阶段 1：基础设施** - 存储、迁移、事件日志、认证、连接器接口、单二进制 + API 桩
+- [ ] **阶段 2：执行引擎** - 资产定义、DAG 执行、重试、并发 token 池、所有一方连接器
+- [ ] **阶段 3：调度、传感器与分区** - cron 守护进程、事件传感器、时间/类别分区、回填
+- [ ] **阶段 4：血缘与 Schema** - 资产 + 字段级血缘、Schema 自动发现、Schema 演化、影响分析
+- [ ] **阶段 5：治理引擎** - RBAC、列掩码、审批工作流、哈希链审计日志、数据质量规则
+- [ ] **阶段 6：Web UI 与 API** - 完整 REST/gRPC API、React SPA、资产仪表盘、血缘 DAG、治理收件箱
 
-## Phase Details
+## 阶段详情
 
-### Phase 1: Foundation
-**Goal**: The platform runs as a single binary with a healthy PostgreSQL-backed storage layer, versioned migrations, an append-only event log, user authentication, and a stable versioned connector interface — all downstream phases build on these foundations
-**Depends on**: Nothing (first phase)
-**Requirements**: CORE-01, CORE-02, CORE-03, CORE-04, CORE-05, AUTH-01, AUTH-02, AUTH-03, AUTH-04, CONN-08
-**Success Criteria** (what must be TRUE):
-  1. The platform starts with `docker compose up` and passes a health check endpoint
-  2. A user can register an account, receive a JWT, and be rejected after session TTL expires
-  3. An admin can invite a new user by email and that user can complete registration
-  4. The event log records a structured entry for every platform lifecycle event, and entries are never modified after write
-  5. A third-party author can implement the Go connector interface in a separate module and register it with the platform without modifying platform source
-**Plans**: TBD
-**UI hint**: no
+### 阶段 1：基础设施
+**目标**：平台以单二进制运行，具备健康的 PostgreSQL 存储层、版本化迁移、追加式事件日志、用户认证和稳定版本化的连接器接口 —— 所有下游阶段均构建在此基础之上
+**依赖**：无（首个阶段）
+**需求**：CORE-01, CORE-02, CORE-03, CORE-04, CORE-05, AUTH-01, AUTH-02, AUTH-03, AUTH-04, CONN-08
+**验收标准**（必须为 TRUE）：
+  1. 平台通过 `docker compose up` 启动并通过健康检查接口
+  2. 用户可注册账号、获取 JWT，会话过期后请求被拒绝
+  3. 管理员可通过邮件邀请新用户，被邀请用户可完成注册
+  4. 事件日志为每个平台生命周期事件记录结构化条目，条目写入后永不修改
+  5. 第三方作者可在独立模块中实现 Go 连接器接口并向平台注册，无需修改平台源码
+**计划**：待定
+**UI 提示**：否
 
-### Phase 2: Execution Engine
-**Goal**: Data engineers can define assets in Go code with explicit upstream dependencies, trigger materializations, and rely on the platform to execute them in dependency order with retry, while all seven first-party connectors read and write assets reliably
-**Depends on**: Phase 1
-**Requirements**: ORCH-01, ORCH-02, ORCH-03, ORCH-04, ORCH-09, ORCH-10, CONN-01, CONN-02, CONN-03, CONN-04, CONN-05, CONN-06, CONN-07
-**Success Criteria** (what must be TRUE):
-  1. A data engineer can define an asset with upstream dependencies in Go and trigger a materialization that executes all upstreams first in correct topological order
-  2. A failed asset materialization retries up to a configured maximum with exponential backoff, and the retry count and timestamps are visible in the event log
-  3. Fifty concurrent goroutines attempting to claim the same queued run result in exactly one execution — concurrent duplicate runs cannot occur
-  4. An asset can be materialized on-demand via CLI command, and the run completes successfully end-to-end using the PostgreSQL connector against a local database
-  5. Each of the seven first-party connectors (PostgreSQL, MySQL, BigQuery, Snowflake, S3, GCS, HDFS) can read and write an asset without error in integration tests
-**Plans**: TBD
-**UI hint**: no
+### 阶段 2：执行引擎
+**目标**：数据工程师可在 Go 代码中定义带显式上游依赖的资产，触发物化，平台按依赖顺序执行并支持重试，同时七个一方连接器可靠读写资产
+**依赖**：阶段 1
+**需求**：ORCH-01, ORCH-02, ORCH-03, ORCH-04, ORCH-09, ORCH-10, CONN-01, CONN-02, CONN-03, CONN-04, CONN-05, CONN-06, CONN-07
+**验收标准**（必须为 TRUE）：
+  1. 数据工程师可在 Go 中定义带上游依赖的资产，触发物化后所有上游按正确拓扑顺序先行执行
+  2. 资产物化失败后按配置的最大次数以指数退避重试，重试次数和时间戳在事件日志中可见
+  3. 50 个并发 goroutine 同时争抢同一个排队运行，结果只有一个执行 —— 不能发生并发重复运行
+  4. 通过 CLI 命令可按需触发资产物化，使用 PostgreSQL 连接器针对本地数据库完整运行成功
+  5. 七个一方连接器（PostgreSQL、MySQL、BigQuery、Snowflake、S3、GCS、HDFS）在集成测试中均可无错误读写资产
+**计划**：待定
+**UI 提示**：否
 
-### Phase 3: Scheduling, Sensors, and Partitions
-**Goal**: Assets materialize automatically on schedule or in response to external events, partitioned assets execute per-partition with backfill support, and the scheduler daemon survives process restart without losing scheduled state
-**Depends on**: Phase 2
-**Requirements**: ORCH-05, ORCH-06, ORCH-07, ORCH-08
-**Success Criteria** (what must be TRUE):
-  1. An asset with a cron expression attached materializes automatically at the next scheduled time after the daemon starts, with no manual trigger
-  2. An asset with an event sensor materializes within the sensor polling interval when the configured external condition becomes true
-  3. A time-based partitioned asset can be backfilled for a historical date range, and each partition executes as a separate run with its own event log entries
-  4. A categorical partitioned asset runs independently per-category without one category's failure blocking another
-**Plans**: TBD
-**UI hint**: no
+### 阶段 3：调度、传感器与分区
+**目标**：资产按计划或响应外部事件自动物化，分区资产支持逐分区执行和回填，调度守护进程在进程重启后不丢失已调度状态
+**依赖**：阶段 2
+**需求**：ORCH-05, ORCH-06, ORCH-07, ORCH-08
+**验收标准**（必须为 TRUE）：
+  1. 附有 cron 表达式的资产在守护进程启动后于下一个计划时间自动物化，无需手动触发
+  2. 带事件传感器的资产在配置的外部条件变为真时于传感器轮询间隔内触发物化
+  3. 基于时间的分区资产可对历史日期范围回填，每个分区作为独立运行执行并有各自的事件日志条目
+  4. 类别分区资产按类别独立运行，一个类别失败不阻塞其他类别
+**计划**：待定
+**UI 提示**：否
 
-### Phase 4: Lineage and Schema
-**Goal**: Every asset materialization automatically records the asset dependency graph, captures the output schema, and surfaces field-level lineage and schema evolution so engineers and governance teams can trace the full provenance of any column
-**Depends on**: Phase 3
-**Requirements**: LINE-01, LINE-02, LINE-03, LINE-06, META-01, META-02, META-03, META-05
-**Success Criteria** (what must be TRUE):
-  1. After an asset materializes, its upstream asset edges are automatically recorded and traversable via the lineage API without any manual registration step
-  2. A data engineer can declare that output column A derives from input column B on upstream asset Z, and this declaration is queryable and versioned against the asset's code hash
-  3. Given any column on any asset, the impact analysis API returns all downstream assets and columns that depend on it, traversing the full lineage graph
-  4. The platform captures table and column schema on every materialization, diffs it against the previous version, and records breaking changes (column removal, type change) in the schema evolution timeline
-  5. A user can add a description, owner, and tags to an asset, table, or column via the API and retrieve them in a subsequent query
-**Plans**: TBD
-**UI hint**: no
+### 阶段 4：血缘与 Schema
+**目标**：每次资产物化自动记录资产依赖图、捕获输出 Schema，并呈现字段级血缘和 Schema 演化，使工程师和治理团队可追溯任意列的完整来源
+**依赖**：阶段 3
+**需求**：LINE-01, LINE-02, LINE-03, LINE-06, META-01, META-02, META-03, META-05
+**验收标准**（必须为 TRUE）：
+  1. 资产物化后，其上游资产边自动被记录，无需任何手动注册步骤即可通过血缘 API 遍历
+  2. 数据工程师可声明输出列 A 来源于上游资产 Z 的输入列 B，该声明可查询并与资产代码哈希绑定版本
+  3. 给定任意资产上的任意列，影响分析 API 返回所有依赖它的下游资产和列，遍历完整血缘图
+  4. 平台在每次物化时捕获表和列的 Schema，与上一版本做 diff，并在 Schema 演化时间线中记录破坏性变更（列删除、类型变更）
+  5. 用户可通过 API 为资产、表或列添加描述、负责人和标签，并在后续查询中检索到
+**计划**：待定
+**UI 提示**：否
 
-### Phase 5: Governance Engine
-**Goal**: Admins can enforce column-level access policies that sync to Snowflake and BigQuery, data engineers submit assets for approval through a tracked workflow, all governance actions are recorded in a tamper-evident hash-chain audit log, and quality rules run automatically on every materialization
-**Depends on**: Phase 4
-**Requirements**: RBAC-01, RBAC-02, RBAC-03, RBAC-04, RBAC-05, RBAC-06, GOV-01, GOV-02, GOV-03, GOV-04, GOV-05, GOV-06, GOV-07, QUAL-01, QUAL-02, QUAL-03, QUAL-04, QUAL-05
-**Success Criteria** (what must be TRUE):
-  1. An admin can define a role, assign users to it, and set a column-level access policy; the platform syncs that policy to Snowflake dynamic data masking and the BigQuery column-level security API without manual warehouse configuration
-  2. A data engineer submits an asset for governance review; a reviewer approves or rejects it with a required comment; the submitter is notified; the asset transitions to Active on approval and returns to Draft on rejection
-  3. Every governance action (policy change, approval decision, user assignment) produces an audit log entry linked by hash to the previous entry; no existing entry can be modified or deleted by the application database user
-  4. An admin can export the full audit log as JSON or CSV and the export contains every entry including reviewer identity and timestamp
-  5. A data engineer defines a null-rate quality rule on an asset; after materialization the platform evaluates the rule, marks the run quality-failed if it breaches the threshold, and sends a webhook or email alert
-**Plans**: TBD
-**UI hint**: no
+### 阶段 5：治理引擎
+**目标**：管理员可执行同步到 Snowflake 和 BigQuery 的列级访问策略，数据工程师通过有记录的工作流提交资产审批，所有治理操作记录在防篡改的哈希链审计日志中，质量规则在每次物化时自动运行
+**依赖**：阶段 4
+**需求**：RBAC-01, RBAC-02, RBAC-03, RBAC-04, RBAC-05, RBAC-06, GOV-01, GOV-02, GOV-03, GOV-04, GOV-05, GOV-06, GOV-07, QUAL-01, QUAL-02, QUAL-03, QUAL-04, QUAL-05
+**验收标准**（必须为 TRUE）：
+  1. 管理员可定义角色、分配用户并设置列级访问策略；平台无需手动配置数仓即可将策略同步到 Snowflake 动态数据掩码和 BigQuery 列级安全 API
+  2. 数据工程师提交资产治理审核；审核者携带必填评论批准或驳回；提交者收到通知；批准后资产转为 Active，驳回后返回 Draft
+  3. 每个治理操作（策略变更、审批决策、用户分配）产生一个通过哈希与上一条目链接的审计日志条目；应用数据库用户无法修改或删除任何现有条目
+  4. 管理员可将完整审计日志导出为 JSON 或 CSV，导出内容包含每条记录（含审核者身份和时间戳）
+  5. 数据工程师在资产上定义空值率质量规则；物化后平台评估该规则，若超过阈值则将运行标记为质量失败并发送 webhook 或邮件告警
+**计划**：待定
+**UI 提示**：否
 
-### Phase 6: Web UI and API
-**Goal**: Every platform capability is accessible through a complete REST and gRPC API with OpenAPI documentation, and through a React web UI with an asset dashboard, interactive lineage DAG, quality trends, governance inbox, catalog search, and admin panel
-**Depends on**: Phase 5
-**Requirements**: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, LINE-04, LINE-05, META-04, QUAL-06
-**Success Criteria** (what must be TRUE):
-  1. A user can open the asset dashboard and see every asset with its current state, last materialization time, and quality status without making any manual API calls
-  2. A user can navigate to an asset in the lineage DAG, expand it to see column-level lineage, and drill into any connected node — all through the interactive UI
-  3. A user can search the data catalog by asset name, column name, tag, owner, or description and receive relevant results
-  4. A governance team member can view all pending approval requests in the governance inbox and take approve or reject actions without leaving the UI
-  5. An admin can manage users, roles, and column-level access policies entirely from the admin panel
-**Plans**: TBD
-**UI hint**: yes
+### 阶段 6：Web UI 与 API
+**目标**：所有平台能力均可通过完整的 REST 和 gRPC API（含 OpenAPI 文档）访问，以及通过 React Web UI 访问，包含资产仪表盘、交互式血缘 DAG、质量趋势、治理收件箱、目录搜索和管理面板
+**依赖**：阶段 5
+**需求**：UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, LINE-04, LINE-05, META-04, QUAL-06
+**验收标准**（必须为 TRUE）：
+  1. 用户打开资产仪表盘，无需手动调用 API 即可看到每个资产的当前状态、最近物化时间和质量状态
+  2. 用户可在血缘 DAG 中导航到某资产，展开查看列级血缘，并下钻到任意相邻节点 —— 全程通过交互式 UI 完成
+  3. 用户可按资产名称、列名、标签、负责人或描述搜索数据目录并获得相关结果
+  4. 治理团队成员可在治理收件箱中查看所有待审批请求并执行批准或驳回操作，无需离开 UI
+  5. 管理员可完全在管理面板中管理用户、角色和列级访问策略
+**计划**：待定
+**UI 提示**：是
 
-## Progress
+## 进度
 
-**Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
+**执行顺序：**
+阶段按数字顺序执行：1 → 2 → 3 → 4 → 5 → 6
 
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 1. Foundation | 0/? | Not started | - |
-| 2. Execution Engine | 0/? | Not started | - |
-| 3. Scheduling, Sensors, and Partitions | 0/? | Not started | - |
-| 4. Lineage and Schema | 0/? | Not started | - |
-| 5. Governance Engine | 0/? | Not started | - |
-| 6. Web UI and API | 0/? | Not started | - |
+| 阶段 | 已完成计划 | 状态 | 完成时间 |
+|------|-----------|------|---------|
+| 1. 基础设施 | 0/? | 未开始 | - |
+| 2. 执行引擎 | 0/? | 未开始 | - |
+| 3. 调度、传感器与分区 | 0/? | 未开始 | - |
+| 4. 血缘与 Schema | 0/? | 未开始 | - |
+| 5. 治理引擎 | 0/? | 未开始 | - |
+| 6. Web UI 与 API | 0/? | 未开始 | - |
