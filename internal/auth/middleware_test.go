@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,19 +11,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/kanpon/data-governance/internal/event"
 )
-
-func mustRandBytes(n int) []byte {
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
-	}
-	return b
-}
-
-// integrationTokenIssuer returns a TokenIssuer valid for 15 minutes.
-func integrationTokenIssuer() *TokenIssuer {
-	return NewTokenIssuer(mustRandBytes(32), 15*time.Minute)
-}
 
 // mockEventWriter is a no-op event.Writer for middleware tests.
 type mockEventWriter struct{}
@@ -146,8 +132,6 @@ func TestMiddleware_ValidToken(t *testing.T) {
 }
 
 func TestRequireRole_WrongRole(t *testing.T) {
-	writer := &mockEventWriter{}
-
 	principal := Principal{UserID: uuid.New(), Role: "member"}
 	ctx := context.WithValue(context.Background(), principalKey{}, principal)
 
@@ -169,8 +153,6 @@ func TestRequireRole_WrongRole(t *testing.T) {
 }
 
 func TestRequireRole_CorrectRole(t *testing.T) {
-	writer := &mockEventWriter{}
-
 	adminPrincipal := Principal{UserID: uuid.New(), Role: "admin"}
 	ctx := context.WithValue(context.Background(), principalKey{}, adminPrincipal)
 
@@ -189,8 +171,6 @@ func TestRequireRole_CorrectRole(t *testing.T) {
 }
 
 func TestRequireRole_NoPrincipal(t *testing.T) {
-	writer := &mockEventWriter{}
-
 	ctx := context.Background()
 
 	handler := RequireRole("admin")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
