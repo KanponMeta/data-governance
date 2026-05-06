@@ -2,8 +2,9 @@ SHELL := /bin/bash
 GO ?= go
 BINARY := bin/platform
 PKG := ./...
+ATLAS := atlas
 
-.PHONY: build test lint generate migrate run docker-build clean tidy
+.PHONY: build test lint generate migrate migrate-diff migrate-lint migrate-status run docker-build clean tidy
 
 build:
 	$(GO) build -o $(BINARY) ./cmd/platform
@@ -18,7 +19,16 @@ generate:
 	$(GO) generate $(PKG)
 
 migrate:
-	$(GO) run ./cmd/platform migrate
+	atlas migrate apply --env $${ATLAS_ENV:-local}
+
+migrate-diff:
+	atlas migrate diff $${NAME:-change} --env local
+
+migrate-lint:
+	atlas migrate lint --env local --latest 1
+
+migrate-status:
+	atlas migrate status --env local
 
 run: build
 	./$(BINARY)

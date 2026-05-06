@@ -4,12 +4,20 @@ import (
 	"time"
 
 	"entgo.io/ent"
+	"entgo.io/ent/dialect/entsql"
+	"entgo.io/ent/schema"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	"github.com/google/uuid"
 )
 
 type User struct{ ent.Schema }
+
+func (User) Annotations() []schema.Annotation {
+	return []schema.Annotation{
+		entsql.Annotation{Table: "user"},
+	}
+}
 
 func (User) Fields() []ent.Field {
 	return []ent.Field{

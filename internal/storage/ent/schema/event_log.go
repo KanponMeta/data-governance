@@ -4,12 +4,20 @@ import (
 	"time"
 
 	"entgo.io/ent"
+	"entgo.io/ent/dialect/entsql"
+	"entgo.io/ent/schema"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	"github.com/google/uuid"
 )
 
 type EventLog struct{ ent.Schema }
+
+func (EventLog) Annotations() []schema.Annotation {
+	return []schema.Annotation{
+		entsql.Annotation{Table: "event_log"},
+	}
+}
 
 func (EventLog) Fields() []ent.Field {
 	return []ent.Field{

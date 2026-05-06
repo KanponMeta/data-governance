@@ -4,12 +4,20 @@ import (
 	"time"
 
 	"entgo.io/ent"
+	"entgo.io/ent/dialect/entsql"
+	"entgo.io/ent/schema"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	"github.com/google/uuid"
 )
 
 type InviteToken struct{ ent.Schema }
+
+func (InviteToken) Annotations() []schema.Annotation {
+	return []schema.Annotation{
+		entsql.Annotation{Table: "invite_token"},
+	}
+}
 
 func (InviteToken) Fields() []ent.Field {
 	return []ent.Field{
