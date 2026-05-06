@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -12,6 +13,9 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"github.com/kanpon/data-governance/internal/api"
+	"github.com/kanpon/data-governance/internal/auth"
+	"github.com/kanpon/data-governance/internal/config"
 	"github.com/kanpon/data-governance/internal/event"
 	"github.com/kanpon/data-governance/internal/storage"
 )
@@ -38,8 +42,7 @@ func main() {
 			os.Exit(1)
 		}
 	case "healthcheck":
-		// Plan 03 wires this to GET /health; Phase 1 placeholder exits 0 so docker doesn't loop.
-		os.Exit(0)
+		runHealthcheck()
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
 		os.Exit(2)
@@ -50,17 +53,23 @@ func runStart() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		return fmt.Errorf("DATABASE_URL is required")
-	}
-	store, err := storage.NewPostgres(ctx, dsn)
+	cfg, err := config.Load()
 	if err != nil {
-		return err
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	store, err := storage.NewPostgres(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("open storage: %w", err)
 	}
 	defer store.Close()
 
 	writer := event.NewWriter(store)
+
+	issuer := auth.NewTokenIssuer(cfg.JWTSigningKey, cfg.JWTAccessTTL)
+	svc := auth.NewService(store, writer, issuer)
+
+	// Emit platform.started event.
 	if err := writer.Append(ctx, event.Event{
 		Type:         event.EventTypePlatformStarted,
 		OccurredAt:   time.Now().UTC(),
@@ -72,9 +81,54 @@ func runStart() error {
 	}
 
 	slog.Info("platform.started", "version", version)
-	<-ctx.Done()
-	slog.Info("platform.stopped")
-	return nil
+
+	deps := api.Deps{
+		Auth:    svc,
+		Issuer:  issuer,
+		Storage: store,
+		Events:  writer,
+		Version: version,
+	}
+
+	return api.Run(ctx, cfg, deps)
+}
+
+// runHealthcheck performs an HTTP GET against /health on localhost.
+// It reads PLATFORM_HTTP_ADDR (default ":8080") and forms the URL accordingly.
+// Exits 0 if the server responds with 200, exits 1 otherwise.
+func runHealthcheck() {
+	addr := os.Getenv("PLATFORM_HTTP_ADDR")
+	if addr == "" {
+		addr = ":8080"
+	}
+
+	// Convert ":8080" to "127.0.0.1:8080" for the URL.
+	if addr[0] == ':' {
+		addr = "127.0.0.1" + addr
+	}
+
+	url := "http://" + addr + "/health"
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		slog.Error("healthcheck.create_request_failed", "error", err)
+		os.Exit(1)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		slog.Error("healthcheck.request_failed", "error", err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		os.Exit(0)
+	}
+	slog.Error("healthcheck.unhealthy", "status", resp.StatusCode)
+	os.Exit(1)
 }
 
 // runMigrate shells out to the atlas CLI to apply pending migrations
