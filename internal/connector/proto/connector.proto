@@ -1,0 +1,149 @@
+// Copyright 2026 Kanpon Data Governance Platform Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// =============================================================================
+// FROZEN — Phase 1 ABI
+//
+// This proto file defines the connector v1 ABI. It is FROZEN once Phase 1 ships.
+// Breaking changes require a new package: data_governance.connector.v2
+//
+// Evolution rules:
+//   - PATCH: documentation-only changes
+//   - MINOR: additive changes (new fields with new field numbers only)
+//   - MAJOR: any breaking change — new package data_governance.connector.v2
+//
+// Third-party connectors MUST return connector.APIVersion = "v1.0.0" from Ping.
+// =============================================================================
+
+syntax = "proto3";
+
+package data_governance.connector.v1;
+
+option go_package = "github.com/kanpon/data-governance/internal/connector/gen/connectorv1;connectorv1";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+
+// ConnectorService defines the four core operations a data connector must implement.
+// Phase 1 covers Read, Write, Schema, and Ping only. Execute, Metadata, and
+// CatalogList are deferred to later phases per D-01.
+service ConnectorService {
+  // Ping returns the connector's name, version, and supported capabilities.
+  rpc Ping(PingRequest) returns (PingResponse);
+
+  // Schema returns the column definitions for the given asset.
+  rpc Schema(SchemaRequest) returns (SchemaResponse);
+
+  // Read returns rows from the given asset, up to the requested limit.
+  rpc Read(ReadRequest) returns (ReadResponse);
+
+  // Write writes rows to the given asset. The connector SHOULD respect the
+  // idempotency_key to deduplicate repeated writes.
+  rpc Write(WriteRequest) returns (WriteResponse);
+}
+
+// Capabilities describes what features a connector supports.
+message Capabilities {
+  bool supports_schema_capture = 1;
+  bool supports_column_masking = 2;
+  bool supports_partitioning = 3;
+}
+
+// PingRequest is sent by the platform to inspect a connector at startup.
+// The connector MUST return its own api_version, name, and version.
+message PingRequest {}
+
+message PingResponse {
+  // api_version is the connector ABI version string, e.g. "v1.0.0".
+  // The Registry rejects connectors whose api_version does not match the
+  // platform's connector.APIVersion constant.
+  string api_version = 1;
+
+  // connector_name is a human-readable name, e.g. "postgres", "bigquery", "s3".
+  string connector_name = 2;
+
+  // connector_version is the connector implementation version, e.g. "1.2.0".
+  string connector_version = 3;
+
+  // capabilities describes which optional features this connector supports.
+  Capabilities capabilities = 4;
+}
+
+// AssetRef identifies a data asset and holds connector-specific config.
+// Sensitive keys (password, api_key, secret) SHOULD travel as env-var
+// indirection rather than literal values. Phase 2 will enforce this via
+// a secrets vault integration. Phase 1 documents the convention here.
+message AssetRef {
+  // identifier is the connector-specific asset identifier, e.g. a table name
+  // "public.users", a bucket/path "s3://data/raw/", or a dataset.table.
+  string identifier = 1;
+
+  // config is a map of connector-specific key/value pairs. Keys that contain
+  // sensitive data (password, api_key, secret, token) SHOULD be named with
+  // a _SECRET or _KEY suffix so future logging middleware can redact them.
+  map<string, string> config = 2;
+}
+
+message SchemaRequest {
+  AssetRef asset = 1;
+}
+
+message Column {
+  string name = 1;
+  // raw_type is the connector-reported type, e.g. "varchar", "int64", "uuid".
+  // The platform does not normalise this; consumers are responsible for mapping.
+  string raw_type = 2;
+  bool nullable = 3;
+}
+
+message SchemaResponse {
+  repeated Column columns = 1;
+
+  // captured_at is the time the schema was captured. This can be used to
+  // detect schema drift between reads.
+  google.protobuf.Timestamp captured_at = 2;
+}
+
+message ReadRequest {
+  AssetRef asset = 1;
+
+  // limit caps the number of rows returned. 0 means no limit.
+  int64 limit = 2;
+}
+
+// Row represents a single record as a map of column name to value.
+// Values may be any JSON-compatible type (string, number, bool, null, list, object).
+message Row {
+  google.protobuf.Struct fields = 1;
+}
+
+message ReadResponse {
+  repeated Row rows = 1;
+}
+
+message WriteRequest {
+  AssetRef asset = 1;
+
+  repeated Row rows = 2;
+
+  // idempotency_key is an optional client-supplied key used to deduplicate
+  // writes. If the connector receives the same idempotency_key twice, it SHOULD
+  // treat the second request as a no-op and return the same rows_written count.
+  string idempotency_key = 3;
+}
+
+message WriteResponse {
+  // rows_written is the number of rows persisted by this write.
+  int64 rows_written = 1;
+}
