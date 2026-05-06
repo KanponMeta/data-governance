@@ -1,1 +1,16 @@
 .specstory
+bin/
+*.exe
+*.test
+*.out
+coverage.txt
+.env
+.env.local
+*.key
+*.pem
+node_modules/
+dist/
+.idea/
+.vscode/
+*.swp
+migrations/migrations.sum.lock
