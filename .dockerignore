@@ -1,0 +1,15 @@
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+bin/
+node_modules/
+dist/
+*.test
+*.out
+coverage.txt
+.idea/
+.vscode/
+README*.md
+docs/

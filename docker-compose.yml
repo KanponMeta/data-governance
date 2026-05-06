@@ -1,0 +1,41 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: platform
+      POSTGRES_DB: platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform -d platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  platform:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PLATFORM_HTTP_ADDR: ":8080"
+      PLATFORM_LOG_LEVEL: "info"
+      DATABASE_URL: "postgres://platform:platform@postgres:5432/platform?sslmode=disable"
+      JWT_SIGNING_KEY: "${JWT_SIGNING_KEY:-dev-only-do-not-use-in-prod-32bytes!!}"
+      JWT_ACCESS_TTL: "15m"
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "/app/platform", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+volumes:
+  postgres_data:
