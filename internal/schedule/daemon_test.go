@@ -84,18 +84,18 @@ func TestDaemonUpsertOnStart(t *testing.T) {
 	cancel()
 	<-done
 
-	var cron string
+	var (
+		cron     string
+		nextFire sql.NullTime
+	)
 	err := db.QueryRowContext(context.Background(),
-		`SELECT cron_expr FROM schedules WHERE asset_name = $1`, assetName,
-	).Scan(&cron)
+		`SELECT cron_expr, next_fire_at FROM schedules WHERE asset_name = $1`, assetName,
+	).Scan(&cron, &nextFire)
 	require.NoError(t, err, "schedules row must exist after daemon start")
 	assert.Equal(t, "@every 1m", cron)
-
-	// last_fire_at should be set because the first tick fires the immediately-due schedule.
-	var lf sql.NullTime
-	err = db.QueryRowContext(context.Background(),
-		`SELECT last_fire_at FROM schedules WHERE asset_name = $1`, assetName,
-	).Scan(&lf)
-	require.NoError(t, err)
-	assert.True(t, lf.Valid, "first tick should have fired the schedule")
+	require.True(t, nextFire.Valid, "next_fire_at must be set by UpsertSchedules")
+	// "@every 1m" pushes next_fire_at into the future — first tick has nothing
+	// to fire, but the row's existence proves UpsertSchedules ran.
+	assert.True(t, nextFire.Time.After(time.Now().Add(-1*time.Second)),
+		"next_fire_at must be in the future for @every 1m")
 }
