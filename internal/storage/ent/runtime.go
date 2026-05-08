@@ -6,12 +6,15 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/kanpon/data-governance/internal/storage/ent/backfill"
 	"github.com/kanpon/data-governance/internal/storage/ent/concurrencytoken"
 	"github.com/kanpon/data-governance/internal/storage/ent/eventlog"
 	"github.com/kanpon/data-governance/internal/storage/ent/invitetoken"
 	"github.com/kanpon/data-governance/internal/storage/ent/run"
 	"github.com/kanpon/data-governance/internal/storage/ent/runstep"
+	"github.com/kanpon/data-governance/internal/storage/ent/schedule"
 	"github.com/kanpon/data-governance/internal/storage/ent/schema"
+	"github.com/kanpon/data-governance/internal/storage/ent/sensor"
 	"github.com/kanpon/data-governance/internal/storage/ent/user"
 )
 
@@ -19,6 +22,62 @@ import (
 // (default values, validators, hooks and policies) and stitches it
 // to their package variables.
 func init() {
+	backfillFields := schema.Backfill{}.Fields()
+	_ = backfillFields
+	// backfillDescAssetName is the schema descriptor for asset_name field.
+	backfillDescAssetName := backfillFields[1].Descriptor()
+	// backfill.AssetNameValidator is a validator for the "asset_name" field. It is called by the builders before save.
+	backfill.AssetNameValidator = func() func(string) error {
+		validators := backfillDescAssetName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(asset_name string) error {
+			for _, fn := range fns {
+				if err := fn(asset_name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// backfillDescPartitionSpec is the schema descriptor for partition_spec field.
+	backfillDescPartitionSpec := backfillFields[2].Descriptor()
+	// backfill.PartitionSpecValidator is a validator for the "partition_spec" field. It is called by the builders before save.
+	backfill.PartitionSpecValidator = func() func(string) error {
+		validators := backfillDescPartitionSpec.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(partition_spec string) error {
+			for _, fn := range fns {
+				if err := fn(partition_spec); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// backfillDescStatus is the schema descriptor for status field.
+	backfillDescStatus := backfillFields[3].Descriptor()
+	// backfill.DefaultStatus holds the default value on creation for the status field.
+	backfill.DefaultStatus = backfillDescStatus.Default.(string)
+	// backfill.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	backfill.StatusValidator = backfillDescStatus.Validators[0].(func(string) error)
+	// backfillDescTotalPartitions is the schema descriptor for total_partitions field.
+	backfillDescTotalPartitions := backfillFields[4].Descriptor()
+	// backfill.DefaultTotalPartitions holds the default value on creation for the total_partitions field.
+	backfill.DefaultTotalPartitions = backfillDescTotalPartitions.Default.(int)
+	// backfillDescSubmittedAt is the schema descriptor for submitted_at field.
+	backfillDescSubmittedAt := backfillFields[5].Descriptor()
+	// backfill.DefaultSubmittedAt holds the default value on creation for the submitted_at field.
+	backfill.DefaultSubmittedAt = backfillDescSubmittedAt.Default.(func() time.Time)
+	// backfillDescID is the schema descriptor for id field.
+	backfillDescID := backfillFields[0].Descriptor()
+	// backfill.DefaultID holds the default value on creation for the id field.
+	backfill.DefaultID = backfillDescID.Default.(func() uuid.UUID)
 	concurrencytokenFields := schema.ConcurrencyToken{}.Fields()
 	_ = concurrencytokenFields
 	// concurrencytokenDescAssetName is the schema descriptor for asset_name field.
@@ -331,6 +390,122 @@ func init() {
 	runstepDescID := runstepFields[0].Descriptor()
 	// runstep.DefaultID holds the default value on creation for the id field.
 	runstep.DefaultID = runstepDescID.Default.(func() uuid.UUID)
+	scheduleFields := schema.Schedule{}.Fields()
+	_ = scheduleFields
+	// scheduleDescAssetName is the schema descriptor for asset_name field.
+	scheduleDescAssetName := scheduleFields[1].Descriptor()
+	// schedule.AssetNameValidator is a validator for the "asset_name" field. It is called by the builders before save.
+	schedule.AssetNameValidator = func() func(string) error {
+		validators := scheduleDescAssetName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(asset_name string) error {
+			for _, fn := range fns {
+				if err := fn(asset_name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// scheduleDescCronExpr is the schema descriptor for cron_expr field.
+	scheduleDescCronExpr := scheduleFields[2].Descriptor()
+	// schedule.CronExprValidator is a validator for the "cron_expr" field. It is called by the builders before save.
+	schedule.CronExprValidator = func() func(string) error {
+		validators := scheduleDescCronExpr.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(cron_expr string) error {
+			for _, fn := range fns {
+				if err := fn(cron_expr); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// scheduleDescCreatedAt is the schema descriptor for created_at field.
+	scheduleDescCreatedAt := scheduleFields[6].Descriptor()
+	// schedule.DefaultCreatedAt holds the default value on creation for the created_at field.
+	schedule.DefaultCreatedAt = scheduleDescCreatedAt.Default.(func() time.Time)
+	// scheduleDescUpdatedAt is the schema descriptor for updated_at field.
+	scheduleDescUpdatedAt := scheduleFields[7].Descriptor()
+	// schedule.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	schedule.DefaultUpdatedAt = scheduleDescUpdatedAt.Default.(func() time.Time)
+	// schedule.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	schedule.UpdateDefaultUpdatedAt = scheduleDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// scheduleDescID is the schema descriptor for id field.
+	scheduleDescID := scheduleFields[0].Descriptor()
+	// schedule.DefaultID holds the default value on creation for the id field.
+	schedule.DefaultID = scheduleDescID.Default.(func() uuid.UUID)
+	sensorFields := schema.Sensor{}.Fields()
+	_ = sensorFields
+	// sensorDescAssetName is the schema descriptor for asset_name field.
+	sensorDescAssetName := sensorFields[1].Descriptor()
+	// sensor.AssetNameValidator is a validator for the "asset_name" field. It is called by the builders before save.
+	sensor.AssetNameValidator = func() func(string) error {
+		validators := sensorDescAssetName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(asset_name string) error {
+			for _, fn := range fns {
+				if err := fn(asset_name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// sensorDescSensorName is the schema descriptor for sensor_name field.
+	sensorDescSensorName := sensorFields[2].Descriptor()
+	// sensor.SensorNameValidator is a validator for the "sensor_name" field. It is called by the builders before save.
+	sensor.SensorNameValidator = func() func(string) error {
+		validators := sensorDescSensorName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(sensor_name string) error {
+			for _, fn := range fns {
+				if err := fn(sensor_name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// sensorDescMinIntervalSeconds is the schema descriptor for min_interval_seconds field.
+	sensorDescMinIntervalSeconds := sensorFields[3].Descriptor()
+	// sensor.DefaultMinIntervalSeconds holds the default value on creation for the min_interval_seconds field.
+	sensor.DefaultMinIntervalSeconds = sensorDescMinIntervalSeconds.Default.(int64)
+	// sensorDescLastRunKey is the schema descriptor for last_run_key field.
+	sensorDescLastRunKey := sensorFields[6].Descriptor()
+	// sensor.LastRunKeyValidator is a validator for the "last_run_key" field. It is called by the builders before save.
+	sensor.LastRunKeyValidator = sensorDescLastRunKey.Validators[0].(func(string) error)
+	// sensorDescConsecutiveFailures is the schema descriptor for consecutive_failures field.
+	sensorDescConsecutiveFailures := sensorFields[8].Descriptor()
+	// sensor.DefaultConsecutiveFailures holds the default value on creation for the consecutive_failures field.
+	sensor.DefaultConsecutiveFailures = sensorDescConsecutiveFailures.Default.(int)
+	// sensorDescCreatedAt is the schema descriptor for created_at field.
+	sensorDescCreatedAt := sensorFields[10].Descriptor()
+	// sensor.DefaultCreatedAt holds the default value on creation for the created_at field.
+	sensor.DefaultCreatedAt = sensorDescCreatedAt.Default.(func() time.Time)
+	// sensorDescUpdatedAt is the schema descriptor for updated_at field.
+	sensorDescUpdatedAt := sensorFields[11].Descriptor()
+	// sensor.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	sensor.DefaultUpdatedAt = sensorDescUpdatedAt.Default.(func() time.Time)
+	// sensor.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	sensor.UpdateDefaultUpdatedAt = sensorDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// sensorDescID is the schema descriptor for id field.
+	sensorDescID := sensorFields[0].Descriptor()
+	// sensor.DefaultID holds the default value on creation for the id field.
+	sensor.DefaultID = sensorDescID.Default.(func() uuid.UUID)
 	userFields := schema.User{}.Fields()
 	_ = userFields
 	// userDescEmail is the schema descriptor for email field.

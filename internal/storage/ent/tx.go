@@ -12,6 +12,8 @@ import (
 // Tx is a transactional client that is created by calling Client.Tx().
 type Tx struct {
 	config
+	// Backfill is the client for interacting with the Backfill builders.
+	Backfill *BackfillClient
 	// ConcurrencyToken is the client for interacting with the ConcurrencyToken builders.
 	ConcurrencyToken *ConcurrencyTokenClient
 	// EventLog is the client for interacting with the EventLog builders.
@@ -22,6 +24,10 @@ type Tx struct {
 	Run *RunClient
 	// RunStep is the client for interacting with the RunStep builders.
 	RunStep *RunStepClient
+	// Schedule is the client for interacting with the Schedule builders.
+	Schedule *ScheduleClient
+	// Sensor is the client for interacting with the Sensor builders.
+	Sensor *SensorClient
 	// User is the client for interacting with the User builders.
 	User *UserClient
 
@@ -155,11 +161,14 @@ func (tx *Tx) Client() *Client {
 }
 
 func (tx *Tx) init() {
+	tx.Backfill = NewBackfillClient(tx.config)
 	tx.ConcurrencyToken = NewConcurrencyTokenClient(tx.config)
 	tx.EventLog = NewEventLogClient(tx.config)
 	tx.InviteToken = NewInviteTokenClient(tx.config)
 	tx.Run = NewRunClient(tx.config)
 	tx.RunStep = NewRunStepClient(tx.config)
+	tx.Schedule = NewScheduleClient(tx.config)
+	tx.Sensor = NewSensorClient(tx.config)
 	tx.User = NewUserClient(tx.config)
 }
 
@@ -170,7 +179,7 @@ func (tx *Tx) init() {
 // of them in order to commit or rollback the transaction.
 //
 // If a closed transaction is embedded in one of the generated entities, and the entity
-// applies a query, for example: ConcurrencyToken.QueryXXX(), the query will be executed
+// applies a query, for example: Backfill.QueryXXX(), the query will be executed
 // through the driver which created this transaction.
 //
 // Note that txDriver is not goroutine safe.

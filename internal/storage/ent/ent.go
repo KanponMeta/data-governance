@@ -12,11 +12,14 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"github.com/kanpon/data-governance/internal/storage/ent/backfill"
 	"github.com/kanpon/data-governance/internal/storage/ent/concurrencytoken"
 	"github.com/kanpon/data-governance/internal/storage/ent/eventlog"
 	"github.com/kanpon/data-governance/internal/storage/ent/invitetoken"
 	"github.com/kanpon/data-governance/internal/storage/ent/run"
 	"github.com/kanpon/data-governance/internal/storage/ent/runstep"
+	"github.com/kanpon/data-governance/internal/storage/ent/schedule"
+	"github.com/kanpon/data-governance/internal/storage/ent/sensor"
 	"github.com/kanpon/data-governance/internal/storage/ent/user"
 )
 
@@ -78,11 +81,14 @@ var (
 func checkColumn(table, column string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
+			backfill.Table:         backfill.ValidColumn,
 			concurrencytoken.Table: concurrencytoken.ValidColumn,
 			eventlog.Table:         eventlog.ValidColumn,
 			invitetoken.Table:      invitetoken.ValidColumn,
 			run.Table:              run.ValidColumn,
 			runstep.Table:          runstep.ValidColumn,
+			schedule.Table:         schedule.ValidColumn,
+			sensor.Table:           sensor.ValidColumn,
 			user.Table:             user.ValidColumn,
 		})
 	})

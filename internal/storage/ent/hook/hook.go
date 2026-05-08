@@ -9,6 +9,18 @@ import (
 	"github.com/kanpon/data-governance/internal/storage/ent"
 )
 
+// The BackfillFunc type is an adapter to allow the use of ordinary
+// function as Backfill mutator.
+type BackfillFunc func(context.Context, *ent.BackfillMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f BackfillFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.BackfillMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.BackfillMutation", m)
+}
+
 // The ConcurrencyTokenFunc type is an adapter to allow the use of ordinary
 // function as ConcurrencyToken mutator.
 type ConcurrencyTokenFunc func(context.Context, *ent.ConcurrencyTokenMutation) (ent.Value, error)
@@ -67,6 +79,30 @@ func (f RunStepFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, err
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RunStepMutation", m)
+}
+
+// The ScheduleFunc type is an adapter to allow the use of ordinary
+// function as Schedule mutator.
+type ScheduleFunc func(context.Context, *ent.ScheduleMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ScheduleFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ScheduleMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ScheduleMutation", m)
+}
+
+// The SensorFunc type is an adapter to allow the use of ordinary
+// function as Sensor mutator.
+type SensorFunc func(context.Context, *ent.SensorMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f SensorFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.SensorMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SensorMutation", m)
 }
 
 // The UserFunc type is an adapter to allow the use of ordinary

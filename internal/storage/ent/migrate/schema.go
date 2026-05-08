@@ -9,6 +9,34 @@ import (
 )
 
 var (
+	// BackfillsColumns holds the columns for the "backfills" table.
+	BackfillsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "asset_name", Type: field.TypeString, Size: 256},
+		{Name: "partition_spec", Type: field.TypeString, Size: 1024},
+		{Name: "status", Type: field.TypeString, Size: 16, Default: "submitted"},
+		{Name: "total_partitions", Type: field.TypeInt, Default: 0},
+		{Name: "submitted_at", Type: field.TypeTime},
+		{Name: "completed_at", Type: field.TypeTime, Nullable: true},
+	}
+	// BackfillsTable holds the schema information for the "backfills" table.
+	BackfillsTable = &schema.Table{
+		Name:       "backfills",
+		Columns:    BackfillsColumns,
+		PrimaryKey: []*schema.Column{BackfillsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "backfill_asset_name",
+				Unique:  false,
+				Columns: []*schema.Column{BackfillsColumns[1]},
+			},
+			{
+				Name:    "backfill_status_submitted_at",
+				Unique:  false,
+				Columns: []*schema.Column{BackfillsColumns[3], BackfillsColumns[5]},
+			},
+		},
+	}
 	// ConcurrencyTokensColumns holds the columns for the "concurrency_tokens" table.
 	ConcurrencyTokensColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeUUID},
@@ -186,6 +214,73 @@ var (
 			},
 		},
 	}
+	// SchedulesColumns holds the columns for the "schedules" table.
+	SchedulesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "asset_name", Type: field.TypeString, Size: 256},
+		{Name: "cron_expr", Type: field.TypeString, Size: 128},
+		{Name: "last_fire_at", Type: field.TypeTime, Nullable: true},
+		{Name: "next_fire_at", Type: field.TypeTime, Nullable: true},
+		{Name: "paused_at", Type: field.TypeTime, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// SchedulesTable holds the schema information for the "schedules" table.
+	SchedulesTable = &schema.Table{
+		Name:       "schedules",
+		Columns:    SchedulesColumns,
+		PrimaryKey: []*schema.Column{SchedulesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "schedule_asset_name",
+				Unique:  false,
+				Columns: []*schema.Column{SchedulesColumns[1]},
+			},
+			{
+				Name:    "schedule_next_fire_at",
+				Unique:  false,
+				Columns: []*schema.Column{SchedulesColumns[4]},
+			},
+			{
+				Name:    "schedule_paused_at_next_fire_at",
+				Unique:  false,
+				Columns: []*schema.Column{SchedulesColumns[5], SchedulesColumns[4]},
+			},
+		},
+	}
+	// SensorsColumns holds the columns for the "sensors" table.
+	SensorsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "asset_name", Type: field.TypeString, Size: 256},
+		{Name: "sensor_name", Type: field.TypeString, Size: 128},
+		{Name: "min_interval_seconds", Type: field.TypeInt64, Default: 30},
+		{Name: "last_evaluated_at", Type: field.TypeTime, Nullable: true},
+		{Name: "last_fired_at", Type: field.TypeTime, Nullable: true},
+		{Name: "last_run_key", Type: field.TypeString, Nullable: true, Size: 256},
+		{Name: "cooldown_until", Type: field.TypeTime, Nullable: true},
+		{Name: "consecutive_failures", Type: field.TypeInt, Default: 0},
+		{Name: "disabled_at", Type: field.TypeTime, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// SensorsTable holds the schema information for the "sensors" table.
+	SensorsTable = &schema.Table{
+		Name:       "sensors",
+		Columns:    SensorsColumns,
+		PrimaryKey: []*schema.Column{SensorsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "sensor_asset_name_sensor_name",
+				Unique:  false,
+				Columns: []*schema.Column{SensorsColumns[1], SensorsColumns[2]},
+			},
+			{
+				Name:    "sensor_disabled_at_last_evaluated_at",
+				Unique:  false,
+				Columns: []*schema.Column{SensorsColumns[9], SensorsColumns[4]},
+			},
+		},
+	}
 	// UserColumns holds the columns for the "user" table.
 	UserColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeUUID},
@@ -211,16 +306,22 @@ var (
 	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
+		BackfillsTable,
 		ConcurrencyTokensTable,
 		EventLogTable,
 		InviteTokenTable,
 		RunsTable,
 		RunStepsTable,
+		SchedulesTable,
+		SensorsTable,
 		UserTable,
 	}
 )
 
 func init() {
+	BackfillsTable.Annotation = &entsql.Annotation{
+		Table: "backfills",
+	}
 	ConcurrencyTokensTable.Annotation = &entsql.Annotation{
 		Table: "concurrency_tokens",
 	}
@@ -235,6 +336,12 @@ func init() {
 	}
 	RunStepsTable.Annotation = &entsql.Annotation{
 		Table: "run_steps",
+	}
+	SchedulesTable.Annotation = &entsql.Annotation{
+		Table: "schedules",
+	}
+	SensorsTable.Annotation = &entsql.Annotation{
+		Table: "sensors",
 	}
 	UserTable.Annotation = &entsql.Annotation{
 		Table: "user",

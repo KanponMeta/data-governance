@@ -6,6 +6,9 @@ import (
 	"entgo.io/ent/dialect/sql"
 )
 
+// Backfill is the predicate function for backfill builders.
+type Backfill func(*sql.Selector)
+
 // ConcurrencyToken is the predicate function for concurrencytoken builders.
 type ConcurrencyToken func(*sql.Selector)
 
@@ -20,6 +23,12 @@ type Run func(*sql.Selector)
 
 // RunStep is the predicate function for runstep builders.
 type RunStep func(*sql.Selector)
+
+// Schedule is the predicate function for schedule builders.
+type Schedule func(*sql.Selector)
+
+// Sensor is the predicate function for sensor builders.
+type Sensor func(*sql.Selector)
 
 // User is the predicate function for user builders.
 type User func(*sql.Selector)

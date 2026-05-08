@@ -15,11 +15,14 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
+	"github.com/kanpon/data-governance/internal/storage/ent/backfill"
 	"github.com/kanpon/data-governance/internal/storage/ent/concurrencytoken"
 	"github.com/kanpon/data-governance/internal/storage/ent/eventlog"
 	"github.com/kanpon/data-governance/internal/storage/ent/invitetoken"
 	"github.com/kanpon/data-governance/internal/storage/ent/run"
 	"github.com/kanpon/data-governance/internal/storage/ent/runstep"
+	"github.com/kanpon/data-governance/internal/storage/ent/schedule"
+	"github.com/kanpon/data-governance/internal/storage/ent/sensor"
 	"github.com/kanpon/data-governance/internal/storage/ent/user"
 )
 
@@ -28,6 +31,8 @@ type Client struct {
 	config
 	// Schema is the client for creating, migrating and dropping schema.
 	Schema *migrate.Schema
+	// Backfill is the client for interacting with the Backfill builders.
+	Backfill *BackfillClient
 	// ConcurrencyToken is the client for interacting with the ConcurrencyToken builders.
 	ConcurrencyToken *ConcurrencyTokenClient
 	// EventLog is the client for interacting with the EventLog builders.
@@ -38,6 +43,10 @@ type Client struct {
 	Run *RunClient
 	// RunStep is the client for interacting with the RunStep builders.
 	RunStep *RunStepClient
+	// Schedule is the client for interacting with the Schedule builders.
+	Schedule *ScheduleClient
+	// Sensor is the client for interacting with the Sensor builders.
+	Sensor *SensorClient
 	// User is the client for interacting with the User builders.
 	User *UserClient
 }
@@ -51,11 +60,14 @@ func NewClient(opts ...Option) *Client {
 
 func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
+	c.Backfill = NewBackfillClient(c.config)
 	c.ConcurrencyToken = NewConcurrencyTokenClient(c.config)
 	c.EventLog = NewEventLogClient(c.config)
 	c.InviteToken = NewInviteTokenClient(c.config)
 	c.Run = NewRunClient(c.config)
 	c.RunStep = NewRunStepClient(c.config)
+	c.Schedule = NewScheduleClient(c.config)
+	c.Sensor = NewSensorClient(c.config)
 	c.User = NewUserClient(c.config)
 }
 
@@ -149,11 +161,14 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	return &Tx{
 		ctx:              ctx,
 		config:           cfg,
+		Backfill:         NewBackfillClient(cfg),
 		ConcurrencyToken: NewConcurrencyTokenClient(cfg),
 		EventLog:         NewEventLogClient(cfg),
 		InviteToken:      NewInviteTokenClient(cfg),
 		Run:              NewRunClient(cfg),
 		RunStep:          NewRunStepClient(cfg),
+		Schedule:         NewScheduleClient(cfg),
+		Sensor:           NewSensorClient(cfg),
 		User:             NewUserClient(cfg),
 	}, nil
 }
@@ -174,11 +189,14 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	return &Tx{
 		ctx:              ctx,
 		config:           cfg,
+		Backfill:         NewBackfillClient(cfg),
 		ConcurrencyToken: NewConcurrencyTokenClient(cfg),
 		EventLog:         NewEventLogClient(cfg),
 		InviteToken:      NewInviteTokenClient(cfg),
 		Run:              NewRunClient(cfg),
 		RunStep:          NewRunStepClient(cfg),
+		Schedule:         NewScheduleClient(cfg),
+		Sensor:           NewSensorClient(cfg),
 		User:             NewUserClient(cfg),
 	}, nil
 }
@@ -186,7 +204,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 // Debug returns a new debug-client. It's used to get verbose logging on specific operations.
 //
 //	client.Debug().
-//		ConcurrencyToken.
+//		Backfill.
 //		Query().
 //		Count(ctx)
 func (c *Client) Debug() *Client {
@@ -209,7 +227,8 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.ConcurrencyToken, c.EventLog, c.InviteToken, c.Run, c.RunStep, c.User,
+		c.Backfill, c.ConcurrencyToken, c.EventLog, c.InviteToken, c.Run, c.RunStep,
+		c.Schedule, c.Sensor, c.User,
 	} {
 		n.Use(hooks...)
 	}
@@ -219,7 +238,8 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.ConcurrencyToken, c.EventLog, c.InviteToken, c.Run, c.RunStep, c.User,
+		c.Backfill, c.ConcurrencyToken, c.EventLog, c.InviteToken, c.Run, c.RunStep,
+		c.Schedule, c.Sensor, c.User,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -228,6 +248,8 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 // Mutate implements the ent.Mutator interface.
 func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 	switch m := m.(type) {
+	case *BackfillMutation:
+		return c.Backfill.mutate(ctx, m)
 	case *ConcurrencyTokenMutation:
 		return c.ConcurrencyToken.mutate(ctx, m)
 	case *EventLogMutation:
@@ -238,10 +260,147 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Run.mutate(ctx, m)
 	case *RunStepMutation:
 		return c.RunStep.mutate(ctx, m)
+	case *ScheduleMutation:
+		return c.Schedule.mutate(ctx, m)
+	case *SensorMutation:
+		return c.Sensor.mutate(ctx, m)
 	case *UserMutation:
 		return c.User.mutate(ctx, m)
 	default:
 		return nil, fmt.Errorf("ent: unknown mutation type %T", m)
+	}
+}
+
+// BackfillClient is a client for the Backfill schema.
+type BackfillClient struct {
+	config
+}
+
+// NewBackfillClient returns a client for the Backfill from the given config.
+func NewBackfillClient(c config) *BackfillClient {
+	return &BackfillClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `backfill.Hooks(f(g(h())))`.
+func (c *BackfillClient) Use(hooks ...Hook) {
+	c.hooks.Backfill = append(c.hooks.Backfill, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `backfill.Intercept(f(g(h())))`.
+func (c *BackfillClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Backfill = append(c.inters.Backfill, interceptors...)
+}
+
+// Create returns a builder for creating a Backfill entity.
+func (c *BackfillClient) Create() *BackfillCreate {
+	mutation := newBackfillMutation(c.config, OpCreate)
+	return &BackfillCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Backfill entities.
+func (c *BackfillClient) CreateBulk(builders ...*BackfillCreate) *BackfillCreateBulk {
+	return &BackfillCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *BackfillClient) MapCreateBulk(slice any, setFunc func(*BackfillCreate, int)) *BackfillCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &BackfillCreateBulk{err: fmt.Errorf("calling to BackfillClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*BackfillCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &BackfillCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Backfill.
+func (c *BackfillClient) Update() *BackfillUpdate {
+	mutation := newBackfillMutation(c.config, OpUpdate)
+	return &BackfillUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *BackfillClient) UpdateOne(b *Backfill) *BackfillUpdateOne {
+	mutation := newBackfillMutation(c.config, OpUpdateOne, withBackfill(b))
+	return &BackfillUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *BackfillClient) UpdateOneID(id uuid.UUID) *BackfillUpdateOne {
+	mutation := newBackfillMutation(c.config, OpUpdateOne, withBackfillID(id))
+	return &BackfillUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Backfill.
+func (c *BackfillClient) Delete() *BackfillDelete {
+	mutation := newBackfillMutation(c.config, OpDelete)
+	return &BackfillDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *BackfillClient) DeleteOne(b *Backfill) *BackfillDeleteOne {
+	return c.DeleteOneID(b.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *BackfillClient) DeleteOneID(id uuid.UUID) *BackfillDeleteOne {
+	builder := c.Delete().Where(backfill.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &BackfillDeleteOne{builder}
+}
+
+// Query returns a query builder for Backfill.
+func (c *BackfillClient) Query() *BackfillQuery {
+	return &BackfillQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeBackfill},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Backfill entity by its id.
+func (c *BackfillClient) Get(ctx context.Context, id uuid.UUID) (*Backfill, error) {
+	return c.Query().Where(backfill.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *BackfillClient) GetX(ctx context.Context, id uuid.UUID) *Backfill {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *BackfillClient) Hooks() []Hook {
+	return c.hooks.Backfill
+}
+
+// Interceptors returns the client interceptors.
+func (c *BackfillClient) Interceptors() []Interceptor {
+	return c.inters.Backfill
+}
+
+func (c *BackfillClient) mutate(ctx context.Context, m *BackfillMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&BackfillCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&BackfillUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&BackfillUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&BackfillDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Backfill mutation op: %q", m.Op())
 	}
 }
 
@@ -910,6 +1069,272 @@ func (c *RunStepClient) mutate(ctx context.Context, m *RunStepMutation) (Value, 
 	}
 }
 
+// ScheduleClient is a client for the Schedule schema.
+type ScheduleClient struct {
+	config
+}
+
+// NewScheduleClient returns a client for the Schedule from the given config.
+func NewScheduleClient(c config) *ScheduleClient {
+	return &ScheduleClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `schedule.Hooks(f(g(h())))`.
+func (c *ScheduleClient) Use(hooks ...Hook) {
+	c.hooks.Schedule = append(c.hooks.Schedule, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `schedule.Intercept(f(g(h())))`.
+func (c *ScheduleClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Schedule = append(c.inters.Schedule, interceptors...)
+}
+
+// Create returns a builder for creating a Schedule entity.
+func (c *ScheduleClient) Create() *ScheduleCreate {
+	mutation := newScheduleMutation(c.config, OpCreate)
+	return &ScheduleCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Schedule entities.
+func (c *ScheduleClient) CreateBulk(builders ...*ScheduleCreate) *ScheduleCreateBulk {
+	return &ScheduleCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ScheduleClient) MapCreateBulk(slice any, setFunc func(*ScheduleCreate, int)) *ScheduleCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ScheduleCreateBulk{err: fmt.Errorf("calling to ScheduleClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ScheduleCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ScheduleCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Schedule.
+func (c *ScheduleClient) Update() *ScheduleUpdate {
+	mutation := newScheduleMutation(c.config, OpUpdate)
+	return &ScheduleUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ScheduleClient) UpdateOne(s *Schedule) *ScheduleUpdateOne {
+	mutation := newScheduleMutation(c.config, OpUpdateOne, withSchedule(s))
+	return &ScheduleUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ScheduleClient) UpdateOneID(id uuid.UUID) *ScheduleUpdateOne {
+	mutation := newScheduleMutation(c.config, OpUpdateOne, withScheduleID(id))
+	return &ScheduleUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Schedule.
+func (c *ScheduleClient) Delete() *ScheduleDelete {
+	mutation := newScheduleMutation(c.config, OpDelete)
+	return &ScheduleDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ScheduleClient) DeleteOne(s *Schedule) *ScheduleDeleteOne {
+	return c.DeleteOneID(s.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ScheduleClient) DeleteOneID(id uuid.UUID) *ScheduleDeleteOne {
+	builder := c.Delete().Where(schedule.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ScheduleDeleteOne{builder}
+}
+
+// Query returns a query builder for Schedule.
+func (c *ScheduleClient) Query() *ScheduleQuery {
+	return &ScheduleQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeSchedule},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Schedule entity by its id.
+func (c *ScheduleClient) Get(ctx context.Context, id uuid.UUID) (*Schedule, error) {
+	return c.Query().Where(schedule.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ScheduleClient) GetX(ctx context.Context, id uuid.UUID) *Schedule {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *ScheduleClient) Hooks() []Hook {
+	return c.hooks.Schedule
+}
+
+// Interceptors returns the client interceptors.
+func (c *ScheduleClient) Interceptors() []Interceptor {
+	return c.inters.Schedule
+}
+
+func (c *ScheduleClient) mutate(ctx context.Context, m *ScheduleMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ScheduleCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ScheduleUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ScheduleUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ScheduleDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Schedule mutation op: %q", m.Op())
+	}
+}
+
+// SensorClient is a client for the Sensor schema.
+type SensorClient struct {
+	config
+}
+
+// NewSensorClient returns a client for the Sensor from the given config.
+func NewSensorClient(c config) *SensorClient {
+	return &SensorClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `sensor.Hooks(f(g(h())))`.
+func (c *SensorClient) Use(hooks ...Hook) {
+	c.hooks.Sensor = append(c.hooks.Sensor, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `sensor.Intercept(f(g(h())))`.
+func (c *SensorClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Sensor = append(c.inters.Sensor, interceptors...)
+}
+
+// Create returns a builder for creating a Sensor entity.
+func (c *SensorClient) Create() *SensorCreate {
+	mutation := newSensorMutation(c.config, OpCreate)
+	return &SensorCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Sensor entities.
+func (c *SensorClient) CreateBulk(builders ...*SensorCreate) *SensorCreateBulk {
+	return &SensorCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *SensorClient) MapCreateBulk(slice any, setFunc func(*SensorCreate, int)) *SensorCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &SensorCreateBulk{err: fmt.Errorf("calling to SensorClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*SensorCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &SensorCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Sensor.
+func (c *SensorClient) Update() *SensorUpdate {
+	mutation := newSensorMutation(c.config, OpUpdate)
+	return &SensorUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *SensorClient) UpdateOne(s *Sensor) *SensorUpdateOne {
+	mutation := newSensorMutation(c.config, OpUpdateOne, withSensor(s))
+	return &SensorUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *SensorClient) UpdateOneID(id uuid.UUID) *SensorUpdateOne {
+	mutation := newSensorMutation(c.config, OpUpdateOne, withSensorID(id))
+	return &SensorUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Sensor.
+func (c *SensorClient) Delete() *SensorDelete {
+	mutation := newSensorMutation(c.config, OpDelete)
+	return &SensorDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *SensorClient) DeleteOne(s *Sensor) *SensorDeleteOne {
+	return c.DeleteOneID(s.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *SensorClient) DeleteOneID(id uuid.UUID) *SensorDeleteOne {
+	builder := c.Delete().Where(sensor.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &SensorDeleteOne{builder}
+}
+
+// Query returns a query builder for Sensor.
+func (c *SensorClient) Query() *SensorQuery {
+	return &SensorQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeSensor},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Sensor entity by its id.
+func (c *SensorClient) Get(ctx context.Context, id uuid.UUID) (*Sensor, error) {
+	return c.Query().Where(sensor.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *SensorClient) GetX(ctx context.Context, id uuid.UUID) *Sensor {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *SensorClient) Hooks() []Hook {
+	return c.hooks.Sensor
+}
+
+// Interceptors returns the client interceptors.
+func (c *SensorClient) Interceptors() []Interceptor {
+	return c.inters.Sensor
+}
+
+func (c *SensorClient) mutate(ctx context.Context, m *SensorMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&SensorCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&SensorUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&SensorUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&SensorDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Sensor mutation op: %q", m.Op())
+	}
+}
+
 // UserClient is a client for the User schema.
 type UserClient struct {
 	config
@@ -1046,9 +1471,11 @@ func (c *UserClient) mutate(ctx context.Context, m *UserMutation) (Value, error)
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		ConcurrencyToken, EventLog, InviteToken, Run, RunStep, User []ent.Hook
+		Backfill, ConcurrencyToken, EventLog, InviteToken, Run, RunStep, Schedule,
+		Sensor, User []ent.Hook
 	}
 	inters struct {
-		ConcurrencyToken, EventLog, InviteToken, Run, RunStep, User []ent.Interceptor
+		Backfill, ConcurrencyToken, EventLog, InviteToken, Run, RunStep, Schedule,
+		Sensor, User []ent.Interceptor
 	}
 )
