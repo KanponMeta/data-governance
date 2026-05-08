@@ -96,7 +96,8 @@ func (b *BigQuery) Schema(ctx context.Context, req connector.SchemaRequest) (con
 }
 
 // Read returns rows from the given BigQuery table using SELECT *.
-// Asset identifier must be "project.dataset.table".
+// Asset identifier may be "project.dataset.table" or "dataset.table"; in the
+// latter case, the configured default project is used.
 func (b *BigQuery) Read(ctx context.Context, req connector.ReadRequest) (connector.ReadResponse, error) {
 	if err := b.checkClosed(); err != nil {
 		return connector.ReadResponse{}, err
@@ -107,6 +108,9 @@ func (b *BigQuery) Read(ctx context.Context, req connector.ReadRequest) (connect
 	project, dataset, table, err := splitIdentifier(req.Asset.Identifier)
 	if err != nil {
 		return connector.ReadResponse{}, err
+	}
+	if project == "" {
+		project = b.project
 	}
 	q := fmt.Sprintf("SELECT * FROM `%s`.`%s`.`%s`", project, dataset, table)
 	if req.Limit > 0 {
