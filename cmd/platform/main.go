@@ -58,6 +58,28 @@ func main() {
 			slog.Error("platform.scheduler_failed", "error", err)
 			os.Exit(1)
 		}
+	case "backfill":
+		// `./platform backfill <asset> --partitions=<spec>` submits a backfill;
+		// `./platform backfill status <backfill_id>` aggregates run state counts.
+		// The dispatch is layered on top of the case so plan 03-06's scheduler
+		// case stays untouched (avoids the dual-edit merge conflict that motivated
+		// sequencing 03-06 → 03-07).
+		sub := ""
+		if len(os.Args) > 2 {
+			sub = os.Args[2]
+		}
+		switch sub {
+		case "status":
+			if err := runBackfillStatus(os.Args[3:]); err != nil {
+				slog.Error("platform.backfill_status_failed", "error", err)
+				os.Exit(1)
+			}
+		default:
+			if err := runBackfill(os.Args[2:]); err != nil {
+				slog.Error("platform.backfill_failed", "error", err)
+				os.Exit(1)
+			}
+		}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
 		os.Exit(2)
