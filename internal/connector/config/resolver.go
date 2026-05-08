@@ -44,7 +44,7 @@ func (r *FactoryRegistry) BuildAll(cfg *Config, reg *connector.Registry) error {
 		if !ok {
 			return fmt.Errorf("config: unknown connector type %q for %q (register a factory with RegisterFactory)", cc.Type, name)
 		}
-		inst, err := f(cc.Params)
+		inst, err := safeBuild(f, cc.Params)
 		if err != nil {
 			return fmt.Errorf("config: build connector %q: %w", name, err)
 		}
@@ -53,4 +53,16 @@ func (r *FactoryRegistry) BuildAll(cfg *Config, reg *connector.Registry) error {
 		}
 	}
 	return nil
+}
+
+// safeBuild invokes f and converts any panic into an error so a misbehaving
+// factory aborts startup with a clear message rather than crashing the worker
+// process (T-02-05-05).
+func safeBuild(f Factory, params map[string]interface{}) (inst connector.Connector, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("factory panicked: %v", r)
+		}
+	}()
+	return f(params)
 }
