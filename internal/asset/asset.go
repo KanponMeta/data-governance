@@ -11,7 +11,12 @@
 // types are treated as public API from this point onward.
 package asset
 
-import "context"
+import (
+	"context"
+	"time"
+
+	"github.com/kanpon/data-governance/internal/partition"
+)
 
 // MaterializeFunc is the user-supplied transformation. AssetIO wraps connector
 // calls (D-04), so user code does not import internal/connector directly.
@@ -32,6 +37,40 @@ type Resource struct {
 	Weight int    // default 1; tokens consumed per acquisition
 }
 
+// ScheduleSpec is the user-facing cron schedule attached via Builder.Schedule (D-03, D-12).
+// CronExpr accepts standard 5-field expressions plus robfig/cron/v3 descriptors
+// (e.g., @every 30s, @hourly, @daily). TZ is optional; defaults to "UTC" when empty
+// and affects only cron firing wall-clock alignment, not partition-key encoding.
+type ScheduleSpec struct {
+	CronExpr string
+	TZ       string
+}
+
+// SensorResult is returned by SensorFunc to indicate whether the sensor fired (D-06).
+// RunKey is the dedup key compared against sensors.last_run_key (layer 1 of D-07);
+// if equal to the previous fire, no run is enqueued.
+// Payload is a Phase 4 lineage hook — flows into MaterializeResult.Metadata of the
+// triggered run (consistent with Phase 2 D-04 reasoning).
+type SensorResult struct {
+	Fired   bool
+	RunKey  string
+	Payload map[string]any
+}
+
+// SensorFunc is the user-supplied evaluation closure (D-06). It is called by the
+// scheduler-daemon tick loop (plan 03-05) inside a per-sensor timeout.
+type SensorFunc func(ctx context.Context) (SensorResult, error)
+
+// SensorSpec attaches an event sensor to an asset via Builder.Sensor (D-06).
+// MinInterval is the minimum gap between evaluation calls (defaulted to 30s by the
+// daemon when zero). Cooldown is layer 2 of D-07's two-layer dedup; defaults to 0 (off).
+type SensorSpec struct {
+	Name        string
+	MinInterval time.Duration
+	Cooldown    time.Duration
+	Sense       SensorFunc
+}
+
 // Asset is the immutable runtime representation of a user-defined asset.
 // Construct only via asset.New(...).Build() or asset.New(...).Register().
 // Builder writes; Asset reads — all fields are private, accessed via methods.
@@ -42,6 +81,10 @@ type Asset struct {
 	materializeFn MaterializeFunc
 	retryPolicy   RetryPolicy
 	resources     []Resource
+	// Phase 3 additions (D-03, D-06, D-09, D-12):
+	schedule   *ScheduleSpec
+	sensors    []SensorSpec
+	partitions partition.PartitionStrategy
 }
 
 // Name returns the unique asset identifier.
@@ -65,3 +108,12 @@ func (a *Asset) RetryPolicy() RetryPolicy { return a.retryPolicy }
 // Resources returns a defensive copy of the resource constraint list (D-16).
 // Plan 02-03 uses these to acquire tokens from the concurrency token pool.
 func (a *Asset) Resources() []Resource { return append([]Resource(nil), a.resources...) }
+
+// Schedule returns the cron schedule attached via .Schedule(...). Nil if none (D-03).
+func (a *Asset) Schedule() *ScheduleSpec { return a.schedule }
+
+// Sensors returns a defensive copy of the attached SensorSpec list (D-06).
+func (a *Asset) Sensors() []SensorSpec { return append([]SensorSpec(nil), a.sensors...) }
+
+// Partitions returns the partition strategy attached via .Partitions(...) (D-09). Nil if none.
+func (a *Asset) Partitions() partition.PartitionStrategy { return a.partitions }

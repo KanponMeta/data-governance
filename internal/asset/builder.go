@@ -3,6 +3,10 @@ package asset
 import (
 	"errors"
 	"fmt"
+
+	"github.com/robfig/cron/v3"
+
+	"github.com/kanpon/data-governance/internal/partition"
 )
 
 var (
@@ -17,6 +21,32 @@ var (
 	// ErrEmptyName is returned by Build/Register when New("") was called with
 	// an empty name string.
 	ErrEmptyName = errors.New("asset: New(name) requires non-empty name")
+
+	// ErrInvalidCron is returned by Build/Register when ScheduleSpec.CronExpr
+	// fails to parse via robfig/cron/v3 (D-03, T-03-02-01 mitigation, Pitfall 1).
+	ErrInvalidCron = errors.New("asset: invalid cron expression")
+
+	// ErrSensorNameRequired is returned when SensorSpec.Name is empty (D-06).
+	ErrSensorNameRequired = errors.New("asset: SensorSpec.Name is required")
+
+	// ErrSensorFuncRequired is returned when SensorSpec.Sense is nil (D-06).
+	ErrSensorFuncRequired = errors.New("asset: SensorSpec.Sense is required")
+
+	// ErrSensorMinIntervalNegative is returned when MinInterval < 0
+	// (T-03-02-03 — guards against a busy-loop sensor evaluation).
+	ErrSensorMinIntervalNegative = errors.New("asset: SensorSpec.MinInterval must be ≥ 0")
+
+	// ErrPartitionInvalidKey is returned when a CategoryPartitions key fails
+	// the validation rules in partition.ValidateCategoryKey (Pitfall 4).
+	ErrPartitionInvalidKey = errors.New("asset: CategoryPartitions key invalid")
+)
+
+// cronParser is initialised once and reused. Parser-only usage per D-03 — the
+// in-process Cron runner from robfig/cron/v3 is NEVER instantiated; the Phase 3
+// scheduler daemon (plan 03-05) uses the parser plus a Postgres-coordinated
+// SELECT FOR UPDATE SKIP LOCKED tick loop instead.
+var cronParser = cron.NewParser(
+	cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
 )
 
 // Builder accumulates configuration before Register() commits to the global
@@ -72,6 +102,31 @@ func (b *Builder) Resource(name string, weight int) *Builder {
 	return b
 }
 
+// Schedule attaches a cron expression to the asset (ORCH-05, D-03, D-12).
+// Validation is deferred to Build()/Register() — invalid expressions surface
+// there, ensuring fail-fast semantics before any scheduler daemon ever sees
+// the bad expression (Pitfall 1).
+func (b *Builder) Schedule(cronExpr string) *Builder {
+	b.a.schedule = &ScheduleSpec{CronExpr: cronExpr}
+	return b
+}
+
+// Sensor appends a SensorSpec to the asset (ORCH-06, D-06, D-12).
+// Multiple .Sensor calls are cumulative; each spec produces an independent
+// evaluation row in the sensors table (plan 03-04).
+func (b *Builder) Sensor(spec SensorSpec) *Builder {
+	b.a.sensors = append(b.a.sensors, spec)
+	return b
+}
+
+// Partitions attaches a partition strategy (ORCH-07/08, D-09, D-12).
+// At most one strategy per asset — successive calls overwrite (last wins).
+// Validation of category keys is deferred to Build()/Register() (Pitfall 4).
+func (b *Builder) Partitions(strategy partition.PartitionStrategy) *Builder {
+	b.a.partitions = strategy
+	return b
+}
+
 // Build validates the accumulated configuration and returns the *Asset WITHOUT
 // committing it to the process-global Default() registry.
 //
@@ -84,6 +139,9 @@ func (b *Builder) Resource(name string, weight int) *Builder {
 //   - name is empty (ErrEmptyName)
 //   - Materialize was not called (ErrMissingMaterialize)
 //   - Connector was not called (ErrMissingConnector)
+//   - Schedule cron expression fails to parse (ErrInvalidCron, D-03 / Pitfall 1)
+//   - SensorSpec.Name empty / Sense nil / MinInterval negative
+//   - CategoryPartitions key fails ValidateCategoryKey (Pitfall 4)
 func (b *Builder) Build() (*Asset, error) {
 	if b.a.name == "" {
 		return nil, fmt.Errorf("%w", ErrEmptyName)
@@ -93,6 +151,36 @@ func (b *Builder) Build() (*Asset, error) {
 	}
 	if b.a.connectorName == "" {
 		return nil, fmt.Errorf("%w (asset %q)", ErrMissingConnector, b.a.name)
+	}
+
+	// Phase 3 validation — defer to Build() so existing error semantics for
+	// Phase 2 paths are preserved (cron / sensor / category checks come last).
+	if b.a.schedule != nil {
+		if _, err := cronParser.Parse(b.a.schedule.CronExpr); err != nil {
+			return nil, fmt.Errorf("%w: %q: %v (asset %q)",
+				ErrInvalidCron, b.a.schedule.CronExpr, err, b.a.name)
+		}
+	}
+	for _, s := range b.a.sensors {
+		if s.Name == "" {
+			return nil, fmt.Errorf("%w (asset %q)", ErrSensorNameRequired, b.a.name)
+		}
+		if s.Sense == nil {
+			return nil, fmt.Errorf("%w (asset %q sensor %q)",
+				ErrSensorFuncRequired, b.a.name, s.Name)
+		}
+		if s.MinInterval < 0 {
+			return nil, fmt.Errorf("%w (asset %q sensor %q): %s",
+				ErrSensorMinIntervalNegative, b.a.name, s.Name, s.MinInterval)
+		}
+	}
+	if cp, ok := b.a.partitions.(partition.CategoryPartitions); ok {
+		for _, k := range cp.Keys {
+			if err := partition.ValidateCategoryKey(k); err != nil {
+				return nil, fmt.Errorf("%w: %v (asset %q)",
+					ErrPartitionInvalidKey, err, b.a.name)
+			}
+		}
 	}
 	return b.a, nil
 }
