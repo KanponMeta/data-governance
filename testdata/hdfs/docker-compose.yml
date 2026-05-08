@@ -1,0 +1,56 @@
+# Docker Compose for a minimal HDFS cluster for local HDFS connector testing.
+#
+# Usage:
+#   docker compose -f testdata/hdfs/docker-compose.yml up -d
+#   HDFS_TEST_NAMENODE=localhost:9000 go test ./internal/connector/firstparty/hdfs/...
+#   docker compose -f testdata/hdfs/docker-compose.yml down
+#
+# The namenode listens on port 9000 (RPC) and 9870 (web UI).
+# The datanode registers with the namenode inside the Docker network.
+#
+# Note: This is for local development and CI testing only — not for production use.
+version: "3.8"
+
+services:
+  namenode:
+    image: apache/hadoop:3.3.6
+    platform: linux/amd64
+    container_name: hdfs_namenode
+    hostname: namenode
+    environment:
+      HADOOP_HOME: /opt/hadoop
+      CLUSTER_NAME: test-cluster
+    command: >
+      sh -c "
+        hdfs namenode -format -nonInteractive -force 2>/dev/null || true &&
+        hdfs namenode
+      "
+    ports:
+      - "9000:9000"   # IPC (RPC for hdfs client)
+      - "9870:9870"   # Web UI
+    volumes:
+      - namenode_data:/hadoop/dfs/name
+    healthcheck:
+      test: ["CMD", "hdfs", "dfsadmin", "-safemode", "get"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  datanode:
+    image: apache/hadoop:3.3.6
+    platform: linux/amd64
+    container_name: hdfs_datanode
+    hostname: datanode
+    environment:
+      HADOOP_HOME: /opt/hadoop
+    command: hdfs datanode
+    depends_on:
+      namenode:
+        condition: service_healthy
+    volumes:
+      - datanode_data:/hadoop/dfs/data
+
+volumes:
+  namenode_data:
+  datanode_data:
