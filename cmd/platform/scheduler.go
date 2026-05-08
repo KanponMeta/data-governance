@@ -120,11 +120,10 @@ func runScheduler() error {
 			runOneTick(ctx)
 		case <-ctx.Done():
 			slog.Info("scheduler.shutdown", "reason", ctx.Err().Error())
-			// Allow shutdownTimeout for any in-flight tick to complete.
-			// Since tx-per-row is short, this rarely matters; included for safety.
+			// Drain any in-flight tick with a fresh context carrying shutdownTimeout.
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 			defer cancel()
-			_ = shutdownCtx
+			runOneTick(shutdownCtx)
 			return nil
 		}
 	}
