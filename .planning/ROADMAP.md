@@ -44,7 +44,13 @@
   3. 50 个并发 goroutine 同时争抢同一个排队运行，结果只有一个执行 —— 不能发生并发重复运行
   4. 通过 CLI 命令可按需触发资产物化，使用 PostgreSQL 连接器针对本地数据库完整运行成功
   5. 七个一方连接器（PostgreSQL、MySQL、BigQuery、Snowflake、S3、GCS、HDFS）在集成测试中均可无错误读写资产
-**计划**：待定
+**Plans:** 5 plans
+Plans:
+- [ ] 02-01-PLAN.md — Asset DSL + DefinitionRegistry + AssetIO contract (Wave 1)
+- [ ] 02-02-PLAN.md — DAG executor + run lifecycle state machine + atomic claim with 50-goroutine test (Wave 1)
+- [ ] 02-03-PLAN.md — Retry engine + global concurrency token pool + connector config + executor (Wave 2)
+- [ ] 02-04-PLAN.md — PostgreSQL connector + worker / materialize CLI subcommands + e2e (Wave 3)
+- [ ] 02-05-PLAN.md — Six remaining first-party connectors (MySQL, BigQuery, Snowflake, S3, GCS, HDFS) (Wave 4)
 **UI 提示**：否
 
 ### Phase 3: 调度、传感器与分区
