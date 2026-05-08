@@ -93,16 +93,37 @@ func runMaterialize(args []string) error {
 
 // waitForRun polls runs.state every 500ms until the run reaches a terminal state
 // or the timeout is exceeded. Exits with a non-nil error if the run fails or times out.
+//
+// Loop structure: sleep first, then check deadline, then poll. This ensures:
+//   - The very first iteration waits 500ms (consistent "poll every 500ms" contract).
+//   - A zero-budget timeout is caught before any DB query is issued.
+//   - ctx cancellation (e.g. SIGINT) is always handled cleanly via the select.
 func waitForRun(ctx context.Context, deps *workerDeps, runID uuid.UUID, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	const stateSQL = `SELECT state, COALESCE(error_message, '') FROM runs WHERE id = $1`
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
+	var lastState string
 	for {
+		// Wait for the next tick or cancellation before querying.
+		select {
+		case <-ticker.C:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		// Check deadline before issuing the query so a zero-budget timeout never
+		// fires a DB round-trip.
+		if time.Now().After(deadline) {
+			return fmt.Errorf("materialize: timeout waiting for run %s (last state=%s)", runID, lastState)
+		}
 		var state, errMsg string
 		if err := deps.store.DB().QueryRowContext(ctx, stateSQL, runID).Scan(&state, &errMsg); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			return fmt.Errorf("materialize: poll state: %w", err)
 		}
+		lastState = state
 		switch state {
 		case "succeeded":
 			fmt.Printf("run %s succeeded\n", runID)
@@ -113,13 +134,6 @@ func waitForRun(ctx context.Context, deps *workerDeps, runID uuid.UUID, timeout 
 		case "canceled":
 			return fmt.Errorf("materialize: run canceled (id=%s)", runID)
 		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("materialize: timeout waiting for run %s (last state=%s)", runID, state)
-		}
-		select {
-		case <-ticker.C:
-		case <-ctx.Done():
-			return ctx.Err()
-		}
+		// Non-terminal state (queued, starting, running) — loop back to next tick.
 	}
 }
