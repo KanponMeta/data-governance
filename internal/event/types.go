@@ -25,6 +25,25 @@ const (
 	EventTypeRunSucceeded            EventType = "run.succeeded"
 	EventTypeRunFailed               EventType = "run.failed"
 	EventTypeRunCanceled             EventType = "run.canceled"
+
+	// Phase 3 (D-17) — schedule lifecycle events.
+	EventTypeScheduleFired   EventType = "schedule.fired"
+	EventTypeScheduleMissed  EventType = "schedule.missed"
+	EventTypeSchedulePaused  EventType = "schedule.paused"
+	EventTypeScheduleResumed EventType = "schedule.resumed"
+
+	// Phase 3 (D-17) — sensor lifecycle events.
+	EventTypeSensorEvaluated        EventType = "sensor.evaluated"
+	EventTypeSensorFired            EventType = "sensor.fired"
+	EventTypeSensorEvaluationFailed EventType = "sensor.evaluation_failed"
+	EventTypeSensorDisabled         EventType = "sensor.disabled"
+	EventTypeSensorCooldownSkipped  EventType = "sensor.cooldown_skipped"
+	EventTypeSensorDedupSkipped     EventType = "sensor.dedup_skipped"
+
+	// Phase 3 (D-17) — backfill lifecycle events.
+	EventTypeBackfillSubmitted   EventType = "backfill.submitted"
+	EventTypeBackfillRunEnqueued EventType = "backfill.run_enqueued"
+	EventTypeBackfillCompleted   EventType = "backfill.completed"
 )
 
 // AllKnownTypes returns the complete set of valid EventType values including Phase 2 run.* types.
@@ -48,6 +67,22 @@ func AllKnownTypes() []EventType {
 		EventTypeRunSucceeded,
 		EventTypeRunFailed,
 		EventTypeRunCanceled,
+		// Phase 3 schedule events (D-17)
+		EventTypeScheduleFired,
+		EventTypeScheduleMissed,
+		EventTypeSchedulePaused,
+		EventTypeScheduleResumed,
+		// Phase 3 sensor events (D-17)
+		EventTypeSensorEvaluated,
+		EventTypeSensorFired,
+		EventTypeSensorEvaluationFailed,
+		EventTypeSensorDisabled,
+		EventTypeSensorCooldownSkipped,
+		EventTypeSensorDedupSkipped,
+		// Phase 3 backfill events (D-17)
+		EventTypeBackfillSubmitted,
+		EventTypeBackfillRunEnqueued,
+		EventTypeBackfillCompleted,
 	}
 }
 
