@@ -53,6 +53,11 @@ func main() {
 			slog.Error("platform.materialize_failed", "error", err)
 			os.Exit(1)
 		}
+	case "scheduler":
+		if err := runScheduler(); err != nil {
+			slog.Error("platform.scheduler_failed", "error", err)
+			os.Exit(1)
+		}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
 		os.Exit(2)
