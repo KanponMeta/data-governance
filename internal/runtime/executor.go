@@ -116,7 +116,10 @@ func (e *Executor) Run(ctx context.Context, runID uuid.UUID, assetName string) e
 
 	// 3. Execute steps in topological order.
 	for i, name := range order {
-		stepAsset, _ := e.deps.Registry.Get(name)
+		stepAsset, err := e.deps.Registry.Get(name)
+		if err != nil {
+			return fmt.Errorf("executor: step %q not found during execution: %w", name, err)
+		}
 		if err := e.runStep(ctx, runID, stepAsset, i); err != nil {
 			// Step failed terminally (retries exhausted or unretryable).
 			if terr := e.transition(ctx, runID, run.StateRunning, run.StateFailed); terr != nil {
