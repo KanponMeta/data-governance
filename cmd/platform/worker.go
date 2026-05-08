@@ -147,8 +147,18 @@ func bootstrap(ctx context.Context) (*workerDeps, error) {
 	capacities := []concurrency.Capacity{
 		{Tag: "global", Limit: cfg.Concurrency.DefaultRunTokens},
 	}
+	// D-13 layer 3 default: 5 concurrent backfill runs unless operator overrides
+	// via cfg.Concurrency.Resources["backfill"]. Caps connector saturation when
+	// the priority claim has let many backfill rows reach the executor.
+	backfillSet := false
 	for tag, limit := range cfg.Concurrency.Resources {
+		if tag == "backfill" {
+			backfillSet = true
+		}
 		capacities = append(capacities, concurrency.Capacity{Tag: tag, Limit: limit})
+	}
+	if !backfillSet {
+		capacities = append(capacities, concurrency.Capacity{Tag: "backfill", Limit: 5})
 	}
 	pool := concurrency.NewPool(store, capacities)
 

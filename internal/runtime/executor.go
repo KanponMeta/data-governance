@@ -143,7 +143,7 @@ func (e *Executor) Run(ctx context.Context, claimed *run.ClaimedRun) error {
 		if err != nil {
 			return fmt.Errorf("executor: step %q not found during execution: %w", name, err)
 		}
-		if err := e.runStep(ctx, runID, stepAsset, i, partitionKey); err != nil {
+		if err := e.runStep(ctx, runID, stepAsset, i, partitionKey, claimed.Priority); err != nil {
 			// Step failed terminally (retries exhausted or unretryable).
 			if terr := e.transition(ctx, runID, run.StateRunning, run.StateFailed); terr != nil {
 				slog.Error("executor.transition_failed", "run_id", runID, "to", "failed", "error", terr)
@@ -201,7 +201,13 @@ func (e *Executor) heartbeatLoop(ctx context.Context, runID uuid.UUID) {
 // asset.NewAssetIO so user-defined materialize functions can call
 // io.PartitionKey() to learn which partition window to materialize
 // (D-09 / D-10 — surface defined in plan 03-02).
-func (e *Executor) runStep(ctx context.Context, runID uuid.UUID, a *asset.Asset, topoOrder int, partitionKey string) error {
+//
+// priority drives D-13 layer 3: backfill-priority runs additionally acquire a
+// "backfill" concurrency token (default capacity 5 from worker bootstrap) so
+// many concurrent backfill submissions cannot saturate connectors and starve
+// normal runs (Pitfall 6 second half — together with the priority-aware claim
+// from plan 03-03, this is the full backfill isolation contract).
+func (e *Executor) runStep(ctx context.Context, runID uuid.UUID, a *asset.Asset, topoOrder int, partitionKey string, priority string) error {
 	policy := a.RetryPolicy()
 	if policy.IsZero() {
 		policy = e.deps.DefaultPolicy
@@ -230,6 +236,25 @@ func (e *Executor) runStep(ctx context.Context, runID uuid.UUID, a *asset.Asset,
 			continue
 		}
 		acquired = append(acquired, "global")
+
+		// D-13 layer 3: backfill-priority runs additionally acquire a "backfill"
+		// concurrency token. Capacity defaults to 5 (worker bootstrap) — caps
+		// in-flight backfill runs so the connector doesn't get saturated even
+		// when the priority claim has let many backfill rows reach the executor.
+		if priority == "backfill" {
+			if err := e.deps.Pool.Acquire(ctx, runID, a.Name(), "backfill", 1); err != nil {
+				releaseAcquired()
+				if !retry.ShouldRetry(attempt, policy) {
+					e.appendEvent(ctx, runID, event.EventTypeRunStepFailed, event.RunStepFailedPayload{
+						AssetName: a.Name(), Attempt: attempt, Error: err.Error(),
+					})
+					return fmt.Errorf("executor: step %q failed to acquire backfill token (retries exhausted): %w", a.Name(), err)
+				}
+				e.scheduleRetry(ctx, runID, a, attempt, err, policy)
+				continue
+			}
+			acquired = append(acquired, "backfill")
+		}
 
 		// Resource-level tokens per asset.Resources() declaration.
 		var resourceErr error

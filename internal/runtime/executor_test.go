@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"entgo.io/ent/dialect"
+	entgosql "entgo.io/ent/dialect/sql"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/google/uuid"
@@ -489,6 +491,177 @@ func TestExecutor_HeartbeatTicks(t *testing.T) {
 	}
 	if !heartbeatUpdated {
 		t.Error("expected last_heartbeat > claimed_at after heartbeat goroutine ticked, but it was not updated")
+	}
+}
+
+// ===== Plan 03-07 — D-13 Layer 3 (Backfill Concurrency Tag) =====
+
+// stubConnector is a minimal connector.Connector for plan 03-07 tests.
+// It is private to this test file to keep TestExecutorBackfillTagAcquisition
+// self-contained (no escape clause, no \"deferred if mocking heavyweight\").
+type stubConnector struct{}
+
+func (stubConnector) APIVersion() string { return connector.APIVersion }
+func (stubConnector) Ping(_ context.Context, _ connector.PingRequest) (connector.PingResponse, error) {
+	return connector.PingResponse{APIVersion: connector.APIVersion, ConnectorName: "stub"}, nil
+}
+func (stubConnector) Schema(_ context.Context, _ connector.SchemaRequest) (connector.SchemaResponse, error) {
+	return connector.SchemaResponse{}, nil
+}
+func (stubConnector) Read(_ context.Context, _ connector.ReadRequest) (connector.ReadResponse, error) {
+	return connector.ReadResponse{}, nil
+}
+func (stubConnector) Write(_ context.Context, _ connector.WriteRequest) (connector.WriteResponse, error) {
+	return connector.WriteResponse{}, nil
+}
+
+// openExecutorTestDBPgx returns *sql.DB + *stent.Client using the entgosql.OpenDB
+// path (sidesteps the deferred pgx-ent driver issue documented in
+// .planning/phases/03-scheduling-sensors-partitions/deferred-items.md).
+func openExecutorTestDBPgx(t *testing.T) (*sql.DB, *stent.Client) {
+	t.Helper()
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL not set; skipping DB-backed executor tests")
+	}
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.PingContext(context.Background()); err != nil {
+		db.Close()
+		t.Fatalf("ping db: %v", err)
+	}
+	entClient := stent.NewClient(stent.Driver(entgosql.OpenDB(dialect.Postgres, db)))
+	t.Cleanup(func() {
+		entClient.Close()
+		db.Close()
+	})
+	return db, entClient
+}
+
+// TestExecutorBackfillTagAcquisition (D-13 layer 3) — proves that two
+// backfill-priority runs on the same asset cannot both hold the "backfill"
+// concurrency token when capacity is 1: the first acquires it, the second
+// fails Acquire with the configured retry policy exhausted.
+//
+// Plan 03-07 acceptance criterion is UNCONDITIONAL — uses an inline minimal
+// stubConnector (defined above) so the test does not depend on heavyweight
+// test infrastructure.
+func TestExecutorBackfillTagAcquisition(t *testing.T) {
+	db, entClient := openExecutorTestDBPgx(t)
+	store := &entStorage{db: db, ent: entClient}
+
+	const assetName = "test-backfill-tag-acquisition"
+	// Cleanup any leftover rows.
+	cleanup := func() {
+		_, _ = db.Exec(`DELETE FROM concurrency_tokens WHERE asset_name=$1`, assetName)
+		_, _ = db.Exec(`DELETE FROM runs WHERE asset_name=$1`, assetName)
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+
+	// Pool with backfill capacity = 1 — second concurrent backfill run cannot
+	// acquire and must fail Acquire (retry policy in this test is the default
+	// non-retrying policy, so the second run returns the wrapped capacity
+	// error immediately).
+	pool := concurrency.NewPool(store, []concurrency.Capacity{
+		{Tag: "global", Limit: 10},
+		{Tag: "backfill", Limit: 1},
+	})
+
+	// Build an asset whose Materialize blocks ~250ms — long enough for the
+	// second goroutine to reach Acquire and observe the capacity collision.
+	a, err := asset.New(assetName).
+		Connector("stub").
+		Materialize(func(ctx context.Context, io asset.AssetIO) (asset.MaterializeResult, error) {
+			select {
+			case <-time.After(250 * time.Millisecond):
+				return asset.MaterializeResult{}, nil
+			case <-ctx.Done():
+				return asset.MaterializeResult{}, ctx.Err()
+			}
+		}).
+		Build()
+	if err != nil {
+		t.Fatalf("build asset: %v", err)
+	}
+
+	reg := asset.NewDefinitionRegistry()
+	if err := reg.Register(a); err != nil {
+		t.Fatalf("register asset: %v", err)
+	}
+	connReg := connector.NewRegistry()
+	if err := connReg.RegisterInProcess("stub", stubConnector{}); err != nil {
+		t.Fatalf("register stub connector: %v", err)
+	}
+
+	events := event.NewWriter(store)
+	exec := runtime.NewExecutor(runtime.Deps{
+		Store:             store,
+		Events:            events,
+		Registry:          reg,
+		ConnectorReg:      connReg,
+		Pool:              pool,
+		WorkerID:          "test-backfill-tag",
+		StepTimeout:       2 * time.Second,
+		HeartbeatInterval: 0, // 0 → executor defaults to 30s; effectively no tick during this 250ms run
+	})
+
+	// Insert two starting-state backfill runs directly (post-claim shape).
+	insertStartingRun := func() uuid.UUID {
+		id := uuid.New()
+		_, err := db.Exec(
+			`INSERT INTO runs (id, asset_name, state, trigger, queued_at, claimed_by, claimed_at, last_heartbeat, priority)
+			 VALUES ($1, $2, 'starting', 'backfill', NOW(), 'test', NOW(), NOW(), 'backfill')`,
+			id, assetName,
+		)
+		if err != nil {
+			t.Fatalf("insert starting run: %v", err)
+		}
+		return id
+	}
+	id1 := insertStartingRun()
+	id2 := insertStartingRun()
+
+	// Goroutine 1: holds the "backfill" token for ~250ms.
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- exec.Run(context.Background(), &run.ClaimedRun{
+			ID:        id1,
+			AssetName: assetName,
+			Trigger:   "backfill",
+			Priority:  "backfill",
+		})
+	}()
+
+	// Brief pause so id1 has acquired global+backfill tokens before id2 tries.
+	time.Sleep(75 * time.Millisecond)
+
+	// Goroutine 2 (this goroutine): expected to fail acquiring the backfill token.
+	ctx2, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	err2 := exec.Run(ctx2, &run.ClaimedRun{
+		ID:        id2,
+		AssetName: assetName,
+		Trigger:   "backfill",
+		Priority:  "backfill",
+	})
+
+	// Drain the first run's result before assertions.
+	err1 := <-errCh
+
+	// id2 must have failed at the backfill-token acquire step.
+	if err2 == nil {
+		t.Fatalf("expected second backfill run to fail acquiring backfill token (capacity=1, id1 holds it); got nil")
+	}
+	if !containsStr(err2.Error(), "backfill token") {
+		t.Fatalf("expected error to mention 'backfill token'; got: %v", err2)
+	}
+
+	// id1 should have completed cleanly.
+	if err1 != nil {
+		t.Fatalf("first backfill run should have succeeded after holding the token; got: %v", err1)
 	}
 }
 
