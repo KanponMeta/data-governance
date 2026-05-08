@@ -77,6 +77,22 @@ func FireOneSchedule(ctx context.Context, store storage.Storage, reg *asset.Defi
 	}
 	windowToFire, missedCount := computeNextAndDetectMiss(sched, lf, now)
 
+	// Guard against clock-skew: if the cron walker says the next valid window
+	// is in the future (lastFiredAt ahead of now), roll forward the row and
+	// skip this fire to keep semantics honest — we must not INSERT a runs row
+	// whose window has not yet opened.
+	if windowToFire.After(now) {
+		const updateSchedSQL = `
+			UPDATE schedules
+			   SET next_fire_at = $1, updated_at = NOW()
+			 WHERE id = $2
+		`
+		if _, err := tx.ExecContext(ctx, updateSchedSQL, windowToFire, schedID); err != nil {
+			return fmt.Errorf("schedule.fire: roll forward clock-skew: %w", err)
+		}
+		return tx.Commit()
+	}
+
 	// nextFire is computed from `now` so the next tick lands on the upcoming
 	// window regardless of how far behind we were. Using sched.Next(windowToFire)
 	// could re-pick a still-past window after a multi-hour outage.
