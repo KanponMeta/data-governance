@@ -119,7 +119,9 @@ func (e *Executor) Run(ctx context.Context, runID uuid.UUID, assetName string) e
 		stepAsset, _ := e.deps.Registry.Get(name)
 		if err := e.runStep(ctx, runID, stepAsset, i); err != nil {
 			// Step failed terminally (retries exhausted or unretryable).
-			_ = e.transition(ctx, runID, run.StateRunning, run.StateFailed)
+			if terr := e.transition(ctx, runID, run.StateRunning, run.StateFailed); terr != nil {
+				slog.Error("executor.transition_failed", "run_id", runID, "to", "failed", "error", terr)
+			}
 			e.appendEvent(ctx, runID, event.EventTypeRunFailed, event.RunFailedPayload{
 				AssetName: assetName,
 				Error:     err.Error(),
@@ -130,7 +132,9 @@ func (e *Executor) Run(ctx context.Context, runID uuid.UUID, assetName string) e
 	}
 
 	// 4. All steps succeeded.
-	_ = e.transition(ctx, runID, run.StateRunning, run.StateSucceeded)
+	if terr := e.transition(ctx, runID, run.StateRunning, run.StateSucceeded); terr != nil {
+		slog.Error("executor.transition_failed", "run_id", runID, "to", "succeeded", "error", terr)
+	}
 	e.appendEvent(ctx, runID, event.EventTypeRunSucceeded, event.RunSucceededPayload{
 		AssetName: assetName,
 	})
