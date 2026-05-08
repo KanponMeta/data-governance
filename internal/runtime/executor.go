@@ -210,6 +210,10 @@ func (e *Executor) runStep(ctx context.Context, runID uuid.UUID, a *asset.Asset,
 			acquired = append(acquired, res.Name)
 		}
 		if resourceErr != nil {
+			// NOTE: All tokens are released before the retry sleep so other runs can proceed.
+			// The retrying attempt must re-acquire tokens on the next loop iteration,
+			// competing fairly with new runs. This means high contention can starve retrying
+			// runs; revisit in Phase 3 if starvation is observed in production.
 			releaseAcquired()
 			if !retry.ShouldRetry(attempt, policy) {
 				e.appendEvent(ctx, runID, event.EventTypeRunStepFailed, event.RunStepFailedPayload{
