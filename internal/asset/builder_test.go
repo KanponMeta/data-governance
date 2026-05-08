@@ -3,12 +3,14 @@ package asset
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/kanpon/data-governance/internal/connector"
+	"github.com/kanpon/data-governance/internal/partition"
 )
 
 // ---- Helpers ----
@@ -251,4 +253,173 @@ func TestBuilder_Register_Duplicate_Error(t *testing.T) {
 
 	err2 := New("dup").Connector("c").Materialize(noopMaterialize).Register()
 	require.True(t, errors.Is(err2, ErrAlreadyRegistered), "expected ErrAlreadyRegistered, got: %v", err2)
+}
+
+// ---- Phase 3 — Schedule / Sensor / Partitions DSL extensions ----
+// Cover D-03 (cron parser-only fail-fast), D-06 (SensorSpec types), D-09 (.Partitions),
+// D-11 (UTC keys), D-12 (orthogonal composition).
+
+func noopSense(ctx context.Context) (SensorResult, error) { return SensorResult{Fired: false}, nil }
+
+// TestScheduleAccepted — valid cron expression accepted; ScheduleSpec readable via Asset.Schedule().
+func TestScheduleAccepted(t *testing.T) {
+	a, err := New("foo").
+		Connector("c").
+		Materialize(noopMaterialize).
+		Schedule("0 0 * * *").
+		Build()
+	require.NoError(t, err)
+	require.NotNil(t, a.Schedule())
+	require.Equal(t, "0 0 * * *", a.Schedule().CronExpr)
+}
+
+// TestScheduleInvalidCron — invalid expression rejected at Build() (Pitfall 1, D-03).
+// Satisfies VALIDATION.md TestScheduleInvalidCron requirement.
+func TestScheduleInvalidCron(t *testing.T) {
+	_, err := New("foo").
+		Connector("c").
+		Materialize(noopMaterialize).
+		Schedule("not a valid cron").
+		Build()
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrInvalidCron),
+		"expected ErrInvalidCron, got: %v", err)
+}
+
+// TestScheduleEvery — descriptor-form expressions (@every 30s) accepted.
+func TestScheduleEvery(t *testing.T) {
+	a, err := New("foo").
+		Connector("c").
+		Materialize(noopMaterialize).
+		Schedule("@every 30s").
+		Build()
+	require.NoError(t, err)
+	require.Equal(t, "@every 30s", a.Schedule().CronExpr)
+}
+
+// TestSensorAccepted — single SensorSpec accepted; Asset.Sensors() returns slice of len 1.
+func TestSensorAccepted(t *testing.T) {
+	a, err := New("foo").
+		Connector("c").
+		Materialize(noopMaterialize).
+		Sensor(SensorSpec{Name: "s1", MinInterval: 30 * time.Second, Sense: noopSense}).
+		Build()
+	require.NoError(t, err)
+	require.Len(t, a.Sensors(), 1)
+	require.Equal(t, "s1", a.Sensors()[0].Name)
+}
+
+// TestSensorEmptyName — sensor with empty Name rejected (D-06).
+func TestSensorEmptyName(t *testing.T) {
+	_, err := New("foo").
+		Connector("c").
+		Materialize(noopMaterialize).
+		Sensor(SensorSpec{Sense: noopSense}).
+		Build()
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrSensorNameRequired),
+		"expected ErrSensorNameRequired, got: %v", err)
+}
+
+// TestSensorNilSense — sensor with nil Sense rejected (D-06).
+func TestSensorNilSense(t *testing.T) {
+	_, err := New("foo").
+		Connector("c").
+		Materialize(noopMaterialize).
+		Sensor(SensorSpec{Name: "s1"}).
+		Build()
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrSensorFuncRequired),
+		"expected ErrSensorFuncRequired, got: %v", err)
+}
+
+// TestSensorNegativeMinInterval — negative MinInterval rejected (T-03-02-03 mitigation).
+func TestSensorNegativeMinInterval(t *testing.T) {
+	_, err := New("foo").
+		Connector("c").
+		Materialize(noopMaterialize).
+		Sensor(SensorSpec{Name: "s1", MinInterval: -1 * time.Second, Sense: noopSense}).
+		Build()
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrSensorMinIntervalNegative),
+		"expected ErrSensorMinIntervalNegative, got: %v", err)
+}
+
+// TestPartitionsDailyAccepted — DailyPartitions strategy accepted; Asset.Partitions() returns it.
+func TestPartitionsDailyAccepted(t *testing.T) {
+	a, err := New("foo").
+		Connector("c").
+		Materialize(noopMaterialize).
+		Partitions(partition.DailyPartitions{}).
+		Build()
+	require.NoError(t, err)
+	require.NotNil(t, a.Partitions())
+	require.Equal(t, "daily", a.Partitions().Kind())
+}
+
+// TestPartitionsCategoryInvalidKey — Category key with '/' rejected at Build (Pitfall 4).
+func TestPartitionsCategoryInvalidKey(t *testing.T) {
+	_, err := New("foo").
+		Connector("c").
+		Materialize(noopMaterialize).
+		Partitions(partition.CategoryPartitions{Keys: []string{"us/east"}}).
+		Build()
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrPartitionInvalidKey),
+		"expected ErrPartitionInvalidKey, got: %v", err)
+}
+
+// TestPartitionsCategoryOversizeKey — Category key >128 chars rejected.
+func TestPartitionsCategoryOversizeKey(t *testing.T) {
+	_, err := New("foo").
+		Connector("c").
+		Materialize(noopMaterialize).
+		Partitions(partition.CategoryPartitions{Keys: []string{strings.Repeat("x", 129)}}).
+		Build()
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrPartitionInvalidKey),
+		"expected ErrPartitionInvalidKey for oversize, got: %v", err)
+}
+
+// TestPartitionsLastWins — successive .Partitions() calls overwrite (last wins, no error).
+func TestPartitionsLastWins(t *testing.T) {
+	a, err := New("foo").
+		Connector("c").
+		Materialize(noopMaterialize).
+		Partitions(partition.DailyPartitions{}).
+		Partitions(partition.WeeklyPartitions{}).
+		Build()
+	require.NoError(t, err)
+	require.Equal(t, "weekly", a.Partitions().Kind())
+}
+
+// TestOrthogonalComposition — D-12: method order is irrelevant. Building with two
+// different chain orders must yield Assets with equivalent Schedule/Sensors/Partitions.
+func TestOrthogonalComposition(t *testing.T) {
+	t.Cleanup(resetForTest)
+
+	spec := SensorSpec{Name: "s1", MinInterval: 30 * time.Second, Sense: noopSense}
+
+	a1, err := New("a1").
+		Connector("c").
+		Materialize(noopMaterialize).
+		Schedule("0 0 * * *").
+		Sensor(spec).
+		Partitions(partition.DailyPartitions{}).
+		Build()
+	require.NoError(t, err)
+
+	a2, err := New("a2").
+		Connector("c").
+		Materialize(noopMaterialize).
+		Partitions(partition.DailyPartitions{}).
+		Sensor(spec).
+		Schedule("0 0 * * *").
+		Build()
+	require.NoError(t, err)
+
+	require.Equal(t, a1.Schedule().CronExpr, a2.Schedule().CronExpr)
+	require.Equal(t, len(a1.Sensors()), len(a2.Sensors()))
+	require.Equal(t, a1.Sensors()[0].Name, a2.Sensors()[0].Name)
+	require.Equal(t, a1.Partitions().Kind(), a2.Partitions().Kind())
 }
