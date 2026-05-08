@@ -299,7 +299,7 @@ func TestE2E_PostgresMaterialize(t *testing.T) {
 	require.Equal(t, runID, claimed.ID)
 
 	// Execute the run in-process.
-	err = setup.executor.Run(ctx, claimed.ID, claimed.AssetName)
+	err = setup.executor.Run(ctx, claimed)
 	require.NoError(t, err, "executor.Run should succeed")
 
 	// Assert run state = succeeded.
@@ -342,7 +342,7 @@ func TestE2E_PostgresMaterialize_Failure(t *testing.T) {
 	require.Equal(t, runID, claimed.ID)
 
 	// Run should fail (RetryPolicy.Max=1 → 2 attempts then fail).
-	execErr := setup.executor.Run(ctx, claimed.ID, claimed.AssetName)
+	execErr := setup.executor.Run(ctx, claimed)
 	require.Error(t, execErr, "executor.Run should fail for failing asset")
 
 	assert.Equal(t, "failed", queryRunState(t, db, runID))
@@ -382,7 +382,7 @@ func TestE2E_TopologicalOrder(t *testing.T) {
 	claimed, err := run.ClaimNext(ctx, setup.store, "test-worker")
 	require.NoError(t, err)
 
-	require.NoError(t, setup.executor.Run(ctx, claimed.ID, claimed.AssetName))
+	require.NoError(t, setup.executor.Run(ctx, claimed))
 
 	// Query step.started events for each asset — verify users_raw precedes users_clean.
 	// The event resource_id is the run ID; we identify the step by payload.asset_name.
