@@ -81,14 +81,28 @@ func runWorker() error {
 			continue
 		}
 
-		slog.Info("worker.run_claimed", "run_id", claimed.ID, "asset", claimed.AssetName)
-		execErr := deps.executor.Run(ctx, claimed.ID, claimed.AssetName)
+		slog.Info("worker.run_claimed",
+			"run_id", claimed.ID,
+			"asset", claimed.AssetName,
+			"priority", claimed.Priority,
+			"partition_key", derefString(claimed.PartitionKey),
+		)
+		execErr := deps.executor.Run(ctx, claimed)
 		if execErr != nil {
 			slog.Error("worker.run_failed", "run_id", claimed.ID, "error", execErr)
 		} else {
 			slog.Info("worker.run_succeeded", "run_id", claimed.ID)
 		}
 	}
+}
+
+// derefString returns *s, or "" if s is nil. Helper for slog fields where the
+// caller should not log the literal "<nil>" representation of a nil pointer.
+func derefString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // workerDeps bundles the runtime dependencies shared by worker and materialize subcommands.

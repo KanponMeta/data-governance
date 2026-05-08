@@ -231,7 +231,7 @@ func TestExecutor_SuccessfulRun(t *testing.T) {
 
 	exec := buildExecutor(t, db, entClient, []*asset.Asset{a}, conn, nil, asset.RetryPolicy{}, 30*time.Second)
 
-	if err := exec.Run(context.Background(), claimed.ID, "test-asset-success"); err != nil {
+	if err := exec.Run(context.Background(), claimed); err != nil {
 		t.Fatalf("Run failed: %v", err)
 	}
 
@@ -281,7 +281,7 @@ func TestExecutor_RetryAndFail(t *testing.T) {
 
 	exec := buildExecutor(t, db, entClient, []*asset.Asset{a}, conn, nil, asset.RetryPolicy{}, 30*time.Second)
 
-	runErr := exec.Run(context.Background(), claimed.ID, "test-asset-retry")
+	runErr := exec.Run(context.Background(), claimed)
 	if runErr == nil {
 		t.Fatal("expected error from Run, got nil")
 	}
@@ -334,7 +334,7 @@ func TestExecutor_PanicRecovery(t *testing.T) {
 
 	exec := buildExecutor(t, db, entClient, []*asset.Asset{a}, conn, nil, asset.RetryPolicy{}, 30*time.Second)
 
-	runErr := exec.Run(context.Background(), claimed.ID, "test-asset-panic")
+	runErr := exec.Run(context.Background(), claimed)
 	if runErr == nil {
 		t.Fatal("expected error from panic, got nil")
 	}
@@ -380,7 +380,7 @@ func TestExecutor_TopologicalOrder(t *testing.T) {
 
 	exec := buildExecutor(t, db, entClient, []*asset.Asset{aAsset, bAsset, cAsset}, conn, nil, asset.RetryPolicy{}, 30*time.Second)
 
-	if err := exec.Run(context.Background(), claimed.ID, "topo-c"); err != nil {
+	if err := exec.Run(context.Background(), claimed); err != nil {
 		t.Fatalf("Run failed: %v", err)
 	}
 
@@ -441,7 +441,7 @@ func TestExecutor_ConcurrencyTokenZeroCapacity(t *testing.T) {
 
 	exec := buildExecutor(t, db, entClient, []*asset.Asset{a}, conn, pool, asset.RetryPolicy{}, 30*time.Second)
 
-	runErr := exec.Run(context.Background(), claimed.ID, "test-asset-zero-cap")
+	runErr := exec.Run(context.Background(), claimed)
 	if runErr == nil {
 		t.Fatal("expected error from zero-capacity pool, got nil")
 	}
@@ -473,7 +473,7 @@ func TestExecutor_HeartbeatTicks(t *testing.T) {
 
 	exec := buildExecutor(t, db, entClient, []*asset.Asset{a}, conn, nil, asset.RetryPolicy{}, heartbeatInterval)
 
-	if err := exec.Run(context.Background(), claimed.ID, "test-asset-heartbeat"); err != nil {
+	if err := exec.Run(context.Background(), claimed); err != nil {
 		t.Fatalf("Run failed: %v", err)
 	}
 

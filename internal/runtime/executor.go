@@ -64,18 +64,41 @@ func NewExecutor(deps Deps) *Executor {
 	return &Executor{deps: deps}
 }
 
-// Run executes the run identified by runID targeting assetName. The run MUST already
-// be in state 'starting' (post-claim via run.ClaimNext). Run is responsible for:
+// Run executes the claimed run end-to-end. The run MUST already be in state
+// 'starting' (post-claim via run.ClaimNext); the *run.ClaimedRun struct carries
+// every field downstream stages need (ID, AssetName, Trigger, PartitionKey,
+// Priority, BackfillID).
+//
+// FROZEN SIGNATURE (Phase 3 D-13): plan 03-03 sets this signature once;
+// plan 03-07 (backfill CLI / layer-3 token tag) will only READ additional
+// fields off the same struct (e.g., claimed.Priority == "backfill") — it
+// does NOT change the signature again. This avoids the dual-migration
+// problem where intermediate `(ctx, runID, assetName, partitionKey)` and
+// final `(ctx, claimed)` would both update callers and break each other.
+//
+// Run is responsible for:
 //   - Transitioning starting → running → succeeded/failed
 //   - Building and resolving the DAG of transitive upstream assets
 //   - Executing each step in topological order under the concurrency token pool
 //   - Applying per-asset retry policy for business faults
 //   - Writing run.* events for every step lifecycle transition
 //   - Ticking runs.last_heartbeat every HeartbeatInterval via the heartbeat goroutine
+//   - Threading partition_key into AssetIO via NewAssetIO third arg
 //
 // Infrastructure faults (worker crash, OOM) are handled by plan 02-04's stale-run
 // reaper, NOT by this function — see D-14 Option B.
-func (e *Executor) Run(ctx context.Context, runID uuid.UUID, assetName string) error {
+func (e *Executor) Run(ctx context.Context, claimed *run.ClaimedRun) error {
+	if claimed == nil {
+		return fmt.Errorf("executor: Run called with nil claimed run")
+	}
+	runID := claimed.ID
+	assetName := claimed.AssetName
+	// partitionKey is "" for non-partitioned runs (claimed.PartitionKey == nil).
+	partitionKey := ""
+	if claimed.PartitionKey != nil {
+		partitionKey = *claimed.PartitionKey
+	}
+
 	// Spawn the heartbeat goroutine for the duration of this run.
 	// It exits when hbCancel is called (deferred below) or when ctx is canceled.
 	// sync.WaitGroup ensures the goroutine has fully exited before Run returns.
@@ -120,7 +143,7 @@ func (e *Executor) Run(ctx context.Context, runID uuid.UUID, assetName string) e
 		if err != nil {
 			return fmt.Errorf("executor: step %q not found during execution: %w", name, err)
 		}
-		if err := e.runStep(ctx, runID, stepAsset, i); err != nil {
+		if err := e.runStep(ctx, runID, stepAsset, i, partitionKey); err != nil {
 			// Step failed terminally (retries exhausted or unretryable).
 			if terr := e.transition(ctx, runID, run.StateRunning, run.StateFailed); terr != nil {
 				slog.Error("executor.transition_failed", "run_id", runID, "to", "failed", "error", terr)
@@ -173,7 +196,12 @@ func (e *Executor) heartbeatLoop(ctx context.Context, runID uuid.UUID) {
 
 // runStep executes a single asset step with retry logic and concurrency token
 // management. It loops until the step succeeds or all retries are exhausted.
-func (e *Executor) runStep(ctx context.Context, runID uuid.UUID, a *asset.Asset, topoOrder int) error {
+//
+// partitionKey is "" for non-partitioned runs; it is plumbed into
+// asset.NewAssetIO so user-defined materialize functions can call
+// io.PartitionKey() to learn which partition window to materialize
+// (D-09 / D-10 — surface defined in plan 03-02).
+func (e *Executor) runStep(ctx context.Context, runID uuid.UUID, a *asset.Asset, topoOrder int, partitionKey string) error {
 	policy := a.RetryPolicy()
 	if policy.IsZero() {
 		policy = e.deps.DefaultPolicy
@@ -236,7 +264,7 @@ func (e *Executor) runStep(ctx context.Context, runID uuid.UUID, a *asset.Asset,
 		// Execute the user function with panic recovery + per-step timeout.
 		stepCtx, cancel := context.WithTimeout(ctx, e.deps.StepTimeout)
 		startedAt := time.Now().UTC()
-		io := asset.NewAssetIO(a, e, "") // executor implements asset.ConnectorResolver; partitionKey wired in plan 03-03+
+		io := asset.NewAssetIO(a, e, partitionKey) // executor implements asset.ConnectorResolver; partition_key threaded from claimed run (D-10)
 		result, runErr := safeMaterialize(stepCtx, a.MaterializeFn(), io)
 		cancel()
 		releaseAcquired()
