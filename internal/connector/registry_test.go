@@ -169,3 +169,49 @@ func TestRegistry_ConcurrentMixed(t *testing.T) {
 
 	wg.Wait()
 }
+
+// ---- Phase 2 additions: RegisterInProcess + RegisterPlugin ----
+
+func TestRegistry_RegisterInProcess_Success(t *testing.T) {
+	reg := NewRegistry()
+	c := &fakeConnector{apiVersion: APIVersion}
+
+	err := reg.RegisterInProcess("pg", c)
+	if err != nil {
+		t.Fatalf("RegisterInProcess returned error: %v", err)
+	}
+
+	got, err := reg.Get("pg")
+	if err != nil {
+		t.Fatalf("Get after RegisterInProcess returned error: %v", err)
+	}
+	if got != c {
+		t.Errorf("Get returned %v, want %v", got, c)
+	}
+}
+
+func TestRegistry_RegisterInProcess_AlreadyRegistered(t *testing.T) {
+	reg := NewRegistry()
+	c := &fakeConnector{apiVersion: APIVersion}
+
+	if err := reg.RegisterInProcess("pg", c); err != nil {
+		t.Fatalf("first RegisterInProcess returned error: %v", err)
+	}
+
+	err := reg.RegisterInProcess("pg", c)
+	if !errors.Is(err, ErrAlreadyRegistered) {
+		t.Errorf("second RegisterInProcess returned %v, want ErrAlreadyRegistered", err)
+	}
+}
+
+func TestRegistry_RegisterPlugin_ReturnsErrPluginNotImplemented(t *testing.T) {
+	reg := NewRegistry()
+
+	err := reg.RegisterPlugin("my-plugin", "/path/to/plugin")
+	if err == nil {
+		t.Fatal("RegisterPlugin should return an error")
+	}
+	if !errors.Is(err, ErrPluginNotImplemented) {
+		t.Errorf("RegisterPlugin returned %v, want error wrapping ErrPluginNotImplemented", err)
+	}
+}

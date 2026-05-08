@@ -90,3 +90,25 @@ func (r *Registry) List() []string {
 	sort.Strings(names)
 	return names
 }
+
+// ErrPluginNotImplemented is returned by RegisterPlugin until Phase 2 third-party
+// plugin scaffolding ships (D-07: interface reserved, implementation deferred until
+// the first real third-party connector ships).
+var ErrPluginNotImplemented = errors.New("connector: plugin loader not implemented in v1")
+
+// RegisterInProcess registers an in-process Connector implementation under name.
+// It is the first-party connector loading path (D-06, D-07). Equivalent to
+// Register; the distinct name documents intent and pairs with RegisterPlugin.
+//
+// Returns ErrAlreadyRegistered if a connector with the same name exists.
+// Returns ErrIncompatibleVersion if the connector's APIVersion() is wrong.
+func (r *Registry) RegisterInProcess(name string, c Connector) error {
+	return r.Register(name, c)
+}
+
+// RegisterPlugin is reserved for hashicorp/go-plugin subprocess loading (D-07).
+// Phase 2 keeps the method shape stable; the implementation is deferred until the
+// first real third-party connector ships. Currently returns ErrPluginNotImplemented.
+func (r *Registry) RegisterPlugin(name string, pluginPath string) error {
+	return fmt.Errorf("%w (name=%q path=%q)", ErrPluginNotImplemented, name, pluginPath)
+}
