@@ -68,11 +68,19 @@ func (p *Pool) Acquire(ctx context.Context, runID uuid.UUID, assetName, tag stri
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// Lock advisory to serialize concurrent Acquire calls for the same resource_tag.
+	// We use an advisory lock keyed on a hash of the tag name to avoid DDL locks.
+	// The SUM aggregate cannot use FOR UPDATE directly (PostgreSQL limitation), so
+	// we use a separate lock acquisition followed by the aggregate read.
+	const lockSQL = `SELECT pg_advisory_xact_lock(hashtext($1))`
+	if _, err := tx.ExecContext(ctx, lockSQL, tag); err != nil {
+		return fmt.Errorf("concurrency: advisory lock: %w", err)
+	}
+
 	const sumSQL = `
 		SELECT COALESCE(SUM(weight), 0)::int
 		  FROM concurrency_tokens
 		 WHERE resource_tag = $1
-		   FOR UPDATE
 	`
 	var used int
 	if err := tx.QueryRowContext(ctx, sumSQL, tag).Scan(&used); err != nil {

@@ -1,0 +1,12 @@
+connectors:
+  postgres-test:
+    type: postgres
+    dsn: ${TEST_PG_DSN}
+retry:
+  default:
+    max: 0
+    initial_delay: 0s
+    max_delay: 0s
+    jitter_pct: 0
+concurrency:
+  default_run_tokens: 4

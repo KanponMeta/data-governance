@@ -81,3 +81,9 @@ func Default() *DefinitionRegistry { return defaultRegistry }
 // This is a test-only helper — it is not exported but is accessible from
 // tests in the same package (package asset) and via t.Cleanup.
 func resetForTest() { defaultRegistry = NewDefinitionRegistry() }
+
+// ResetForTest is an exported variant of resetForTest for use by integration
+// tests in other packages (e.g., test/integration). Call via t.Cleanup so each
+// test starts with a clean registry.
+// WARNING: NOT safe for concurrent test use — use only from TestMain or serially.
+func ResetForTest() { defaultRegistry = NewDefinitionRegistry() }

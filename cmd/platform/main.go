@@ -43,6 +43,16 @@ func main() {
 		}
 	case "healthcheck":
 		runHealthcheck()
+	case "worker":
+		if err := runWorker(); err != nil {
+			slog.Error("platform.worker_failed", "error", err)
+			os.Exit(1)
+		}
+	case "materialize":
+		if err := runMaterialize(os.Args[2:]); err != nil {
+			slog.Error("platform.materialize_failed", "error", err)
+			os.Exit(1)
+		}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
 		os.Exit(2)
