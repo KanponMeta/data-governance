@@ -8,6 +8,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/kanpon/data-governance/internal/storage/ent/eventlog"
 	"github.com/kanpon/data-governance/internal/storage/ent/invitetoken"
+	"github.com/kanpon/data-governance/internal/storage/ent/run"
+	"github.com/kanpon/data-governance/internal/storage/ent/runstep"
 	"github.com/kanpon/data-governance/internal/storage/ent/schema"
 	"github.com/kanpon/data-governance/internal/storage/ent/user"
 )
@@ -126,6 +128,134 @@ func init() {
 	invitetokenDescID := invitetokenFields[0].Descriptor()
 	// invitetoken.DefaultID holds the default value on creation for the id field.
 	invitetoken.DefaultID = invitetokenDescID.Default.(func() uuid.UUID)
+	runFields := schema.Run{}.Fields()
+	_ = runFields
+	// runDescAssetName is the schema descriptor for asset_name field.
+	runDescAssetName := runFields[1].Descriptor()
+	// run.AssetNameValidator is a validator for the "asset_name" field. It is called by the builders before save.
+	run.AssetNameValidator = func() func(string) error {
+		validators := runDescAssetName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(asset_name string) error {
+			for _, fn := range fns {
+				if err := fn(asset_name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// runDescState is the schema descriptor for state field.
+	runDescState := runFields[2].Descriptor()
+	// run.DefaultState holds the default value on creation for the state field.
+	run.DefaultState = runDescState.Default.(string)
+	// run.StateValidator is a validator for the "state" field. It is called by the builders before save.
+	run.StateValidator = func() func(string) error {
+		validators := runDescState.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(state string) error {
+			for _, fn := range fns {
+				if err := fn(state); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// runDescTrigger is the schema descriptor for trigger field.
+	runDescTrigger := runFields[3].Descriptor()
+	// run.DefaultTrigger holds the default value on creation for the trigger field.
+	run.DefaultTrigger = runDescTrigger.Default.(string)
+	// run.TriggerValidator is a validator for the "trigger" field. It is called by the builders before save.
+	run.TriggerValidator = func() func(string) error {
+		validators := runDescTrigger.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(trigger string) error {
+			for _, fn := range fns {
+				if err := fn(trigger); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// runDescClaimedBy is the schema descriptor for claimed_by field.
+	runDescClaimedBy := runFields[5].Descriptor()
+	// run.ClaimedByValidator is a validator for the "claimed_by" field. It is called by the builders before save.
+	run.ClaimedByValidator = runDescClaimedBy.Validators[0].(func(string) error)
+	// runDescQueuedAt is the schema descriptor for queued_at field.
+	runDescQueuedAt := runFields[6].Descriptor()
+	// run.DefaultQueuedAt holds the default value on creation for the queued_at field.
+	run.DefaultQueuedAt = runDescQueuedAt.Default.(func() time.Time)
+	// runDescID is the schema descriptor for id field.
+	runDescID := runFields[0].Descriptor()
+	// run.DefaultID holds the default value on creation for the id field.
+	run.DefaultID = runDescID.Default.(func() uuid.UUID)
+	runstepFields := schema.RunStep{}.Fields()
+	_ = runstepFields
+	// runstepDescAssetName is the schema descriptor for asset_name field.
+	runstepDescAssetName := runstepFields[2].Descriptor()
+	// runstep.AssetNameValidator is a validator for the "asset_name" field. It is called by the builders before save.
+	runstep.AssetNameValidator = func() func(string) error {
+		validators := runstepDescAssetName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(asset_name string) error {
+			for _, fn := range fns {
+				if err := fn(asset_name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// runstepDescState is the schema descriptor for state field.
+	runstepDescState := runstepFields[3].Descriptor()
+	// runstep.DefaultState holds the default value on creation for the state field.
+	runstep.DefaultState = runstepDescState.Default.(string)
+	// runstep.StateValidator is a validator for the "state" field. It is called by the builders before save.
+	runstep.StateValidator = func() func(string) error {
+		validators := runstepDescState.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(state string) error {
+			for _, fn := range fns {
+				if err := fn(state); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// runstepDescAttempt is the schema descriptor for attempt field.
+	runstepDescAttempt := runstepFields[4].Descriptor()
+	// runstep.DefaultAttempt holds the default value on creation for the attempt field.
+	runstep.DefaultAttempt = runstepDescAttempt.Default.(int)
+	// runstepDescTopoOrder is the schema descriptor for topo_order field.
+	runstepDescTopoOrder := runstepFields[5].Descriptor()
+	// runstep.DefaultTopoOrder holds the default value on creation for the topo_order field.
+	runstep.DefaultTopoOrder = runstepDescTopoOrder.Default.(int)
+	// runstepDescRowsWritten is the schema descriptor for rows_written field.
+	runstepDescRowsWritten := runstepFields[8].Descriptor()
+	// runstep.DefaultRowsWritten holds the default value on creation for the rows_written field.
+	runstep.DefaultRowsWritten = runstepDescRowsWritten.Default.(int64)
+	// runstepDescID is the schema descriptor for id field.
+	runstepDescID := runstepFields[0].Descriptor()
+	// runstep.DefaultID holds the default value on creation for the id field.
+	runstep.DefaultID = runstepDescID.Default.(func() uuid.UUID)
 	userFields := schema.User{}.Fields()
 	_ = userFields
 	// userDescEmail is the schema descriptor for email field.

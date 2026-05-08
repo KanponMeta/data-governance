@@ -33,7 +33,7 @@ import (
 	"github.com/kanpon/data-governance/internal/storage"
 	"github.com/kanpon/data-governance/internal/storage/ent"
 	"github.com/kanpon/data-governance/internal/storage/ent/eventlog"
-	_ "github.com/kanpon/data-governance/internal/storage/ent/dialect"
+	// Note: entgo.io/ent dialect driver is registered via github.com/jackc/pgx/v5/stdlib (above)
 )
 
 // --- Helpers ---

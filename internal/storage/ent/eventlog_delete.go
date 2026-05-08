@@ -20,56 +20,56 @@ type EventLogDelete struct {
 }
 
 // Where appends a list predicates to the EventLogDelete builder.
-func (_d *EventLogDelete) Where(ps ...predicate.EventLog) *EventLogDelete {
-	_d.mutation.Where(ps...)
-	return _d
+func (eld *EventLogDelete) Where(ps ...predicate.EventLog) *EventLogDelete {
+	eld.mutation.Where(ps...)
+	return eld
 }
 
 // Exec executes the deletion query and returns how many vertices were deleted.
-func (_d *EventLogDelete) Exec(ctx context.Context) (int, error) {
-	return withHooks(ctx, _d.sqlExec, _d.mutation, _d.hooks)
+func (eld *EventLogDelete) Exec(ctx context.Context) (int, error) {
+	return withHooks(ctx, eld.sqlExec, eld.mutation, eld.hooks)
 }
 
 // ExecX is like Exec, but panics if an error occurs.
-func (_d *EventLogDelete) ExecX(ctx context.Context) int {
-	n, err := _d.Exec(ctx)
+func (eld *EventLogDelete) ExecX(ctx context.Context) int {
+	n, err := eld.Exec(ctx)
 	if err != nil {
 		panic(err)
 	}
 	return n
 }
 
-func (_d *EventLogDelete) sqlExec(ctx context.Context) (int, error) {
+func (eld *EventLogDelete) sqlExec(ctx context.Context) (int, error) {
 	_spec := sqlgraph.NewDeleteSpec(eventlog.Table, sqlgraph.NewFieldSpec(eventlog.FieldID, field.TypeUUID))
-	if ps := _d.mutation.predicates; len(ps) > 0 {
+	if ps := eld.mutation.predicates; len(ps) > 0 {
 		_spec.Predicate = func(selector *sql.Selector) {
 			for i := range ps {
 				ps[i](selector)
 			}
 		}
 	}
-	affected, err := sqlgraph.DeleteNodes(ctx, _d.driver, _spec)
+	affected, err := sqlgraph.DeleteNodes(ctx, eld.driver, _spec)
 	if err != nil && sqlgraph.IsConstraintError(err) {
 		err = &ConstraintError{msg: err.Error(), wrap: err}
 	}
-	_d.mutation.done = true
+	eld.mutation.done = true
 	return affected, err
 }
 
 // EventLogDeleteOne is the builder for deleting a single EventLog entity.
 type EventLogDeleteOne struct {
-	_d *EventLogDelete
+	eld *EventLogDelete
 }
 
 // Where appends a list predicates to the EventLogDelete builder.
-func (_d *EventLogDeleteOne) Where(ps ...predicate.EventLog) *EventLogDeleteOne {
-	_d._d.mutation.Where(ps...)
-	return _d
+func (eldo *EventLogDeleteOne) Where(ps ...predicate.EventLog) *EventLogDeleteOne {
+	eldo.eld.mutation.Where(ps...)
+	return eldo
 }
 
 // Exec executes the deletion query.
-func (_d *EventLogDeleteOne) Exec(ctx context.Context) error {
-	n, err := _d._d.Exec(ctx)
+func (eldo *EventLogDeleteOne) Exec(ctx context.Context) error {
+	n, err := eldo.eld.Exec(ctx)
 	switch {
 	case err != nil:
 		return err
@@ -81,8 +81,8 @@ func (_d *EventLogDeleteOne) Exec(ctx context.Context) error {
 }
 
 // ExecX is like Exec, but panics if an error occurs.
-func (_d *EventLogDeleteOne) ExecX(ctx context.Context) {
-	if err := _d.Exec(ctx); err != nil {
+func (eldo *EventLogDeleteOne) ExecX(ctx context.Context) {
+	if err := eldo.Exec(ctx); err != nil {
 		panic(err)
 	}
 }

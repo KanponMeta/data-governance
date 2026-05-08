@@ -16,6 +16,10 @@ type Tx struct {
 	EventLog *EventLogClient
 	// InviteToken is the client for interacting with the InviteToken builders.
 	InviteToken *InviteTokenClient
+	// Run is the client for interacting with the Run builders.
+	Run *RunClient
+	// RunStep is the client for interacting with the RunStep builders.
+	RunStep *RunStepClient
 	// User is the client for interacting with the User builders.
 	User *UserClient
 
@@ -151,6 +155,8 @@ func (tx *Tx) Client() *Client {
 func (tx *Tx) init() {
 	tx.EventLog = NewEventLogClient(tx.config)
 	tx.InviteToken = NewInviteTokenClient(tx.config)
+	tx.Run = NewRunClient(tx.config)
+	tx.RunStep = NewRunStepClient(tx.config)
 	tx.User = NewUserClient(tx.config)
 }
 

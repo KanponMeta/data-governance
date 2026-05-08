@@ -24,100 +24,100 @@ type InviteTokenUpdate struct {
 }
 
 // Where appends a list predicates to the InviteTokenUpdate builder.
-func (_u *InviteTokenUpdate) Where(ps ...predicate.InviteToken) *InviteTokenUpdate {
-	_u.mutation.Where(ps...)
-	return _u
+func (itu *InviteTokenUpdate) Where(ps ...predicate.InviteToken) *InviteTokenUpdate {
+	itu.mutation.Where(ps...)
+	return itu
 }
 
 // SetTokenHash sets the "token_hash" field.
-func (_u *InviteTokenUpdate) SetTokenHash(v string) *InviteTokenUpdate {
-	_u.mutation.SetTokenHash(v)
-	return _u
+func (itu *InviteTokenUpdate) SetTokenHash(s string) *InviteTokenUpdate {
+	itu.mutation.SetTokenHash(s)
+	return itu
 }
 
 // SetNillableTokenHash sets the "token_hash" field if the given value is not nil.
-func (_u *InviteTokenUpdate) SetNillableTokenHash(v *string) *InviteTokenUpdate {
-	if v != nil {
-		_u.SetTokenHash(*v)
+func (itu *InviteTokenUpdate) SetNillableTokenHash(s *string) *InviteTokenUpdate {
+	if s != nil {
+		itu.SetTokenHash(*s)
 	}
-	return _u
+	return itu
 }
 
 // SetEmail sets the "email" field.
-func (_u *InviteTokenUpdate) SetEmail(v string) *InviteTokenUpdate {
-	_u.mutation.SetEmail(v)
-	return _u
+func (itu *InviteTokenUpdate) SetEmail(s string) *InviteTokenUpdate {
+	itu.mutation.SetEmail(s)
+	return itu
 }
 
 // SetNillableEmail sets the "email" field if the given value is not nil.
-func (_u *InviteTokenUpdate) SetNillableEmail(v *string) *InviteTokenUpdate {
-	if v != nil {
-		_u.SetEmail(*v)
+func (itu *InviteTokenUpdate) SetNillableEmail(s *string) *InviteTokenUpdate {
+	if s != nil {
+		itu.SetEmail(*s)
 	}
-	return _u
+	return itu
 }
 
 // SetInvitedBy sets the "invited_by" field.
-func (_u *InviteTokenUpdate) SetInvitedBy(v uuid.UUID) *InviteTokenUpdate {
-	_u.mutation.SetInvitedBy(v)
-	return _u
+func (itu *InviteTokenUpdate) SetInvitedBy(u uuid.UUID) *InviteTokenUpdate {
+	itu.mutation.SetInvitedBy(u)
+	return itu
 }
 
 // SetNillableInvitedBy sets the "invited_by" field if the given value is not nil.
-func (_u *InviteTokenUpdate) SetNillableInvitedBy(v *uuid.UUID) *InviteTokenUpdate {
-	if v != nil {
-		_u.SetInvitedBy(*v)
+func (itu *InviteTokenUpdate) SetNillableInvitedBy(u *uuid.UUID) *InviteTokenUpdate {
+	if u != nil {
+		itu.SetInvitedBy(*u)
 	}
-	return _u
+	return itu
 }
 
 // SetExpiresAt sets the "expires_at" field.
-func (_u *InviteTokenUpdate) SetExpiresAt(v time.Time) *InviteTokenUpdate {
-	_u.mutation.SetExpiresAt(v)
-	return _u
+func (itu *InviteTokenUpdate) SetExpiresAt(t time.Time) *InviteTokenUpdate {
+	itu.mutation.SetExpiresAt(t)
+	return itu
 }
 
 // SetNillableExpiresAt sets the "expires_at" field if the given value is not nil.
-func (_u *InviteTokenUpdate) SetNillableExpiresAt(v *time.Time) *InviteTokenUpdate {
-	if v != nil {
-		_u.SetExpiresAt(*v)
+func (itu *InviteTokenUpdate) SetNillableExpiresAt(t *time.Time) *InviteTokenUpdate {
+	if t != nil {
+		itu.SetExpiresAt(*t)
 	}
-	return _u
+	return itu
 }
 
 // SetAcceptedAt sets the "accepted_at" field.
-func (_u *InviteTokenUpdate) SetAcceptedAt(v time.Time) *InviteTokenUpdate {
-	_u.mutation.SetAcceptedAt(v)
-	return _u
+func (itu *InviteTokenUpdate) SetAcceptedAt(t time.Time) *InviteTokenUpdate {
+	itu.mutation.SetAcceptedAt(t)
+	return itu
 }
 
 // SetNillableAcceptedAt sets the "accepted_at" field if the given value is not nil.
-func (_u *InviteTokenUpdate) SetNillableAcceptedAt(v *time.Time) *InviteTokenUpdate {
-	if v != nil {
-		_u.SetAcceptedAt(*v)
+func (itu *InviteTokenUpdate) SetNillableAcceptedAt(t *time.Time) *InviteTokenUpdate {
+	if t != nil {
+		itu.SetAcceptedAt(*t)
 	}
-	return _u
+	return itu
 }
 
 // ClearAcceptedAt clears the value of the "accepted_at" field.
-func (_u *InviteTokenUpdate) ClearAcceptedAt() *InviteTokenUpdate {
-	_u.mutation.ClearAcceptedAt()
-	return _u
+func (itu *InviteTokenUpdate) ClearAcceptedAt() *InviteTokenUpdate {
+	itu.mutation.ClearAcceptedAt()
+	return itu
 }
 
 // Mutation returns the InviteTokenMutation object of the builder.
-func (_u *InviteTokenUpdate) Mutation() *InviteTokenMutation {
-	return _u.mutation
+func (itu *InviteTokenUpdate) Mutation() *InviteTokenMutation {
+	return itu.mutation
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
-func (_u *InviteTokenUpdate) Save(ctx context.Context) (int, error) {
-	return withHooks(ctx, _u.sqlSave, _u.mutation, _u.hooks)
+func (itu *InviteTokenUpdate) Save(ctx context.Context) (int, error) {
+	return withHooks(ctx, itu.sqlSave, itu.mutation, itu.hooks)
 }
 
 // SaveX is like Save, but panics if an error occurs.
-func (_u *InviteTokenUpdate) SaveX(ctx context.Context) int {
-	affected, err := _u.Save(ctx)
+func (itu *InviteTokenUpdate) SaveX(ctx context.Context) int {
+	affected, err := itu.Save(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -125,26 +125,26 @@ func (_u *InviteTokenUpdate) SaveX(ctx context.Context) int {
 }
 
 // Exec executes the query.
-func (_u *InviteTokenUpdate) Exec(ctx context.Context) error {
-	_, err := _u.Save(ctx)
+func (itu *InviteTokenUpdate) Exec(ctx context.Context) error {
+	_, err := itu.Save(ctx)
 	return err
 }
 
 // ExecX is like Exec, but panics if an error occurs.
-func (_u *InviteTokenUpdate) ExecX(ctx context.Context) {
-	if err := _u.Exec(ctx); err != nil {
+func (itu *InviteTokenUpdate) ExecX(ctx context.Context) {
+	if err := itu.Exec(ctx); err != nil {
 		panic(err)
 	}
 }
 
 // check runs all checks and user-defined validators on the builder.
-func (_u *InviteTokenUpdate) check() error {
-	if v, ok := _u.mutation.TokenHash(); ok {
+func (itu *InviteTokenUpdate) check() error {
+	if v, ok := itu.mutation.TokenHash(); ok {
 		if err := invitetoken.TokenHashValidator(v); err != nil {
 			return &ValidationError{Name: "token_hash", err: fmt.Errorf(`ent: validator failed for field "InviteToken.token_hash": %w`, err)}
 		}
 	}
-	if v, ok := _u.mutation.Email(); ok {
+	if v, ok := itu.mutation.Email(); ok {
 		if err := invitetoken.EmailValidator(v); err != nil {
 			return &ValidationError{Name: "email", err: fmt.Errorf(`ent: validator failed for field "InviteToken.email": %w`, err)}
 		}
@@ -152,37 +152,37 @@ func (_u *InviteTokenUpdate) check() error {
 	return nil
 }
 
-func (_u *InviteTokenUpdate) sqlSave(ctx context.Context) (_node int, err error) {
-	if err := _u.check(); err != nil {
-		return _node, err
+func (itu *InviteTokenUpdate) sqlSave(ctx context.Context) (n int, err error) {
+	if err := itu.check(); err != nil {
+		return n, err
 	}
 	_spec := sqlgraph.NewUpdateSpec(invitetoken.Table, invitetoken.Columns, sqlgraph.NewFieldSpec(invitetoken.FieldID, field.TypeUUID))
-	if ps := _u.mutation.predicates; len(ps) > 0 {
+	if ps := itu.mutation.predicates; len(ps) > 0 {
 		_spec.Predicate = func(selector *sql.Selector) {
 			for i := range ps {
 				ps[i](selector)
 			}
 		}
 	}
-	if value, ok := _u.mutation.TokenHash(); ok {
+	if value, ok := itu.mutation.TokenHash(); ok {
 		_spec.SetField(invitetoken.FieldTokenHash, field.TypeString, value)
 	}
-	if value, ok := _u.mutation.Email(); ok {
+	if value, ok := itu.mutation.Email(); ok {
 		_spec.SetField(invitetoken.FieldEmail, field.TypeString, value)
 	}
-	if value, ok := _u.mutation.InvitedBy(); ok {
+	if value, ok := itu.mutation.InvitedBy(); ok {
 		_spec.SetField(invitetoken.FieldInvitedBy, field.TypeUUID, value)
 	}
-	if value, ok := _u.mutation.ExpiresAt(); ok {
+	if value, ok := itu.mutation.ExpiresAt(); ok {
 		_spec.SetField(invitetoken.FieldExpiresAt, field.TypeTime, value)
 	}
-	if value, ok := _u.mutation.AcceptedAt(); ok {
+	if value, ok := itu.mutation.AcceptedAt(); ok {
 		_spec.SetField(invitetoken.FieldAcceptedAt, field.TypeTime, value)
 	}
-	if _u.mutation.AcceptedAtCleared() {
+	if itu.mutation.AcceptedAtCleared() {
 		_spec.ClearField(invitetoken.FieldAcceptedAt, field.TypeTime)
 	}
-	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
+	if n, err = sqlgraph.UpdateNodes(ctx, itu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{invitetoken.Label}
 		} else if sqlgraph.IsConstraintError(err) {
@@ -190,8 +190,8 @@ func (_u *InviteTokenUpdate) sqlSave(ctx context.Context) (_node int, err error)
 		}
 		return 0, err
 	}
-	_u.mutation.done = true
-	return _node, nil
+	itu.mutation.done = true
+	return n, nil
 }
 
 // InviteTokenUpdateOne is the builder for updating a single InviteToken entity.
@@ -203,107 +203,107 @@ type InviteTokenUpdateOne struct {
 }
 
 // SetTokenHash sets the "token_hash" field.
-func (_u *InviteTokenUpdateOne) SetTokenHash(v string) *InviteTokenUpdateOne {
-	_u.mutation.SetTokenHash(v)
-	return _u
+func (ituo *InviteTokenUpdateOne) SetTokenHash(s string) *InviteTokenUpdateOne {
+	ituo.mutation.SetTokenHash(s)
+	return ituo
 }
 
 // SetNillableTokenHash sets the "token_hash" field if the given value is not nil.
-func (_u *InviteTokenUpdateOne) SetNillableTokenHash(v *string) *InviteTokenUpdateOne {
-	if v != nil {
-		_u.SetTokenHash(*v)
+func (ituo *InviteTokenUpdateOne) SetNillableTokenHash(s *string) *InviteTokenUpdateOne {
+	if s != nil {
+		ituo.SetTokenHash(*s)
 	}
-	return _u
+	return ituo
 }
 
 // SetEmail sets the "email" field.
-func (_u *InviteTokenUpdateOne) SetEmail(v string) *InviteTokenUpdateOne {
-	_u.mutation.SetEmail(v)
-	return _u
+func (ituo *InviteTokenUpdateOne) SetEmail(s string) *InviteTokenUpdateOne {
+	ituo.mutation.SetEmail(s)
+	return ituo
 }
 
 // SetNillableEmail sets the "email" field if the given value is not nil.
-func (_u *InviteTokenUpdateOne) SetNillableEmail(v *string) *InviteTokenUpdateOne {
-	if v != nil {
-		_u.SetEmail(*v)
+func (ituo *InviteTokenUpdateOne) SetNillableEmail(s *string) *InviteTokenUpdateOne {
+	if s != nil {
+		ituo.SetEmail(*s)
 	}
-	return _u
+	return ituo
 }
 
 // SetInvitedBy sets the "invited_by" field.
-func (_u *InviteTokenUpdateOne) SetInvitedBy(v uuid.UUID) *InviteTokenUpdateOne {
-	_u.mutation.SetInvitedBy(v)
-	return _u
+func (ituo *InviteTokenUpdateOne) SetInvitedBy(u uuid.UUID) *InviteTokenUpdateOne {
+	ituo.mutation.SetInvitedBy(u)
+	return ituo
 }
 
 // SetNillableInvitedBy sets the "invited_by" field if the given value is not nil.
-func (_u *InviteTokenUpdateOne) SetNillableInvitedBy(v *uuid.UUID) *InviteTokenUpdateOne {
-	if v != nil {
-		_u.SetInvitedBy(*v)
+func (ituo *InviteTokenUpdateOne) SetNillableInvitedBy(u *uuid.UUID) *InviteTokenUpdateOne {
+	if u != nil {
+		ituo.SetInvitedBy(*u)
 	}
-	return _u
+	return ituo
 }
 
 // SetExpiresAt sets the "expires_at" field.
-func (_u *InviteTokenUpdateOne) SetExpiresAt(v time.Time) *InviteTokenUpdateOne {
-	_u.mutation.SetExpiresAt(v)
-	return _u
+func (ituo *InviteTokenUpdateOne) SetExpiresAt(t time.Time) *InviteTokenUpdateOne {
+	ituo.mutation.SetExpiresAt(t)
+	return ituo
 }
 
 // SetNillableExpiresAt sets the "expires_at" field if the given value is not nil.
-func (_u *InviteTokenUpdateOne) SetNillableExpiresAt(v *time.Time) *InviteTokenUpdateOne {
-	if v != nil {
-		_u.SetExpiresAt(*v)
+func (ituo *InviteTokenUpdateOne) SetNillableExpiresAt(t *time.Time) *InviteTokenUpdateOne {
+	if t != nil {
+		ituo.SetExpiresAt(*t)
 	}
-	return _u
+	return ituo
 }
 
 // SetAcceptedAt sets the "accepted_at" field.
-func (_u *InviteTokenUpdateOne) SetAcceptedAt(v time.Time) *InviteTokenUpdateOne {
-	_u.mutation.SetAcceptedAt(v)
-	return _u
+func (ituo *InviteTokenUpdateOne) SetAcceptedAt(t time.Time) *InviteTokenUpdateOne {
+	ituo.mutation.SetAcceptedAt(t)
+	return ituo
 }
 
 // SetNillableAcceptedAt sets the "accepted_at" field if the given value is not nil.
-func (_u *InviteTokenUpdateOne) SetNillableAcceptedAt(v *time.Time) *InviteTokenUpdateOne {
-	if v != nil {
-		_u.SetAcceptedAt(*v)
+func (ituo *InviteTokenUpdateOne) SetNillableAcceptedAt(t *time.Time) *InviteTokenUpdateOne {
+	if t != nil {
+		ituo.SetAcceptedAt(*t)
 	}
-	return _u
+	return ituo
 }
 
 // ClearAcceptedAt clears the value of the "accepted_at" field.
-func (_u *InviteTokenUpdateOne) ClearAcceptedAt() *InviteTokenUpdateOne {
-	_u.mutation.ClearAcceptedAt()
-	return _u
+func (ituo *InviteTokenUpdateOne) ClearAcceptedAt() *InviteTokenUpdateOne {
+	ituo.mutation.ClearAcceptedAt()
+	return ituo
 }
 
 // Mutation returns the InviteTokenMutation object of the builder.
-func (_u *InviteTokenUpdateOne) Mutation() *InviteTokenMutation {
-	return _u.mutation
+func (ituo *InviteTokenUpdateOne) Mutation() *InviteTokenMutation {
+	return ituo.mutation
 }
 
 // Where appends a list predicates to the InviteTokenUpdate builder.
-func (_u *InviteTokenUpdateOne) Where(ps ...predicate.InviteToken) *InviteTokenUpdateOne {
-	_u.mutation.Where(ps...)
-	return _u
+func (ituo *InviteTokenUpdateOne) Where(ps ...predicate.InviteToken) *InviteTokenUpdateOne {
+	ituo.mutation.Where(ps...)
+	return ituo
 }
 
 // Select allows selecting one or more fields (columns) of the returned entity.
 // The default is selecting all fields defined in the entity schema.
-func (_u *InviteTokenUpdateOne) Select(field string, fields ...string) *InviteTokenUpdateOne {
-	_u.fields = append([]string{field}, fields...)
-	return _u
+func (ituo *InviteTokenUpdateOne) Select(field string, fields ...string) *InviteTokenUpdateOne {
+	ituo.fields = append([]string{field}, fields...)
+	return ituo
 }
 
 // Save executes the query and returns the updated InviteToken entity.
-func (_u *InviteTokenUpdateOne) Save(ctx context.Context) (*InviteToken, error) {
-	return withHooks(ctx, _u.sqlSave, _u.mutation, _u.hooks)
+func (ituo *InviteTokenUpdateOne) Save(ctx context.Context) (*InviteToken, error) {
+	return withHooks(ctx, ituo.sqlSave, ituo.mutation, ituo.hooks)
 }
 
 // SaveX is like Save, but panics if an error occurs.
-func (_u *InviteTokenUpdateOne) SaveX(ctx context.Context) *InviteToken {
-	node, err := _u.Save(ctx)
+func (ituo *InviteTokenUpdateOne) SaveX(ctx context.Context) *InviteToken {
+	node, err := ituo.Save(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -311,26 +311,26 @@ func (_u *InviteTokenUpdateOne) SaveX(ctx context.Context) *InviteToken {
 }
 
 // Exec executes the query on the entity.
-func (_u *InviteTokenUpdateOne) Exec(ctx context.Context) error {
-	_, err := _u.Save(ctx)
+func (ituo *InviteTokenUpdateOne) Exec(ctx context.Context) error {
+	_, err := ituo.Save(ctx)
 	return err
 }
 
 // ExecX is like Exec, but panics if an error occurs.
-func (_u *InviteTokenUpdateOne) ExecX(ctx context.Context) {
-	if err := _u.Exec(ctx); err != nil {
+func (ituo *InviteTokenUpdateOne) ExecX(ctx context.Context) {
+	if err := ituo.Exec(ctx); err != nil {
 		panic(err)
 	}
 }
 
 // check runs all checks and user-defined validators on the builder.
-func (_u *InviteTokenUpdateOne) check() error {
-	if v, ok := _u.mutation.TokenHash(); ok {
+func (ituo *InviteTokenUpdateOne) check() error {
+	if v, ok := ituo.mutation.TokenHash(); ok {
 		if err := invitetoken.TokenHashValidator(v); err != nil {
 			return &ValidationError{Name: "token_hash", err: fmt.Errorf(`ent: validator failed for field "InviteToken.token_hash": %w`, err)}
 		}
 	}
-	if v, ok := _u.mutation.Email(); ok {
+	if v, ok := ituo.mutation.Email(); ok {
 		if err := invitetoken.EmailValidator(v); err != nil {
 			return &ValidationError{Name: "email", err: fmt.Errorf(`ent: validator failed for field "InviteToken.email": %w`, err)}
 		}
@@ -338,17 +338,17 @@ func (_u *InviteTokenUpdateOne) check() error {
 	return nil
 }
 
-func (_u *InviteTokenUpdateOne) sqlSave(ctx context.Context) (_node *InviteToken, err error) {
-	if err := _u.check(); err != nil {
+func (ituo *InviteTokenUpdateOne) sqlSave(ctx context.Context) (_node *InviteToken, err error) {
+	if err := ituo.check(); err != nil {
 		return _node, err
 	}
 	_spec := sqlgraph.NewUpdateSpec(invitetoken.Table, invitetoken.Columns, sqlgraph.NewFieldSpec(invitetoken.FieldID, field.TypeUUID))
-	id, ok := _u.mutation.ID()
+	id, ok := ituo.mutation.ID()
 	if !ok {
 		return nil, &ValidationError{Name: "id", err: errors.New(`ent: missing "InviteToken.id" for update`)}
 	}
 	_spec.Node.ID.Value = id
-	if fields := _u.fields; len(fields) > 0 {
+	if fields := ituo.fields; len(fields) > 0 {
 		_spec.Node.Columns = make([]string, 0, len(fields))
 		_spec.Node.Columns = append(_spec.Node.Columns, invitetoken.FieldID)
 		for _, f := range fields {
@@ -360,35 +360,35 @@ func (_u *InviteTokenUpdateOne) sqlSave(ctx context.Context) (_node *InviteToken
 			}
 		}
 	}
-	if ps := _u.mutation.predicates; len(ps) > 0 {
+	if ps := ituo.mutation.predicates; len(ps) > 0 {
 		_spec.Predicate = func(selector *sql.Selector) {
 			for i := range ps {
 				ps[i](selector)
 			}
 		}
 	}
-	if value, ok := _u.mutation.TokenHash(); ok {
+	if value, ok := ituo.mutation.TokenHash(); ok {
 		_spec.SetField(invitetoken.FieldTokenHash, field.TypeString, value)
 	}
-	if value, ok := _u.mutation.Email(); ok {
+	if value, ok := ituo.mutation.Email(); ok {
 		_spec.SetField(invitetoken.FieldEmail, field.TypeString, value)
 	}
-	if value, ok := _u.mutation.InvitedBy(); ok {
+	if value, ok := ituo.mutation.InvitedBy(); ok {
 		_spec.SetField(invitetoken.FieldInvitedBy, field.TypeUUID, value)
 	}
-	if value, ok := _u.mutation.ExpiresAt(); ok {
+	if value, ok := ituo.mutation.ExpiresAt(); ok {
 		_spec.SetField(invitetoken.FieldExpiresAt, field.TypeTime, value)
 	}
-	if value, ok := _u.mutation.AcceptedAt(); ok {
+	if value, ok := ituo.mutation.AcceptedAt(); ok {
 		_spec.SetField(invitetoken.FieldAcceptedAt, field.TypeTime, value)
 	}
-	if _u.mutation.AcceptedAtCleared() {
+	if ituo.mutation.AcceptedAtCleared() {
 		_spec.ClearField(invitetoken.FieldAcceptedAt, field.TypeTime)
 	}
-	_node = &InviteToken{config: _u.config}
+	_node = &InviteToken{config: ituo.config}
 	_spec.Assign = _node.assignValues
 	_spec.ScanValues = _node.scanValues
-	if err = sqlgraph.UpdateNode(ctx, _u.driver, _spec); err != nil {
+	if err = sqlgraph.UpdateNode(ctx, ituo.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{invitetoken.Label}
 		} else if sqlgraph.IsConstraintError(err) {
@@ -396,6 +396,6 @@ func (_u *InviteTokenUpdateOne) sqlSave(ctx context.Context) (_node *InviteToken
 		}
 		return nil, err
 	}
-	_u.mutation.done = true
+	ituo.mutation.done = true
 	return _node, nil
 }

@@ -29,40 +29,40 @@ type EventLogQuery struct {
 }
 
 // Where adds a new predicate for the EventLogQuery builder.
-func (_q *EventLogQuery) Where(ps ...predicate.EventLog) *EventLogQuery {
-	_q.predicates = append(_q.predicates, ps...)
-	return _q
+func (elq *EventLogQuery) Where(ps ...predicate.EventLog) *EventLogQuery {
+	elq.predicates = append(elq.predicates, ps...)
+	return elq
 }
 
 // Limit the number of records to be returned by this query.
-func (_q *EventLogQuery) Limit(limit int) *EventLogQuery {
-	_q.ctx.Limit = &limit
-	return _q
+func (elq *EventLogQuery) Limit(limit int) *EventLogQuery {
+	elq.ctx.Limit = &limit
+	return elq
 }
 
 // Offset to start from.
-func (_q *EventLogQuery) Offset(offset int) *EventLogQuery {
-	_q.ctx.Offset = &offset
-	return _q
+func (elq *EventLogQuery) Offset(offset int) *EventLogQuery {
+	elq.ctx.Offset = &offset
+	return elq
 }
 
 // Unique configures the query builder to filter duplicate records on query.
 // By default, unique is set to true, and can be disabled using this method.
-func (_q *EventLogQuery) Unique(unique bool) *EventLogQuery {
-	_q.ctx.Unique = &unique
-	return _q
+func (elq *EventLogQuery) Unique(unique bool) *EventLogQuery {
+	elq.ctx.Unique = &unique
+	return elq
 }
 
 // Order specifies how the records should be ordered.
-func (_q *EventLogQuery) Order(o ...eventlog.OrderOption) *EventLogQuery {
-	_q.order = append(_q.order, o...)
-	return _q
+func (elq *EventLogQuery) Order(o ...eventlog.OrderOption) *EventLogQuery {
+	elq.order = append(elq.order, o...)
+	return elq
 }
 
 // First returns the first EventLog entity from the query.
 // Returns a *NotFoundError when no EventLog was found.
-func (_q *EventLogQuery) First(ctx context.Context) (*EventLog, error) {
-	nodes, err := _q.Limit(1).All(setContextOp(ctx, _q.ctx, ent.OpQueryFirst))
+func (elq *EventLogQuery) First(ctx context.Context) (*EventLog, error) {
+	nodes, err := elq.Limit(1).All(setContextOp(ctx, elq.ctx, ent.OpQueryFirst))
 	if err != nil {
 		return nil, err
 	}
@@ -73,8 +73,8 @@ func (_q *EventLogQuery) First(ctx context.Context) (*EventLog, error) {
 }
 
 // FirstX is like First, but panics if an error occurs.
-func (_q *EventLogQuery) FirstX(ctx context.Context) *EventLog {
-	node, err := _q.First(ctx)
+func (elq *EventLogQuery) FirstX(ctx context.Context) *EventLog {
+	node, err := elq.First(ctx)
 	if err != nil && !IsNotFound(err) {
 		panic(err)
 	}
@@ -83,9 +83,9 @@ func (_q *EventLogQuery) FirstX(ctx context.Context) *EventLog {
 
 // FirstID returns the first EventLog ID from the query.
 // Returns a *NotFoundError when no EventLog ID was found.
-func (_q *EventLogQuery) FirstID(ctx context.Context) (id uuid.UUID, err error) {
+func (elq *EventLogQuery) FirstID(ctx context.Context) (id uuid.UUID, err error) {
 	var ids []uuid.UUID
-	if ids, err = _q.Limit(1).IDs(setContextOp(ctx, _q.ctx, ent.OpQueryFirstID)); err != nil {
+	if ids, err = elq.Limit(1).IDs(setContextOp(ctx, elq.ctx, ent.OpQueryFirstID)); err != nil {
 		return
 	}
 	if len(ids) == 0 {
@@ -96,8 +96,8 @@ func (_q *EventLogQuery) FirstID(ctx context.Context) (id uuid.UUID, err error) 
 }
 
 // FirstIDX is like FirstID, but panics if an error occurs.
-func (_q *EventLogQuery) FirstIDX(ctx context.Context) uuid.UUID {
-	id, err := _q.FirstID(ctx)
+func (elq *EventLogQuery) FirstIDX(ctx context.Context) uuid.UUID {
+	id, err := elq.FirstID(ctx)
 	if err != nil && !IsNotFound(err) {
 		panic(err)
 	}
@@ -107,8 +107,8 @@ func (_q *EventLogQuery) FirstIDX(ctx context.Context) uuid.UUID {
 // Only returns a single EventLog entity found by the query, ensuring it only returns one.
 // Returns a *NotSingularError when more than one EventLog entity is found.
 // Returns a *NotFoundError when no EventLog entities are found.
-func (_q *EventLogQuery) Only(ctx context.Context) (*EventLog, error) {
-	nodes, err := _q.Limit(2).All(setContextOp(ctx, _q.ctx, ent.OpQueryOnly))
+func (elq *EventLogQuery) Only(ctx context.Context) (*EventLog, error) {
+	nodes, err := elq.Limit(2).All(setContextOp(ctx, elq.ctx, ent.OpQueryOnly))
 	if err != nil {
 		return nil, err
 	}
@@ -123,8 +123,8 @@ func (_q *EventLogQuery) Only(ctx context.Context) (*EventLog, error) {
 }
 
 // OnlyX is like Only, but panics if an error occurs.
-func (_q *EventLogQuery) OnlyX(ctx context.Context) *EventLog {
-	node, err := _q.Only(ctx)
+func (elq *EventLogQuery) OnlyX(ctx context.Context) *EventLog {
+	node, err := elq.Only(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -134,9 +134,9 @@ func (_q *EventLogQuery) OnlyX(ctx context.Context) *EventLog {
 // OnlyID is like Only, but returns the only EventLog ID in the query.
 // Returns a *NotSingularError when more than one EventLog ID is found.
 // Returns a *NotFoundError when no entities are found.
-func (_q *EventLogQuery) OnlyID(ctx context.Context) (id uuid.UUID, err error) {
+func (elq *EventLogQuery) OnlyID(ctx context.Context) (id uuid.UUID, err error) {
 	var ids []uuid.UUID
-	if ids, err = _q.Limit(2).IDs(setContextOp(ctx, _q.ctx, ent.OpQueryOnlyID)); err != nil {
+	if ids, err = elq.Limit(2).IDs(setContextOp(ctx, elq.ctx, ent.OpQueryOnlyID)); err != nil {
 		return
 	}
 	switch len(ids) {
@@ -151,8 +151,8 @@ func (_q *EventLogQuery) OnlyID(ctx context.Context) (id uuid.UUID, err error) {
 }
 
 // OnlyIDX is like OnlyID, but panics if an error occurs.
-func (_q *EventLogQuery) OnlyIDX(ctx context.Context) uuid.UUID {
-	id, err := _q.OnlyID(ctx)
+func (elq *EventLogQuery) OnlyIDX(ctx context.Context) uuid.UUID {
+	id, err := elq.OnlyID(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -160,18 +160,18 @@ func (_q *EventLogQuery) OnlyIDX(ctx context.Context) uuid.UUID {
 }
 
 // All executes the query and returns a list of EventLogs.
-func (_q *EventLogQuery) All(ctx context.Context) ([]*EventLog, error) {
-	ctx = setContextOp(ctx, _q.ctx, ent.OpQueryAll)
-	if err := _q.prepareQuery(ctx); err != nil {
+func (elq *EventLogQuery) All(ctx context.Context) ([]*EventLog, error) {
+	ctx = setContextOp(ctx, elq.ctx, ent.OpQueryAll)
+	if err := elq.prepareQuery(ctx); err != nil {
 		return nil, err
 	}
 	qr := querierAll[[]*EventLog, *EventLogQuery]()
-	return withInterceptors[[]*EventLog](ctx, _q, qr, _q.inters)
+	return withInterceptors[[]*EventLog](ctx, elq, qr, elq.inters)
 }
 
 // AllX is like All, but panics if an error occurs.
-func (_q *EventLogQuery) AllX(ctx context.Context) []*EventLog {
-	nodes, err := _q.All(ctx)
+func (elq *EventLogQuery) AllX(ctx context.Context) []*EventLog {
+	nodes, err := elq.All(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -179,20 +179,20 @@ func (_q *EventLogQuery) AllX(ctx context.Context) []*EventLog {
 }
 
 // IDs executes the query and returns a list of EventLog IDs.
-func (_q *EventLogQuery) IDs(ctx context.Context) (ids []uuid.UUID, err error) {
-	if _q.ctx.Unique == nil && _q.path != nil {
-		_q.Unique(true)
+func (elq *EventLogQuery) IDs(ctx context.Context) (ids []uuid.UUID, err error) {
+	if elq.ctx.Unique == nil && elq.path != nil {
+		elq.Unique(true)
 	}
-	ctx = setContextOp(ctx, _q.ctx, ent.OpQueryIDs)
-	if err = _q.Select(eventlog.FieldID).Scan(ctx, &ids); err != nil {
+	ctx = setContextOp(ctx, elq.ctx, ent.OpQueryIDs)
+	if err = elq.Select(eventlog.FieldID).Scan(ctx, &ids); err != nil {
 		return nil, err
 	}
 	return ids, nil
 }
 
 // IDsX is like IDs, but panics if an error occurs.
-func (_q *EventLogQuery) IDsX(ctx context.Context) []uuid.UUID {
-	ids, err := _q.IDs(ctx)
+func (elq *EventLogQuery) IDsX(ctx context.Context) []uuid.UUID {
+	ids, err := elq.IDs(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -200,17 +200,17 @@ func (_q *EventLogQuery) IDsX(ctx context.Context) []uuid.UUID {
 }
 
 // Count returns the count of the given query.
-func (_q *EventLogQuery) Count(ctx context.Context) (int, error) {
-	ctx = setContextOp(ctx, _q.ctx, ent.OpQueryCount)
-	if err := _q.prepareQuery(ctx); err != nil {
+func (elq *EventLogQuery) Count(ctx context.Context) (int, error) {
+	ctx = setContextOp(ctx, elq.ctx, ent.OpQueryCount)
+	if err := elq.prepareQuery(ctx); err != nil {
 		return 0, err
 	}
-	return withInterceptors[int](ctx, _q, querierCount[*EventLogQuery](), _q.inters)
+	return withInterceptors[int](ctx, elq, querierCount[*EventLogQuery](), elq.inters)
 }
 
 // CountX is like Count, but panics if an error occurs.
-func (_q *EventLogQuery) CountX(ctx context.Context) int {
-	count, err := _q.Count(ctx)
+func (elq *EventLogQuery) CountX(ctx context.Context) int {
+	count, err := elq.Count(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -218,9 +218,9 @@ func (_q *EventLogQuery) CountX(ctx context.Context) int {
 }
 
 // Exist returns true if the query has elements in the graph.
-func (_q *EventLogQuery) Exist(ctx context.Context) (bool, error) {
-	ctx = setContextOp(ctx, _q.ctx, ent.OpQueryExist)
-	switch _, err := _q.FirstID(ctx); {
+func (elq *EventLogQuery) Exist(ctx context.Context) (bool, error) {
+	ctx = setContextOp(ctx, elq.ctx, ent.OpQueryExist)
+	switch _, err := elq.FirstID(ctx); {
 	case IsNotFound(err):
 		return false, nil
 	case err != nil:
@@ -231,8 +231,8 @@ func (_q *EventLogQuery) Exist(ctx context.Context) (bool, error) {
 }
 
 // ExistX is like Exist, but panics if an error occurs.
-func (_q *EventLogQuery) ExistX(ctx context.Context) bool {
-	exist, err := _q.Exist(ctx)
+func (elq *EventLogQuery) ExistX(ctx context.Context) bool {
+	exist, err := elq.Exist(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -241,19 +241,19 @@ func (_q *EventLogQuery) ExistX(ctx context.Context) bool {
 
 // Clone returns a duplicate of the EventLogQuery builder, including all associated steps. It can be
 // used to prepare common query builders and use them differently after the clone is made.
-func (_q *EventLogQuery) Clone() *EventLogQuery {
-	if _q == nil {
+func (elq *EventLogQuery) Clone() *EventLogQuery {
+	if elq == nil {
 		return nil
 	}
 	return &EventLogQuery{
-		config:     _q.config,
-		ctx:        _q.ctx.Clone(),
-		order:      append([]eventlog.OrderOption{}, _q.order...),
-		inters:     append([]Interceptor{}, _q.inters...),
-		predicates: append([]predicate.EventLog{}, _q.predicates...),
+		config:     elq.config,
+		ctx:        elq.ctx.Clone(),
+		order:      append([]eventlog.OrderOption{}, elq.order...),
+		inters:     append([]Interceptor{}, elq.inters...),
+		predicates: append([]predicate.EventLog{}, elq.predicates...),
 		// clone intermediate query.
-		sql:  _q.sql.Clone(),
-		path: _q.path,
+		sql:  elq.sql.Clone(),
+		path: elq.path,
 	}
 }
 
@@ -271,10 +271,10 @@ func (_q *EventLogQuery) Clone() *EventLogQuery {
 //		GroupBy(eventlog.FieldOccurredAt).
 //		Aggregate(ent.Count()).
 //		Scan(ctx, &v)
-func (_q *EventLogQuery) GroupBy(field string, fields ...string) *EventLogGroupBy {
-	_q.ctx.Fields = append([]string{field}, fields...)
-	grbuild := &EventLogGroupBy{build: _q}
-	grbuild.flds = &_q.ctx.Fields
+func (elq *EventLogQuery) GroupBy(field string, fields ...string) *EventLogGroupBy {
+	elq.ctx.Fields = append([]string{field}, fields...)
+	grbuild := &EventLogGroupBy{build: elq}
+	grbuild.flds = &elq.ctx.Fields
 	grbuild.label = eventlog.Label
 	grbuild.scan = grbuild.Scan
 	return grbuild
@@ -292,62 +292,62 @@ func (_q *EventLogQuery) GroupBy(field string, fields ...string) *EventLogGroupB
 //	client.EventLog.Query().
 //		Select(eventlog.FieldOccurredAt).
 //		Scan(ctx, &v)
-func (_q *EventLogQuery) Select(fields ...string) *EventLogSelect {
-	_q.ctx.Fields = append(_q.ctx.Fields, fields...)
-	sbuild := &EventLogSelect{EventLogQuery: _q}
+func (elq *EventLogQuery) Select(fields ...string) *EventLogSelect {
+	elq.ctx.Fields = append(elq.ctx.Fields, fields...)
+	sbuild := &EventLogSelect{EventLogQuery: elq}
 	sbuild.label = eventlog.Label
-	sbuild.flds, sbuild.scan = &_q.ctx.Fields, sbuild.Scan
+	sbuild.flds, sbuild.scan = &elq.ctx.Fields, sbuild.Scan
 	return sbuild
 }
 
 // Aggregate returns a EventLogSelect configured with the given aggregations.
-func (_q *EventLogQuery) Aggregate(fns ...AggregateFunc) *EventLogSelect {
-	return _q.Select().Aggregate(fns...)
+func (elq *EventLogQuery) Aggregate(fns ...AggregateFunc) *EventLogSelect {
+	return elq.Select().Aggregate(fns...)
 }
 
-func (_q *EventLogQuery) prepareQuery(ctx context.Context) error {
-	for _, inter := range _q.inters {
+func (elq *EventLogQuery) prepareQuery(ctx context.Context) error {
+	for _, inter := range elq.inters {
 		if inter == nil {
 			return fmt.Errorf("ent: uninitialized interceptor (forgotten import ent/runtime?)")
 		}
 		if trv, ok := inter.(Traverser); ok {
-			if err := trv.Traverse(ctx, _q); err != nil {
+			if err := trv.Traverse(ctx, elq); err != nil {
 				return err
 			}
 		}
 	}
-	for _, f := range _q.ctx.Fields {
+	for _, f := range elq.ctx.Fields {
 		if !eventlog.ValidColumn(f) {
 			return &ValidationError{Name: f, err: fmt.Errorf("ent: invalid field %q for query", f)}
 		}
 	}
-	if _q.path != nil {
-		prev, err := _q.path(ctx)
+	if elq.path != nil {
+		prev, err := elq.path(ctx)
 		if err != nil {
 			return err
 		}
-		_q.sql = prev
+		elq.sql = prev
 	}
 	return nil
 }
 
-func (_q *EventLogQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*EventLog, error) {
+func (elq *EventLogQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*EventLog, error) {
 	var (
 		nodes = []*EventLog{}
-		_spec = _q.querySpec()
+		_spec = elq.querySpec()
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
 		return (*EventLog).scanValues(nil, columns)
 	}
 	_spec.Assign = func(columns []string, values []any) error {
-		node := &EventLog{config: _q.config}
+		node := &EventLog{config: elq.config}
 		nodes = append(nodes, node)
 		return node.assignValues(columns, values)
 	}
 	for i := range hooks {
 		hooks[i](ctx, _spec)
 	}
-	if err := sqlgraph.QueryNodes(ctx, _q.driver, _spec); err != nil {
+	if err := sqlgraph.QueryNodes(ctx, elq.driver, _spec); err != nil {
 		return nil, err
 	}
 	if len(nodes) == 0 {
@@ -356,24 +356,24 @@ func (_q *EventLogQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Eve
 	return nodes, nil
 }
 
-func (_q *EventLogQuery) sqlCount(ctx context.Context) (int, error) {
-	_spec := _q.querySpec()
-	_spec.Node.Columns = _q.ctx.Fields
-	if len(_q.ctx.Fields) > 0 {
-		_spec.Unique = _q.ctx.Unique != nil && *_q.ctx.Unique
+func (elq *EventLogQuery) sqlCount(ctx context.Context) (int, error) {
+	_spec := elq.querySpec()
+	_spec.Node.Columns = elq.ctx.Fields
+	if len(elq.ctx.Fields) > 0 {
+		_spec.Unique = elq.ctx.Unique != nil && *elq.ctx.Unique
 	}
-	return sqlgraph.CountNodes(ctx, _q.driver, _spec)
+	return sqlgraph.CountNodes(ctx, elq.driver, _spec)
 }
 
-func (_q *EventLogQuery) querySpec() *sqlgraph.QuerySpec {
+func (elq *EventLogQuery) querySpec() *sqlgraph.QuerySpec {
 	_spec := sqlgraph.NewQuerySpec(eventlog.Table, eventlog.Columns, sqlgraph.NewFieldSpec(eventlog.FieldID, field.TypeUUID))
-	_spec.From = _q.sql
-	if unique := _q.ctx.Unique; unique != nil {
+	_spec.From = elq.sql
+	if unique := elq.ctx.Unique; unique != nil {
 		_spec.Unique = *unique
-	} else if _q.path != nil {
+	} else if elq.path != nil {
 		_spec.Unique = true
 	}
-	if fields := _q.ctx.Fields; len(fields) > 0 {
+	if fields := elq.ctx.Fields; len(fields) > 0 {
 		_spec.Node.Columns = make([]string, 0, len(fields))
 		_spec.Node.Columns = append(_spec.Node.Columns, eventlog.FieldID)
 		for i := range fields {
@@ -382,20 +382,20 @@ func (_q *EventLogQuery) querySpec() *sqlgraph.QuerySpec {
 			}
 		}
 	}
-	if ps := _q.predicates; len(ps) > 0 {
+	if ps := elq.predicates; len(ps) > 0 {
 		_spec.Predicate = func(selector *sql.Selector) {
 			for i := range ps {
 				ps[i](selector)
 			}
 		}
 	}
-	if limit := _q.ctx.Limit; limit != nil {
+	if limit := elq.ctx.Limit; limit != nil {
 		_spec.Limit = *limit
 	}
-	if offset := _q.ctx.Offset; offset != nil {
+	if offset := elq.ctx.Offset; offset != nil {
 		_spec.Offset = *offset
 	}
-	if ps := _q.order; len(ps) > 0 {
+	if ps := elq.order; len(ps) > 0 {
 		_spec.Order = func(selector *sql.Selector) {
 			for i := range ps {
 				ps[i](selector)
@@ -405,33 +405,33 @@ func (_q *EventLogQuery) querySpec() *sqlgraph.QuerySpec {
 	return _spec
 }
 
-func (_q *EventLogQuery) sqlQuery(ctx context.Context) *sql.Selector {
-	builder := sql.Dialect(_q.driver.Dialect())
+func (elq *EventLogQuery) sqlQuery(ctx context.Context) *sql.Selector {
+	builder := sql.Dialect(elq.driver.Dialect())
 	t1 := builder.Table(eventlog.Table)
-	columns := _q.ctx.Fields
+	columns := elq.ctx.Fields
 	if len(columns) == 0 {
 		columns = eventlog.Columns
 	}
 	selector := builder.Select(t1.Columns(columns...)...).From(t1)
-	if _q.sql != nil {
-		selector = _q.sql
+	if elq.sql != nil {
+		selector = elq.sql
 		selector.Select(selector.Columns(columns...)...)
 	}
-	if _q.ctx.Unique != nil && *_q.ctx.Unique {
+	if elq.ctx.Unique != nil && *elq.ctx.Unique {
 		selector.Distinct()
 	}
-	for _, p := range _q.predicates {
+	for _, p := range elq.predicates {
 		p(selector)
 	}
-	for _, p := range _q.order {
+	for _, p := range elq.order {
 		p(selector)
 	}
-	if offset := _q.ctx.Offset; offset != nil {
+	if offset := elq.ctx.Offset; offset != nil {
 		// limit is mandatory for offset clause. We start
 		// with default value, and override it below if needed.
 		selector.Offset(*offset).Limit(math.MaxInt32)
 	}
-	if limit := _q.ctx.Limit; limit != nil {
+	if limit := elq.ctx.Limit; limit != nil {
 		selector.Limit(*limit)
 	}
 	return selector
@@ -444,41 +444,41 @@ type EventLogGroupBy struct {
 }
 
 // Aggregate adds the given aggregation functions to the group-by query.
-func (_g *EventLogGroupBy) Aggregate(fns ...AggregateFunc) *EventLogGroupBy {
-	_g.fns = append(_g.fns, fns...)
-	return _g
+func (elgb *EventLogGroupBy) Aggregate(fns ...AggregateFunc) *EventLogGroupBy {
+	elgb.fns = append(elgb.fns, fns...)
+	return elgb
 }
 
 // Scan applies the selector query and scans the result into the given value.
-func (_g *EventLogGroupBy) Scan(ctx context.Context, v any) error {
-	ctx = setContextOp(ctx, _g.build.ctx, ent.OpQueryGroupBy)
-	if err := _g.build.prepareQuery(ctx); err != nil {
+func (elgb *EventLogGroupBy) Scan(ctx context.Context, v any) error {
+	ctx = setContextOp(ctx, elgb.build.ctx, ent.OpQueryGroupBy)
+	if err := elgb.build.prepareQuery(ctx); err != nil {
 		return err
 	}
-	return scanWithInterceptors[*EventLogQuery, *EventLogGroupBy](ctx, _g.build, _g, _g.build.inters, v)
+	return scanWithInterceptors[*EventLogQuery, *EventLogGroupBy](ctx, elgb.build, elgb, elgb.build.inters, v)
 }
 
-func (_g *EventLogGroupBy) sqlScan(ctx context.Context, root *EventLogQuery, v any) error {
+func (elgb *EventLogGroupBy) sqlScan(ctx context.Context, root *EventLogQuery, v any) error {
 	selector := root.sqlQuery(ctx).Select()
-	aggregation := make([]string, 0, len(_g.fns))
-	for _, fn := range _g.fns {
+	aggregation := make([]string, 0, len(elgb.fns))
+	for _, fn := range elgb.fns {
 		aggregation = append(aggregation, fn(selector))
 	}
 	if len(selector.SelectedColumns()) == 0 {
-		columns := make([]string, 0, len(*_g.flds)+len(_g.fns))
-		for _, f := range *_g.flds {
+		columns := make([]string, 0, len(*elgb.flds)+len(elgb.fns))
+		for _, f := range *elgb.flds {
 			columns = append(columns, selector.C(f))
 		}
 		columns = append(columns, aggregation...)
 		selector.Select(columns...)
 	}
-	selector.GroupBy(selector.Columns(*_g.flds...)...)
+	selector.GroupBy(selector.Columns(*elgb.flds...)...)
 	if err := selector.Err(); err != nil {
 		return err
 	}
 	rows := &sql.Rows{}
 	query, args := selector.Query()
-	if err := _g.build.driver.Query(ctx, query, args, rows); err != nil {
+	if err := elgb.build.driver.Query(ctx, query, args, rows); err != nil {
 		return err
 	}
 	defer rows.Close()
@@ -492,27 +492,27 @@ type EventLogSelect struct {
 }
 
 // Aggregate adds the given aggregation functions to the selector query.
-func (_s *EventLogSelect) Aggregate(fns ...AggregateFunc) *EventLogSelect {
-	_s.fns = append(_s.fns, fns...)
-	return _s
+func (els *EventLogSelect) Aggregate(fns ...AggregateFunc) *EventLogSelect {
+	els.fns = append(els.fns, fns...)
+	return els
 }
 
 // Scan applies the selector query and scans the result into the given value.
-func (_s *EventLogSelect) Scan(ctx context.Context, v any) error {
-	ctx = setContextOp(ctx, _s.ctx, ent.OpQuerySelect)
-	if err := _s.prepareQuery(ctx); err != nil {
+func (els *EventLogSelect) Scan(ctx context.Context, v any) error {
+	ctx = setContextOp(ctx, els.ctx, ent.OpQuerySelect)
+	if err := els.prepareQuery(ctx); err != nil {
 		return err
 	}
-	return scanWithInterceptors[*EventLogQuery, *EventLogSelect](ctx, _s.EventLogQuery, _s, _s.inters, v)
+	return scanWithInterceptors[*EventLogQuery, *EventLogSelect](ctx, els.EventLogQuery, els, els.inters, v)
 }
 
-func (_s *EventLogSelect) sqlScan(ctx context.Context, root *EventLogQuery, v any) error {
+func (els *EventLogSelect) sqlScan(ctx context.Context, root *EventLogQuery, v any) error {
 	selector := root.sqlQuery(ctx)
-	aggregation := make([]string, 0, len(_s.fns))
-	for _, fn := range _s.fns {
+	aggregation := make([]string, 0, len(els.fns))
+	for _, fn := range els.fns {
 		aggregation = append(aggregation, fn(selector))
 	}
-	switch n := len(*_s.selector.flds); {
+	switch n := len(*els.selector.flds); {
 	case n == 0 && len(aggregation) > 0:
 		selector.Select(aggregation...)
 	case n != 0 && len(aggregation) > 0:
@@ -520,7 +520,7 @@ func (_s *EventLogSelect) sqlScan(ctx context.Context, root *EventLogQuery, v an
 	}
 	rows := &sql.Rows{}
 	query, args := selector.Query()
-	if err := _s.driver.Query(ctx, query, args, rows); err != nil {
+	if err := els.driver.Query(ctx, query, args, rows); err != nil {
 		return err
 	}
 	defer rows.Close()

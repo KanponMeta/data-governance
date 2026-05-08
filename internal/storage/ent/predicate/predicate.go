@@ -12,5 +12,11 @@ type EventLog func(*sql.Selector)
 // InviteToken is the predicate function for invitetoken builders.
 type InviteToken func(*sql.Selector)
 
+// Run is the predicate function for run builders.
+type Run func(*sql.Selector)
+
+// RunStep is the predicate function for runstep builders.
+type RunStep func(*sql.Selector)
+
 // User is the predicate function for user builders.
 type User func(*sql.Selector)

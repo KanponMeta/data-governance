@@ -25,85 +25,85 @@ type InviteTokenCreate struct {
 }
 
 // SetTokenHash sets the "token_hash" field.
-func (_c *InviteTokenCreate) SetTokenHash(v string) *InviteTokenCreate {
-	_c.mutation.SetTokenHash(v)
-	return _c
+func (itc *InviteTokenCreate) SetTokenHash(s string) *InviteTokenCreate {
+	itc.mutation.SetTokenHash(s)
+	return itc
 }
 
 // SetEmail sets the "email" field.
-func (_c *InviteTokenCreate) SetEmail(v string) *InviteTokenCreate {
-	_c.mutation.SetEmail(v)
-	return _c
+func (itc *InviteTokenCreate) SetEmail(s string) *InviteTokenCreate {
+	itc.mutation.SetEmail(s)
+	return itc
 }
 
 // SetInvitedBy sets the "invited_by" field.
-func (_c *InviteTokenCreate) SetInvitedBy(v uuid.UUID) *InviteTokenCreate {
-	_c.mutation.SetInvitedBy(v)
-	return _c
+func (itc *InviteTokenCreate) SetInvitedBy(u uuid.UUID) *InviteTokenCreate {
+	itc.mutation.SetInvitedBy(u)
+	return itc
 }
 
 // SetExpiresAt sets the "expires_at" field.
-func (_c *InviteTokenCreate) SetExpiresAt(v time.Time) *InviteTokenCreate {
-	_c.mutation.SetExpiresAt(v)
-	return _c
+func (itc *InviteTokenCreate) SetExpiresAt(t time.Time) *InviteTokenCreate {
+	itc.mutation.SetExpiresAt(t)
+	return itc
 }
 
 // SetAcceptedAt sets the "accepted_at" field.
-func (_c *InviteTokenCreate) SetAcceptedAt(v time.Time) *InviteTokenCreate {
-	_c.mutation.SetAcceptedAt(v)
-	return _c
+func (itc *InviteTokenCreate) SetAcceptedAt(t time.Time) *InviteTokenCreate {
+	itc.mutation.SetAcceptedAt(t)
+	return itc
 }
 
 // SetNillableAcceptedAt sets the "accepted_at" field if the given value is not nil.
-func (_c *InviteTokenCreate) SetNillableAcceptedAt(v *time.Time) *InviteTokenCreate {
-	if v != nil {
-		_c.SetAcceptedAt(*v)
+func (itc *InviteTokenCreate) SetNillableAcceptedAt(t *time.Time) *InviteTokenCreate {
+	if t != nil {
+		itc.SetAcceptedAt(*t)
 	}
-	return _c
+	return itc
 }
 
 // SetCreatedAt sets the "created_at" field.
-func (_c *InviteTokenCreate) SetCreatedAt(v time.Time) *InviteTokenCreate {
-	_c.mutation.SetCreatedAt(v)
-	return _c
+func (itc *InviteTokenCreate) SetCreatedAt(t time.Time) *InviteTokenCreate {
+	itc.mutation.SetCreatedAt(t)
+	return itc
 }
 
 // SetNillableCreatedAt sets the "created_at" field if the given value is not nil.
-func (_c *InviteTokenCreate) SetNillableCreatedAt(v *time.Time) *InviteTokenCreate {
-	if v != nil {
-		_c.SetCreatedAt(*v)
+func (itc *InviteTokenCreate) SetNillableCreatedAt(t *time.Time) *InviteTokenCreate {
+	if t != nil {
+		itc.SetCreatedAt(*t)
 	}
-	return _c
+	return itc
 }
 
 // SetID sets the "id" field.
-func (_c *InviteTokenCreate) SetID(v uuid.UUID) *InviteTokenCreate {
-	_c.mutation.SetID(v)
-	return _c
+func (itc *InviteTokenCreate) SetID(u uuid.UUID) *InviteTokenCreate {
+	itc.mutation.SetID(u)
+	return itc
 }
 
 // SetNillableID sets the "id" field if the given value is not nil.
-func (_c *InviteTokenCreate) SetNillableID(v *uuid.UUID) *InviteTokenCreate {
-	if v != nil {
-		_c.SetID(*v)
+func (itc *InviteTokenCreate) SetNillableID(u *uuid.UUID) *InviteTokenCreate {
+	if u != nil {
+		itc.SetID(*u)
 	}
-	return _c
+	return itc
 }
 
 // Mutation returns the InviteTokenMutation object of the builder.
-func (_c *InviteTokenCreate) Mutation() *InviteTokenMutation {
-	return _c.mutation
+func (itc *InviteTokenCreate) Mutation() *InviteTokenMutation {
+	return itc.mutation
 }
 
 // Save creates the InviteToken in the database.
-func (_c *InviteTokenCreate) Save(ctx context.Context) (*InviteToken, error) {
-	_c.defaults()
-	return withHooks(ctx, _c.sqlSave, _c.mutation, _c.hooks)
+func (itc *InviteTokenCreate) Save(ctx context.Context) (*InviteToken, error) {
+	itc.defaults()
+	return withHooks(ctx, itc.sqlSave, itc.mutation, itc.hooks)
 }
 
 // SaveX calls Save and panics if Save returns an error.
-func (_c *InviteTokenCreate) SaveX(ctx context.Context) *InviteToken {
-	v, err := _c.Save(ctx)
+func (itc *InviteTokenCreate) SaveX(ctx context.Context) *InviteToken {
+	v, err := itc.Save(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -111,66 +111,66 @@ func (_c *InviteTokenCreate) SaveX(ctx context.Context) *InviteToken {
 }
 
 // Exec executes the query.
-func (_c *InviteTokenCreate) Exec(ctx context.Context) error {
-	_, err := _c.Save(ctx)
+func (itc *InviteTokenCreate) Exec(ctx context.Context) error {
+	_, err := itc.Save(ctx)
 	return err
 }
 
 // ExecX is like Exec, but panics if an error occurs.
-func (_c *InviteTokenCreate) ExecX(ctx context.Context) {
-	if err := _c.Exec(ctx); err != nil {
+func (itc *InviteTokenCreate) ExecX(ctx context.Context) {
+	if err := itc.Exec(ctx); err != nil {
 		panic(err)
 	}
 }
 
 // defaults sets the default values of the builder before save.
-func (_c *InviteTokenCreate) defaults() {
-	if _, ok := _c.mutation.CreatedAt(); !ok {
+func (itc *InviteTokenCreate) defaults() {
+	if _, ok := itc.mutation.CreatedAt(); !ok {
 		v := invitetoken.DefaultCreatedAt()
-		_c.mutation.SetCreatedAt(v)
+		itc.mutation.SetCreatedAt(v)
 	}
-	if _, ok := _c.mutation.ID(); !ok {
+	if _, ok := itc.mutation.ID(); !ok {
 		v := invitetoken.DefaultID()
-		_c.mutation.SetID(v)
+		itc.mutation.SetID(v)
 	}
 }
 
 // check runs all checks and user-defined validators on the builder.
-func (_c *InviteTokenCreate) check() error {
-	if _, ok := _c.mutation.TokenHash(); !ok {
+func (itc *InviteTokenCreate) check() error {
+	if _, ok := itc.mutation.TokenHash(); !ok {
 		return &ValidationError{Name: "token_hash", err: errors.New(`ent: missing required field "InviteToken.token_hash"`)}
 	}
-	if v, ok := _c.mutation.TokenHash(); ok {
+	if v, ok := itc.mutation.TokenHash(); ok {
 		if err := invitetoken.TokenHashValidator(v); err != nil {
 			return &ValidationError{Name: "token_hash", err: fmt.Errorf(`ent: validator failed for field "InviteToken.token_hash": %w`, err)}
 		}
 	}
-	if _, ok := _c.mutation.Email(); !ok {
+	if _, ok := itc.mutation.Email(); !ok {
 		return &ValidationError{Name: "email", err: errors.New(`ent: missing required field "InviteToken.email"`)}
 	}
-	if v, ok := _c.mutation.Email(); ok {
+	if v, ok := itc.mutation.Email(); ok {
 		if err := invitetoken.EmailValidator(v); err != nil {
 			return &ValidationError{Name: "email", err: fmt.Errorf(`ent: validator failed for field "InviteToken.email": %w`, err)}
 		}
 	}
-	if _, ok := _c.mutation.InvitedBy(); !ok {
+	if _, ok := itc.mutation.InvitedBy(); !ok {
 		return &ValidationError{Name: "invited_by", err: errors.New(`ent: missing required field "InviteToken.invited_by"`)}
 	}
-	if _, ok := _c.mutation.ExpiresAt(); !ok {
+	if _, ok := itc.mutation.ExpiresAt(); !ok {
 		return &ValidationError{Name: "expires_at", err: errors.New(`ent: missing required field "InviteToken.expires_at"`)}
 	}
-	if _, ok := _c.mutation.CreatedAt(); !ok {
+	if _, ok := itc.mutation.CreatedAt(); !ok {
 		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "InviteToken.created_at"`)}
 	}
 	return nil
 }
 
-func (_c *InviteTokenCreate) sqlSave(ctx context.Context) (*InviteToken, error) {
-	if err := _c.check(); err != nil {
+func (itc *InviteTokenCreate) sqlSave(ctx context.Context) (*InviteToken, error) {
+	if err := itc.check(); err != nil {
 		return nil, err
 	}
-	_node, _spec := _c.createSpec()
-	if err := sqlgraph.CreateNode(ctx, _c.driver, _spec); err != nil {
+	_node, _spec := itc.createSpec()
+	if err := sqlgraph.CreateNode(ctx, itc.driver, _spec); err != nil {
 		if sqlgraph.IsConstraintError(err) {
 			err = &ConstraintError{msg: err.Error(), wrap: err}
 		}
@@ -183,42 +183,42 @@ func (_c *InviteTokenCreate) sqlSave(ctx context.Context) (*InviteToken, error) 
 			return nil, err
 		}
 	}
-	_c.mutation.id = &_node.ID
-	_c.mutation.done = true
+	itc.mutation.id = &_node.ID
+	itc.mutation.done = true
 	return _node, nil
 }
 
-func (_c *InviteTokenCreate) createSpec() (*InviteToken, *sqlgraph.CreateSpec) {
+func (itc *InviteTokenCreate) createSpec() (*InviteToken, *sqlgraph.CreateSpec) {
 	var (
-		_node = &InviteToken{config: _c.config}
+		_node = &InviteToken{config: itc.config}
 		_spec = sqlgraph.NewCreateSpec(invitetoken.Table, sqlgraph.NewFieldSpec(invitetoken.FieldID, field.TypeUUID))
 	)
-	_spec.OnConflict = _c.conflict
-	if id, ok := _c.mutation.ID(); ok {
+	_spec.OnConflict = itc.conflict
+	if id, ok := itc.mutation.ID(); ok {
 		_node.ID = id
 		_spec.ID.Value = &id
 	}
-	if value, ok := _c.mutation.TokenHash(); ok {
+	if value, ok := itc.mutation.TokenHash(); ok {
 		_spec.SetField(invitetoken.FieldTokenHash, field.TypeString, value)
 		_node.TokenHash = value
 	}
-	if value, ok := _c.mutation.Email(); ok {
+	if value, ok := itc.mutation.Email(); ok {
 		_spec.SetField(invitetoken.FieldEmail, field.TypeString, value)
 		_node.Email = value
 	}
-	if value, ok := _c.mutation.InvitedBy(); ok {
+	if value, ok := itc.mutation.InvitedBy(); ok {
 		_spec.SetField(invitetoken.FieldInvitedBy, field.TypeUUID, value)
 		_node.InvitedBy = value
 	}
-	if value, ok := _c.mutation.ExpiresAt(); ok {
+	if value, ok := itc.mutation.ExpiresAt(); ok {
 		_spec.SetField(invitetoken.FieldExpiresAt, field.TypeTime, value)
 		_node.ExpiresAt = value
 	}
-	if value, ok := _c.mutation.AcceptedAt(); ok {
+	if value, ok := itc.mutation.AcceptedAt(); ok {
 		_spec.SetField(invitetoken.FieldAcceptedAt, field.TypeTime, value)
 		_node.AcceptedAt = &value
 	}
-	if value, ok := _c.mutation.CreatedAt(); ok {
+	if value, ok := itc.mutation.CreatedAt(); ok {
 		_spec.SetField(invitetoken.FieldCreatedAt, field.TypeTime, value)
 		_node.CreatedAt = value
 	}
@@ -241,10 +241,10 @@ func (_c *InviteTokenCreate) createSpec() (*InviteToken, *sqlgraph.CreateSpec) {
 //			SetTokenHash(v+v).
 //		}).
 //		Exec(ctx)
-func (_c *InviteTokenCreate) OnConflict(opts ...sql.ConflictOption) *InviteTokenUpsertOne {
-	_c.conflict = opts
+func (itc *InviteTokenCreate) OnConflict(opts ...sql.ConflictOption) *InviteTokenUpsertOne {
+	itc.conflict = opts
 	return &InviteTokenUpsertOne{
-		create: _c,
+		create: itc,
 	}
 }
 
@@ -254,10 +254,10 @@ func (_c *InviteTokenCreate) OnConflict(opts ...sql.ConflictOption) *InviteToken
 //	client.InviteToken.Create().
 //		OnConflict(sql.ConflictColumns(columns...)).
 //		Exec(ctx)
-func (_c *InviteTokenCreate) OnConflictColumns(columns ...string) *InviteTokenUpsertOne {
-	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+func (itc *InviteTokenCreate) OnConflictColumns(columns ...string) *InviteTokenUpsertOne {
+	itc.conflict = append(itc.conflict, sql.ConflictColumns(columns...))
 	return &InviteTokenUpsertOne{
-		create: _c,
+		create: itc,
 	}
 }
 
@@ -515,16 +515,16 @@ type InviteTokenCreateBulk struct {
 }
 
 // Save creates the InviteToken entities in the database.
-func (_c *InviteTokenCreateBulk) Save(ctx context.Context) ([]*InviteToken, error) {
-	if _c.err != nil {
-		return nil, _c.err
+func (itcb *InviteTokenCreateBulk) Save(ctx context.Context) ([]*InviteToken, error) {
+	if itcb.err != nil {
+		return nil, itcb.err
 	}
-	specs := make([]*sqlgraph.CreateSpec, len(_c.builders))
-	nodes := make([]*InviteToken, len(_c.builders))
-	mutators := make([]Mutator, len(_c.builders))
-	for i := range _c.builders {
+	specs := make([]*sqlgraph.CreateSpec, len(itcb.builders))
+	nodes := make([]*InviteToken, len(itcb.builders))
+	mutators := make([]Mutator, len(itcb.builders))
+	for i := range itcb.builders {
 		func(i int, root context.Context) {
-			builder := _c.builders[i]
+			builder := itcb.builders[i]
 			builder.defaults()
 			var mut Mutator = MutateFunc(func(ctx context.Context, m Mutation) (Value, error) {
 				mutation, ok := m.(*InviteTokenMutation)
@@ -538,12 +538,12 @@ func (_c *InviteTokenCreateBulk) Save(ctx context.Context) ([]*InviteToken, erro
 				var err error
 				nodes[i], specs[i] = builder.createSpec()
 				if i < len(mutators)-1 {
-					_, err = mutators[i+1].Mutate(root, _c.builders[i+1].mutation)
+					_, err = mutators[i+1].Mutate(root, itcb.builders[i+1].mutation)
 				} else {
 					spec := &sqlgraph.BatchCreateSpec{Nodes: specs}
-					spec.OnConflict = _c.conflict
+					spec.OnConflict = itcb.conflict
 					// Invoke the actual operation on the latest mutation in the chain.
-					if err = sqlgraph.BatchCreate(ctx, _c.driver, spec); err != nil {
+					if err = sqlgraph.BatchCreate(ctx, itcb.driver, spec); err != nil {
 						if sqlgraph.IsConstraintError(err) {
 							err = &ConstraintError{msg: err.Error(), wrap: err}
 						}
@@ -563,7 +563,7 @@ func (_c *InviteTokenCreateBulk) Save(ctx context.Context) ([]*InviteToken, erro
 		}(i, ctx)
 	}
 	if len(mutators) > 0 {
-		if _, err := mutators[0].Mutate(ctx, _c.builders[0].mutation); err != nil {
+		if _, err := mutators[0].Mutate(ctx, itcb.builders[0].mutation); err != nil {
 			return nil, err
 		}
 	}
@@ -571,8 +571,8 @@ func (_c *InviteTokenCreateBulk) Save(ctx context.Context) ([]*InviteToken, erro
 }
 
 // SaveX is like Save, but panics if an error occurs.
-func (_c *InviteTokenCreateBulk) SaveX(ctx context.Context) []*InviteToken {
-	v, err := _c.Save(ctx)
+func (itcb *InviteTokenCreateBulk) SaveX(ctx context.Context) []*InviteToken {
+	v, err := itcb.Save(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -580,14 +580,14 @@ func (_c *InviteTokenCreateBulk) SaveX(ctx context.Context) []*InviteToken {
 }
 
 // Exec executes the query.
-func (_c *InviteTokenCreateBulk) Exec(ctx context.Context) error {
-	_, err := _c.Save(ctx)
+func (itcb *InviteTokenCreateBulk) Exec(ctx context.Context) error {
+	_, err := itcb.Save(ctx)
 	return err
 }
 
 // ExecX is like Exec, but panics if an error occurs.
-func (_c *InviteTokenCreateBulk) ExecX(ctx context.Context) {
-	if err := _c.Exec(ctx); err != nil {
+func (itcb *InviteTokenCreateBulk) ExecX(ctx context.Context) {
+	if err := itcb.Exec(ctx); err != nil {
 		panic(err)
 	}
 }
@@ -607,10 +607,10 @@ func (_c *InviteTokenCreateBulk) ExecX(ctx context.Context) {
 //			SetTokenHash(v+v).
 //		}).
 //		Exec(ctx)
-func (_c *InviteTokenCreateBulk) OnConflict(opts ...sql.ConflictOption) *InviteTokenUpsertBulk {
-	_c.conflict = opts
+func (itcb *InviteTokenCreateBulk) OnConflict(opts ...sql.ConflictOption) *InviteTokenUpsertBulk {
+	itcb.conflict = opts
 	return &InviteTokenUpsertBulk{
-		create: _c,
+		create: itcb,
 	}
 }
 
@@ -620,10 +620,10 @@ func (_c *InviteTokenCreateBulk) OnConflict(opts ...sql.ConflictOption) *InviteT
 //	client.InviteToken.Create().
 //		OnConflict(sql.ConflictColumns(columns...)).
 //		Exec(ctx)
-func (_c *InviteTokenCreateBulk) OnConflictColumns(columns ...string) *InviteTokenUpsertBulk {
-	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+func (itcb *InviteTokenCreateBulk) OnConflictColumns(columns ...string) *InviteTokenUpsertBulk {
+	itcb.conflict = append(itcb.conflict, sql.ConflictColumns(columns...))
 	return &InviteTokenUpsertBulk{
-		create: _c,
+		create: itcb,
 	}
 }
 

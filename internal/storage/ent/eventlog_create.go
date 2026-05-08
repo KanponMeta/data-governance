@@ -25,85 +25,85 @@ type EventLogCreate struct {
 }
 
 // SetOccurredAt sets the "occurred_at" field.
-func (_c *EventLogCreate) SetOccurredAt(v time.Time) *EventLogCreate {
-	_c.mutation.SetOccurredAt(v)
-	return _c
+func (elc *EventLogCreate) SetOccurredAt(t time.Time) *EventLogCreate {
+	elc.mutation.SetOccurredAt(t)
+	return elc
 }
 
 // SetNillableOccurredAt sets the "occurred_at" field if the given value is not nil.
-func (_c *EventLogCreate) SetNillableOccurredAt(v *time.Time) *EventLogCreate {
-	if v != nil {
-		_c.SetOccurredAt(*v)
+func (elc *EventLogCreate) SetNillableOccurredAt(t *time.Time) *EventLogCreate {
+	if t != nil {
+		elc.SetOccurredAt(*t)
 	}
-	return _c
+	return elc
 }
 
 // SetEventType sets the "event_type" field.
-func (_c *EventLogCreate) SetEventType(v string) *EventLogCreate {
-	_c.mutation.SetEventType(v)
-	return _c
+func (elc *EventLogCreate) SetEventType(s string) *EventLogCreate {
+	elc.mutation.SetEventType(s)
+	return elc
 }
 
 // SetActorID sets the "actor_id" field.
-func (_c *EventLogCreate) SetActorID(v uuid.UUID) *EventLogCreate {
-	_c.mutation.SetActorID(v)
-	return _c
+func (elc *EventLogCreate) SetActorID(u uuid.UUID) *EventLogCreate {
+	elc.mutation.SetActorID(u)
+	return elc
 }
 
 // SetNillableActorID sets the "actor_id" field if the given value is not nil.
-func (_c *EventLogCreate) SetNillableActorID(v *uuid.UUID) *EventLogCreate {
-	if v != nil {
-		_c.SetActorID(*v)
+func (elc *EventLogCreate) SetNillableActorID(u *uuid.UUID) *EventLogCreate {
+	if u != nil {
+		elc.SetActorID(*u)
 	}
-	return _c
+	return elc
 }
 
 // SetResourceType sets the "resource_type" field.
-func (_c *EventLogCreate) SetResourceType(v string) *EventLogCreate {
-	_c.mutation.SetResourceType(v)
-	return _c
+func (elc *EventLogCreate) SetResourceType(s string) *EventLogCreate {
+	elc.mutation.SetResourceType(s)
+	return elc
 }
 
 // SetResourceID sets the "resource_id" field.
-func (_c *EventLogCreate) SetResourceID(v string) *EventLogCreate {
-	_c.mutation.SetResourceID(v)
-	return _c
+func (elc *EventLogCreate) SetResourceID(s string) *EventLogCreate {
+	elc.mutation.SetResourceID(s)
+	return elc
 }
 
 // SetPayload sets the "payload" field.
-func (_c *EventLogCreate) SetPayload(v map[string]interface{}) *EventLogCreate {
-	_c.mutation.SetPayload(v)
-	return _c
+func (elc *EventLogCreate) SetPayload(m map[string]interface{}) *EventLogCreate {
+	elc.mutation.SetPayload(m)
+	return elc
 }
 
 // SetID sets the "id" field.
-func (_c *EventLogCreate) SetID(v uuid.UUID) *EventLogCreate {
-	_c.mutation.SetID(v)
-	return _c
+func (elc *EventLogCreate) SetID(u uuid.UUID) *EventLogCreate {
+	elc.mutation.SetID(u)
+	return elc
 }
 
 // SetNillableID sets the "id" field if the given value is not nil.
-func (_c *EventLogCreate) SetNillableID(v *uuid.UUID) *EventLogCreate {
-	if v != nil {
-		_c.SetID(*v)
+func (elc *EventLogCreate) SetNillableID(u *uuid.UUID) *EventLogCreate {
+	if u != nil {
+		elc.SetID(*u)
 	}
-	return _c
+	return elc
 }
 
 // Mutation returns the EventLogMutation object of the builder.
-func (_c *EventLogCreate) Mutation() *EventLogMutation {
-	return _c.mutation
+func (elc *EventLogCreate) Mutation() *EventLogMutation {
+	return elc.mutation
 }
 
 // Save creates the EventLog in the database.
-func (_c *EventLogCreate) Save(ctx context.Context) (*EventLog, error) {
-	_c.defaults()
-	return withHooks(ctx, _c.sqlSave, _c.mutation, _c.hooks)
+func (elc *EventLogCreate) Save(ctx context.Context) (*EventLog, error) {
+	elc.defaults()
+	return withHooks(ctx, elc.sqlSave, elc.mutation, elc.hooks)
 }
 
 // SaveX calls Save and panics if Save returns an error.
-func (_c *EventLogCreate) SaveX(ctx context.Context) *EventLog {
-	v, err := _c.Save(ctx)
+func (elc *EventLogCreate) SaveX(ctx context.Context) *EventLog {
+	v, err := elc.Save(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -111,55 +111,55 @@ func (_c *EventLogCreate) SaveX(ctx context.Context) *EventLog {
 }
 
 // Exec executes the query.
-func (_c *EventLogCreate) Exec(ctx context.Context) error {
-	_, err := _c.Save(ctx)
+func (elc *EventLogCreate) Exec(ctx context.Context) error {
+	_, err := elc.Save(ctx)
 	return err
 }
 
 // ExecX is like Exec, but panics if an error occurs.
-func (_c *EventLogCreate) ExecX(ctx context.Context) {
-	if err := _c.Exec(ctx); err != nil {
+func (elc *EventLogCreate) ExecX(ctx context.Context) {
+	if err := elc.Exec(ctx); err != nil {
 		panic(err)
 	}
 }
 
 // defaults sets the default values of the builder before save.
-func (_c *EventLogCreate) defaults() {
-	if _, ok := _c.mutation.OccurredAt(); !ok {
+func (elc *EventLogCreate) defaults() {
+	if _, ok := elc.mutation.OccurredAt(); !ok {
 		v := eventlog.DefaultOccurredAt()
-		_c.mutation.SetOccurredAt(v)
+		elc.mutation.SetOccurredAt(v)
 	}
-	if _, ok := _c.mutation.ID(); !ok {
+	if _, ok := elc.mutation.ID(); !ok {
 		v := eventlog.DefaultID()
-		_c.mutation.SetID(v)
+		elc.mutation.SetID(v)
 	}
 }
 
 // check runs all checks and user-defined validators on the builder.
-func (_c *EventLogCreate) check() error {
-	if _, ok := _c.mutation.OccurredAt(); !ok {
+func (elc *EventLogCreate) check() error {
+	if _, ok := elc.mutation.OccurredAt(); !ok {
 		return &ValidationError{Name: "occurred_at", err: errors.New(`ent: missing required field "EventLog.occurred_at"`)}
 	}
-	if _, ok := _c.mutation.EventType(); !ok {
+	if _, ok := elc.mutation.EventType(); !ok {
 		return &ValidationError{Name: "event_type", err: errors.New(`ent: missing required field "EventLog.event_type"`)}
 	}
-	if v, ok := _c.mutation.EventType(); ok {
+	if v, ok := elc.mutation.EventType(); ok {
 		if err := eventlog.EventTypeValidator(v); err != nil {
 			return &ValidationError{Name: "event_type", err: fmt.Errorf(`ent: validator failed for field "EventLog.event_type": %w`, err)}
 		}
 	}
-	if _, ok := _c.mutation.ResourceType(); !ok {
+	if _, ok := elc.mutation.ResourceType(); !ok {
 		return &ValidationError{Name: "resource_type", err: errors.New(`ent: missing required field "EventLog.resource_type"`)}
 	}
-	if v, ok := _c.mutation.ResourceType(); ok {
+	if v, ok := elc.mutation.ResourceType(); ok {
 		if err := eventlog.ResourceTypeValidator(v); err != nil {
 			return &ValidationError{Name: "resource_type", err: fmt.Errorf(`ent: validator failed for field "EventLog.resource_type": %w`, err)}
 		}
 	}
-	if _, ok := _c.mutation.ResourceID(); !ok {
+	if _, ok := elc.mutation.ResourceID(); !ok {
 		return &ValidationError{Name: "resource_id", err: errors.New(`ent: missing required field "EventLog.resource_id"`)}
 	}
-	if v, ok := _c.mutation.ResourceID(); ok {
+	if v, ok := elc.mutation.ResourceID(); ok {
 		if err := eventlog.ResourceIDValidator(v); err != nil {
 			return &ValidationError{Name: "resource_id", err: fmt.Errorf(`ent: validator failed for field "EventLog.resource_id": %w`, err)}
 		}
@@ -167,12 +167,12 @@ func (_c *EventLogCreate) check() error {
 	return nil
 }
 
-func (_c *EventLogCreate) sqlSave(ctx context.Context) (*EventLog, error) {
-	if err := _c.check(); err != nil {
+func (elc *EventLogCreate) sqlSave(ctx context.Context) (*EventLog, error) {
+	if err := elc.check(); err != nil {
 		return nil, err
 	}
-	_node, _spec := _c.createSpec()
-	if err := sqlgraph.CreateNode(ctx, _c.driver, _spec); err != nil {
+	_node, _spec := elc.createSpec()
+	if err := sqlgraph.CreateNode(ctx, elc.driver, _spec); err != nil {
 		if sqlgraph.IsConstraintError(err) {
 			err = &ConstraintError{msg: err.Error(), wrap: err}
 		}
@@ -185,42 +185,42 @@ func (_c *EventLogCreate) sqlSave(ctx context.Context) (*EventLog, error) {
 			return nil, err
 		}
 	}
-	_c.mutation.id = &_node.ID
-	_c.mutation.done = true
+	elc.mutation.id = &_node.ID
+	elc.mutation.done = true
 	return _node, nil
 }
 
-func (_c *EventLogCreate) createSpec() (*EventLog, *sqlgraph.CreateSpec) {
+func (elc *EventLogCreate) createSpec() (*EventLog, *sqlgraph.CreateSpec) {
 	var (
-		_node = &EventLog{config: _c.config}
+		_node = &EventLog{config: elc.config}
 		_spec = sqlgraph.NewCreateSpec(eventlog.Table, sqlgraph.NewFieldSpec(eventlog.FieldID, field.TypeUUID))
 	)
-	_spec.OnConflict = _c.conflict
-	if id, ok := _c.mutation.ID(); ok {
+	_spec.OnConflict = elc.conflict
+	if id, ok := elc.mutation.ID(); ok {
 		_node.ID = id
 		_spec.ID.Value = &id
 	}
-	if value, ok := _c.mutation.OccurredAt(); ok {
+	if value, ok := elc.mutation.OccurredAt(); ok {
 		_spec.SetField(eventlog.FieldOccurredAt, field.TypeTime, value)
 		_node.OccurredAt = value
 	}
-	if value, ok := _c.mutation.EventType(); ok {
+	if value, ok := elc.mutation.EventType(); ok {
 		_spec.SetField(eventlog.FieldEventType, field.TypeString, value)
 		_node.EventType = value
 	}
-	if value, ok := _c.mutation.ActorID(); ok {
+	if value, ok := elc.mutation.ActorID(); ok {
 		_spec.SetField(eventlog.FieldActorID, field.TypeUUID, value)
 		_node.ActorID = &value
 	}
-	if value, ok := _c.mutation.ResourceType(); ok {
+	if value, ok := elc.mutation.ResourceType(); ok {
 		_spec.SetField(eventlog.FieldResourceType, field.TypeString, value)
 		_node.ResourceType = value
 	}
-	if value, ok := _c.mutation.ResourceID(); ok {
+	if value, ok := elc.mutation.ResourceID(); ok {
 		_spec.SetField(eventlog.FieldResourceID, field.TypeString, value)
 		_node.ResourceID = value
 	}
-	if value, ok := _c.mutation.Payload(); ok {
+	if value, ok := elc.mutation.Payload(); ok {
 		_spec.SetField(eventlog.FieldPayload, field.TypeJSON, value)
 		_node.Payload = value
 	}
@@ -243,10 +243,10 @@ func (_c *EventLogCreate) createSpec() (*EventLog, *sqlgraph.CreateSpec) {
 //			SetOccurredAt(v+v).
 //		}).
 //		Exec(ctx)
-func (_c *EventLogCreate) OnConflict(opts ...sql.ConflictOption) *EventLogUpsertOne {
-	_c.conflict = opts
+func (elc *EventLogCreate) OnConflict(opts ...sql.ConflictOption) *EventLogUpsertOne {
+	elc.conflict = opts
 	return &EventLogUpsertOne{
-		create: _c,
+		create: elc,
 	}
 }
 
@@ -256,10 +256,10 @@ func (_c *EventLogCreate) OnConflict(opts ...sql.ConflictOption) *EventLogUpsert
 //	client.EventLog.Create().
 //		OnConflict(sql.ConflictColumns(columns...)).
 //		Exec(ctx)
-func (_c *EventLogCreate) OnConflictColumns(columns ...string) *EventLogUpsertOne {
-	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+func (elc *EventLogCreate) OnConflictColumns(columns ...string) *EventLogUpsertOne {
+	elc.conflict = append(elc.conflict, sql.ConflictColumns(columns...))
 	return &EventLogUpsertOne{
-		create: _c,
+		create: elc,
 	}
 }
 
@@ -389,16 +389,16 @@ type EventLogCreateBulk struct {
 }
 
 // Save creates the EventLog entities in the database.
-func (_c *EventLogCreateBulk) Save(ctx context.Context) ([]*EventLog, error) {
-	if _c.err != nil {
-		return nil, _c.err
+func (elcb *EventLogCreateBulk) Save(ctx context.Context) ([]*EventLog, error) {
+	if elcb.err != nil {
+		return nil, elcb.err
 	}
-	specs := make([]*sqlgraph.CreateSpec, len(_c.builders))
-	nodes := make([]*EventLog, len(_c.builders))
-	mutators := make([]Mutator, len(_c.builders))
-	for i := range _c.builders {
+	specs := make([]*sqlgraph.CreateSpec, len(elcb.builders))
+	nodes := make([]*EventLog, len(elcb.builders))
+	mutators := make([]Mutator, len(elcb.builders))
+	for i := range elcb.builders {
 		func(i int, root context.Context) {
-			builder := _c.builders[i]
+			builder := elcb.builders[i]
 			builder.defaults()
 			var mut Mutator = MutateFunc(func(ctx context.Context, m Mutation) (Value, error) {
 				mutation, ok := m.(*EventLogMutation)
@@ -412,12 +412,12 @@ func (_c *EventLogCreateBulk) Save(ctx context.Context) ([]*EventLog, error) {
 				var err error
 				nodes[i], specs[i] = builder.createSpec()
 				if i < len(mutators)-1 {
-					_, err = mutators[i+1].Mutate(root, _c.builders[i+1].mutation)
+					_, err = mutators[i+1].Mutate(root, elcb.builders[i+1].mutation)
 				} else {
 					spec := &sqlgraph.BatchCreateSpec{Nodes: specs}
-					spec.OnConflict = _c.conflict
+					spec.OnConflict = elcb.conflict
 					// Invoke the actual operation on the latest mutation in the chain.
-					if err = sqlgraph.BatchCreate(ctx, _c.driver, spec); err != nil {
+					if err = sqlgraph.BatchCreate(ctx, elcb.driver, spec); err != nil {
 						if sqlgraph.IsConstraintError(err) {
 							err = &ConstraintError{msg: err.Error(), wrap: err}
 						}
@@ -437,7 +437,7 @@ func (_c *EventLogCreateBulk) Save(ctx context.Context) ([]*EventLog, error) {
 		}(i, ctx)
 	}
 	if len(mutators) > 0 {
-		if _, err := mutators[0].Mutate(ctx, _c.builders[0].mutation); err != nil {
+		if _, err := mutators[0].Mutate(ctx, elcb.builders[0].mutation); err != nil {
 			return nil, err
 		}
 	}
@@ -445,8 +445,8 @@ func (_c *EventLogCreateBulk) Save(ctx context.Context) ([]*EventLog, error) {
 }
 
 // SaveX is like Save, but panics if an error occurs.
-func (_c *EventLogCreateBulk) SaveX(ctx context.Context) []*EventLog {
-	v, err := _c.Save(ctx)
+func (elcb *EventLogCreateBulk) SaveX(ctx context.Context) []*EventLog {
+	v, err := elcb.Save(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -454,14 +454,14 @@ func (_c *EventLogCreateBulk) SaveX(ctx context.Context) []*EventLog {
 }
 
 // Exec executes the query.
-func (_c *EventLogCreateBulk) Exec(ctx context.Context) error {
-	_, err := _c.Save(ctx)
+func (elcb *EventLogCreateBulk) Exec(ctx context.Context) error {
+	_, err := elcb.Save(ctx)
 	return err
 }
 
 // ExecX is like Exec, but panics if an error occurs.
-func (_c *EventLogCreateBulk) ExecX(ctx context.Context) {
-	if err := _c.Exec(ctx); err != nil {
+func (elcb *EventLogCreateBulk) ExecX(ctx context.Context) {
+	if err := elcb.Exec(ctx); err != nil {
 		panic(err)
 	}
 }
@@ -481,10 +481,10 @@ func (_c *EventLogCreateBulk) ExecX(ctx context.Context) {
 //			SetOccurredAt(v+v).
 //		}).
 //		Exec(ctx)
-func (_c *EventLogCreateBulk) OnConflict(opts ...sql.ConflictOption) *EventLogUpsertBulk {
-	_c.conflict = opts
+func (elcb *EventLogCreateBulk) OnConflict(opts ...sql.ConflictOption) *EventLogUpsertBulk {
+	elcb.conflict = opts
 	return &EventLogUpsertBulk{
-		create: _c,
+		create: elcb,
 	}
 }
 
@@ -494,10 +494,10 @@ func (_c *EventLogCreateBulk) OnConflict(opts ...sql.ConflictOption) *EventLogUp
 //	client.EventLog.Create().
 //		OnConflict(sql.ConflictColumns(columns...)).
 //		Exec(ctx)
-func (_c *EventLogCreateBulk) OnConflictColumns(columns ...string) *EventLogUpsertBulk {
-	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+func (elcb *EventLogCreateBulk) OnConflictColumns(columns ...string) *EventLogUpsertBulk {
+	elcb.conflict = append(elcb.conflict, sql.ConflictColumns(columns...))
 	return &EventLogUpsertBulk{
-		create: _c,
+		create: elcb,
 	}
 }
 

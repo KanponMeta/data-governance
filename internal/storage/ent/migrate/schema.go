@@ -70,6 +70,87 @@ var (
 			},
 		},
 	}
+	// RunsColumns holds the columns for the "runs" table.
+	RunsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "asset_name", Type: field.TypeString, Size: 256},
+		{Name: "state", Type: field.TypeString, Size: 16, Default: "queued"},
+		{Name: "trigger", Type: field.TypeString, Size: 32, Default: "manual"},
+		{Name: "triggered_by", Type: field.TypeUUID, Nullable: true},
+		{Name: "claimed_by", Type: field.TypeString, Nullable: true, Size: 128},
+		{Name: "queued_at", Type: field.TypeTime},
+		{Name: "claimed_at", Type: field.TypeTime, Nullable: true},
+		{Name: "started_at", Type: field.TypeTime, Nullable: true},
+		{Name: "finished_at", Type: field.TypeTime, Nullable: true},
+		{Name: "last_heartbeat", Type: field.TypeTime, Nullable: true},
+		{Name: "error_message", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
+	}
+	// RunsTable holds the schema information for the "runs" table.
+	RunsTable = &schema.Table{
+		Name:       "runs",
+		Columns:    RunsColumns,
+		PrimaryKey: []*schema.Column{RunsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "run_state_queued_at",
+				Unique:  false,
+				Columns: []*schema.Column{RunsColumns[2], RunsColumns[6]},
+			},
+			{
+				Name:    "run_asset_name_queued_at",
+				Unique:  false,
+				Columns: []*schema.Column{RunsColumns[1], RunsColumns[6]},
+			},
+			{
+				Name:    "run_queued_at",
+				Unique:  false,
+				Columns: []*schema.Column{RunsColumns[6]},
+			},
+			{
+				Name:    "run_state_last_heartbeat",
+				Unique:  false,
+				Columns: []*schema.Column{RunsColumns[2], RunsColumns[10]},
+			},
+		},
+	}
+	// RunStepsColumns holds the columns for the "run_steps" table.
+	RunStepsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "run_id", Type: field.TypeUUID},
+		{Name: "asset_name", Type: field.TypeString, Size: 256},
+		{Name: "state", Type: field.TypeString, Size: 16, Default: "pending"},
+		{Name: "attempt", Type: field.TypeInt, Default: 0},
+		{Name: "topo_order", Type: field.TypeInt, Default: 0},
+		{Name: "started_at", Type: field.TypeTime, Nullable: true},
+		{Name: "finished_at", Type: field.TypeTime, Nullable: true},
+		{Name: "rows_written", Type: field.TypeInt64, Default: 0},
+		{Name: "error_message", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
+	}
+	// RunStepsTable holds the schema information for the "run_steps" table.
+	RunStepsTable = &schema.Table{
+		Name:       "run_steps",
+		Columns:    RunStepsColumns,
+		PrimaryKey: []*schema.Column{RunStepsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "runstep_run_id_topo_order",
+				Unique:  false,
+				Columns: []*schema.Column{RunStepsColumns[1], RunStepsColumns[5]},
+			},
+			{
+				Name:    "runstep_run_id_state",
+				Unique:  false,
+				Columns: []*schema.Column{RunStepsColumns[1], RunStepsColumns[3]},
+			},
+			{
+				Name:    "runstep_asset_name",
+				Unique:  false,
+				Columns: []*schema.Column{RunStepsColumns[2]},
+			},
+		},
+	}
 	// UserColumns holds the columns for the "user" table.
 	UserColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeUUID},
@@ -97,6 +178,8 @@ var (
 	Tables = []*schema.Table{
 		EventLogTable,
 		InviteTokenTable,
+		RunsTable,
+		RunStepsTable,
 		UserTable,
 	}
 )
@@ -107,6 +190,12 @@ func init() {
 	}
 	InviteTokenTable.Annotation = &entsql.Annotation{
 		Table: "invite_token",
+	}
+	RunsTable.Annotation = &entsql.Annotation{
+		Table: "runs",
+	}
+	RunStepsTable.Annotation = &entsql.Annotation{
+		Table: "run_steps",
 	}
 	UserTable.Annotation = &entsql.Annotation{
 		Table: "user",

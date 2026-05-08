@@ -33,6 +33,30 @@ func (f InviteTokenFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value,
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.InviteTokenMutation", m)
 }
 
+// The RunFunc type is an adapter to allow the use of ordinary
+// function as Run mutator.
+type RunFunc func(context.Context, *ent.RunMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f RunFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.RunMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RunMutation", m)
+}
+
+// The RunStepFunc type is an adapter to allow the use of ordinary
+// function as RunStep mutator.
+type RunStepFunc func(context.Context, *ent.RunStepMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f RunStepFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.RunStepMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RunStepMutation", m)
+}
+
 // The UserFunc type is an adapter to allow the use of ordinary
 // function as User mutator.
 type UserFunc func(context.Context, *ent.UserMutation) (ent.Value, error)

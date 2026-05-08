@@ -17,6 +17,8 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"github.com/kanpon/data-governance/internal/storage/ent/eventlog"
 	"github.com/kanpon/data-governance/internal/storage/ent/invitetoken"
+	"github.com/kanpon/data-governance/internal/storage/ent/run"
+	"github.com/kanpon/data-governance/internal/storage/ent/runstep"
 	"github.com/kanpon/data-governance/internal/storage/ent/user"
 )
 
@@ -29,6 +31,10 @@ type Client struct {
 	EventLog *EventLogClient
 	// InviteToken is the client for interacting with the InviteToken builders.
 	InviteToken *InviteTokenClient
+	// Run is the client for interacting with the Run builders.
+	Run *RunClient
+	// RunStep is the client for interacting with the RunStep builders.
+	RunStep *RunStepClient
 	// User is the client for interacting with the User builders.
 	User *UserClient
 }
@@ -44,6 +50,8 @@ func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
 	c.EventLog = NewEventLogClient(c.config)
 	c.InviteToken = NewInviteTokenClient(c.config)
+	c.Run = NewRunClient(c.config)
+	c.RunStep = NewRunStepClient(c.config)
 	c.User = NewUserClient(c.config)
 }
 
@@ -139,6 +147,8 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		config:      cfg,
 		EventLog:    NewEventLogClient(cfg),
 		InviteToken: NewInviteTokenClient(cfg),
+		Run:         NewRunClient(cfg),
+		RunStep:     NewRunStepClient(cfg),
 		User:        NewUserClient(cfg),
 	}, nil
 }
@@ -161,6 +171,8 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		config:      cfg,
 		EventLog:    NewEventLogClient(cfg),
 		InviteToken: NewInviteTokenClient(cfg),
+		Run:         NewRunClient(cfg),
+		RunStep:     NewRunStepClient(cfg),
 		User:        NewUserClient(cfg),
 	}, nil
 }
@@ -192,6 +204,8 @@ func (c *Client) Close() error {
 func (c *Client) Use(hooks ...Hook) {
 	c.EventLog.Use(hooks...)
 	c.InviteToken.Use(hooks...)
+	c.Run.Use(hooks...)
+	c.RunStep.Use(hooks...)
 	c.User.Use(hooks...)
 }
 
@@ -200,6 +214,8 @@ func (c *Client) Use(hooks ...Hook) {
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	c.EventLog.Intercept(interceptors...)
 	c.InviteToken.Intercept(interceptors...)
+	c.Run.Intercept(interceptors...)
+	c.RunStep.Intercept(interceptors...)
 	c.User.Intercept(interceptors...)
 }
 
@@ -210,6 +226,10 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.EventLog.mutate(ctx, m)
 	case *InviteTokenMutation:
 		return c.InviteToken.mutate(ctx, m)
+	case *RunMutation:
+		return c.Run.mutate(ctx, m)
+	case *RunStepMutation:
+		return c.RunStep.mutate(ctx, m)
 	case *UserMutation:
 		return c.User.mutate(ctx, m)
 	default:
@@ -272,8 +292,8 @@ func (c *EventLogClient) Update() *EventLogUpdate {
 }
 
 // UpdateOne returns an update builder for the given entity.
-func (c *EventLogClient) UpdateOne(_m *EventLog) *EventLogUpdateOne {
-	mutation := newEventLogMutation(c.config, OpUpdateOne, withEventLog(_m))
+func (c *EventLogClient) UpdateOne(el *EventLog) *EventLogUpdateOne {
+	mutation := newEventLogMutation(c.config, OpUpdateOne, withEventLog(el))
 	return &EventLogUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
 }
 
@@ -290,8 +310,8 @@ func (c *EventLogClient) Delete() *EventLogDelete {
 }
 
 // DeleteOne returns a builder for deleting the given entity.
-func (c *EventLogClient) DeleteOne(_m *EventLog) *EventLogDeleteOne {
-	return c.DeleteOneID(_m.ID)
+func (c *EventLogClient) DeleteOne(el *EventLog) *EventLogDeleteOne {
+	return c.DeleteOneID(el.ID)
 }
 
 // DeleteOneID returns a builder for deleting the given entity by its id.
@@ -405,8 +425,8 @@ func (c *InviteTokenClient) Update() *InviteTokenUpdate {
 }
 
 // UpdateOne returns an update builder for the given entity.
-func (c *InviteTokenClient) UpdateOne(_m *InviteToken) *InviteTokenUpdateOne {
-	mutation := newInviteTokenMutation(c.config, OpUpdateOne, withInviteToken(_m))
+func (c *InviteTokenClient) UpdateOne(it *InviteToken) *InviteTokenUpdateOne {
+	mutation := newInviteTokenMutation(c.config, OpUpdateOne, withInviteToken(it))
 	return &InviteTokenUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
 }
 
@@ -423,8 +443,8 @@ func (c *InviteTokenClient) Delete() *InviteTokenDelete {
 }
 
 // DeleteOne returns a builder for deleting the given entity.
-func (c *InviteTokenClient) DeleteOne(_m *InviteToken) *InviteTokenDeleteOne {
-	return c.DeleteOneID(_m.ID)
+func (c *InviteTokenClient) DeleteOne(it *InviteToken) *InviteTokenDeleteOne {
+	return c.DeleteOneID(it.ID)
 }
 
 // DeleteOneID returns a builder for deleting the given entity by its id.
@@ -483,6 +503,272 @@ func (c *InviteTokenClient) mutate(ctx context.Context, m *InviteTokenMutation) 
 	}
 }
 
+// RunClient is a client for the Run schema.
+type RunClient struct {
+	config
+}
+
+// NewRunClient returns a client for the Run from the given config.
+func NewRunClient(c config) *RunClient {
+	return &RunClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `run.Hooks(f(g(h())))`.
+func (c *RunClient) Use(hooks ...Hook) {
+	c.hooks.Run = append(c.hooks.Run, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `run.Intercept(f(g(h())))`.
+func (c *RunClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Run = append(c.inters.Run, interceptors...)
+}
+
+// Create returns a builder for creating a Run entity.
+func (c *RunClient) Create() *RunCreate {
+	mutation := newRunMutation(c.config, OpCreate)
+	return &RunCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Run entities.
+func (c *RunClient) CreateBulk(builders ...*RunCreate) *RunCreateBulk {
+	return &RunCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *RunClient) MapCreateBulk(slice any, setFunc func(*RunCreate, int)) *RunCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &RunCreateBulk{err: fmt.Errorf("calling to RunClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*RunCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &RunCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Run.
+func (c *RunClient) Update() *RunUpdate {
+	mutation := newRunMutation(c.config, OpUpdate)
+	return &RunUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *RunClient) UpdateOne(r *Run) *RunUpdateOne {
+	mutation := newRunMutation(c.config, OpUpdateOne, withRun(r))
+	return &RunUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *RunClient) UpdateOneID(id uuid.UUID) *RunUpdateOne {
+	mutation := newRunMutation(c.config, OpUpdateOne, withRunID(id))
+	return &RunUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Run.
+func (c *RunClient) Delete() *RunDelete {
+	mutation := newRunMutation(c.config, OpDelete)
+	return &RunDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *RunClient) DeleteOne(r *Run) *RunDeleteOne {
+	return c.DeleteOneID(r.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *RunClient) DeleteOneID(id uuid.UUID) *RunDeleteOne {
+	builder := c.Delete().Where(run.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &RunDeleteOne{builder}
+}
+
+// Query returns a query builder for Run.
+func (c *RunClient) Query() *RunQuery {
+	return &RunQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeRun},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Run entity by its id.
+func (c *RunClient) Get(ctx context.Context, id uuid.UUID) (*Run, error) {
+	return c.Query().Where(run.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *RunClient) GetX(ctx context.Context, id uuid.UUID) *Run {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *RunClient) Hooks() []Hook {
+	return c.hooks.Run
+}
+
+// Interceptors returns the client interceptors.
+func (c *RunClient) Interceptors() []Interceptor {
+	return c.inters.Run
+}
+
+func (c *RunClient) mutate(ctx context.Context, m *RunMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&RunCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&RunUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&RunUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&RunDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Run mutation op: %q", m.Op())
+	}
+}
+
+// RunStepClient is a client for the RunStep schema.
+type RunStepClient struct {
+	config
+}
+
+// NewRunStepClient returns a client for the RunStep from the given config.
+func NewRunStepClient(c config) *RunStepClient {
+	return &RunStepClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `runstep.Hooks(f(g(h())))`.
+func (c *RunStepClient) Use(hooks ...Hook) {
+	c.hooks.RunStep = append(c.hooks.RunStep, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `runstep.Intercept(f(g(h())))`.
+func (c *RunStepClient) Intercept(interceptors ...Interceptor) {
+	c.inters.RunStep = append(c.inters.RunStep, interceptors...)
+}
+
+// Create returns a builder for creating a RunStep entity.
+func (c *RunStepClient) Create() *RunStepCreate {
+	mutation := newRunStepMutation(c.config, OpCreate)
+	return &RunStepCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of RunStep entities.
+func (c *RunStepClient) CreateBulk(builders ...*RunStepCreate) *RunStepCreateBulk {
+	return &RunStepCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *RunStepClient) MapCreateBulk(slice any, setFunc func(*RunStepCreate, int)) *RunStepCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &RunStepCreateBulk{err: fmt.Errorf("calling to RunStepClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*RunStepCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &RunStepCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for RunStep.
+func (c *RunStepClient) Update() *RunStepUpdate {
+	mutation := newRunStepMutation(c.config, OpUpdate)
+	return &RunStepUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *RunStepClient) UpdateOne(rs *RunStep) *RunStepUpdateOne {
+	mutation := newRunStepMutation(c.config, OpUpdateOne, withRunStep(rs))
+	return &RunStepUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *RunStepClient) UpdateOneID(id uuid.UUID) *RunStepUpdateOne {
+	mutation := newRunStepMutation(c.config, OpUpdateOne, withRunStepID(id))
+	return &RunStepUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for RunStep.
+func (c *RunStepClient) Delete() *RunStepDelete {
+	mutation := newRunStepMutation(c.config, OpDelete)
+	return &RunStepDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *RunStepClient) DeleteOne(rs *RunStep) *RunStepDeleteOne {
+	return c.DeleteOneID(rs.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *RunStepClient) DeleteOneID(id uuid.UUID) *RunStepDeleteOne {
+	builder := c.Delete().Where(runstep.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &RunStepDeleteOne{builder}
+}
+
+// Query returns a query builder for RunStep.
+func (c *RunStepClient) Query() *RunStepQuery {
+	return &RunStepQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeRunStep},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a RunStep entity by its id.
+func (c *RunStepClient) Get(ctx context.Context, id uuid.UUID) (*RunStep, error) {
+	return c.Query().Where(runstep.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *RunStepClient) GetX(ctx context.Context, id uuid.UUID) *RunStep {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *RunStepClient) Hooks() []Hook {
+	return c.hooks.RunStep
+}
+
+// Interceptors returns the client interceptors.
+func (c *RunStepClient) Interceptors() []Interceptor {
+	return c.inters.RunStep
+}
+
+func (c *RunStepClient) mutate(ctx context.Context, m *RunStepMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&RunStepCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&RunStepUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&RunStepUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&RunStepDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown RunStep mutation op: %q", m.Op())
+	}
+}
+
 // UserClient is a client for the User schema.
 type UserClient struct {
 	config
@@ -538,8 +824,8 @@ func (c *UserClient) Update() *UserUpdate {
 }
 
 // UpdateOne returns an update builder for the given entity.
-func (c *UserClient) UpdateOne(_m *User) *UserUpdateOne {
-	mutation := newUserMutation(c.config, OpUpdateOne, withUser(_m))
+func (c *UserClient) UpdateOne(u *User) *UserUpdateOne {
+	mutation := newUserMutation(c.config, OpUpdateOne, withUser(u))
 	return &UserUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
 }
 
@@ -556,8 +842,8 @@ func (c *UserClient) Delete() *UserDelete {
 }
 
 // DeleteOne returns a builder for deleting the given entity.
-func (c *UserClient) DeleteOne(_m *User) *UserDeleteOne {
-	return c.DeleteOneID(_m.ID)
+func (c *UserClient) DeleteOne(u *User) *UserDeleteOne {
+	return c.DeleteOneID(u.ID)
 }
 
 // DeleteOneID returns a builder for deleting the given entity by its id.
@@ -619,9 +905,9 @@ func (c *UserClient) mutate(ctx context.Context, m *UserMutation) (Value, error)
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		EventLog, InviteToken, User []ent.Hook
+		EventLog, InviteToken, Run, RunStep, User []ent.Hook
 	}
 	inters struct {
-		EventLog, InviteToken, User []ent.Interceptor
+		EventLog, InviteToken, Run, RunStep, User []ent.Interceptor
 	}
 )
