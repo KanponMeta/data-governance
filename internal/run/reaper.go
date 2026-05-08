@@ -93,18 +93,18 @@ func (r *StaleRunReaper) SweepOnce(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("reaper: select stale: %w", err)
 	}
+	defer rows.Close()
+
 	var candidates []staleRunRow
 	for rows.Next() {
 		var row staleRunRow
 		var stateStr string
 		if err := rows.Scan(&row.ID, &stateStr, &row.AssetName); err != nil {
-			_ = rows.Close()
 			return 0, fmt.Errorf("reaper: scan stale: %w", err)
 		}
 		row.State = State(stateStr)
 		candidates = append(candidates, row)
 	}
-	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return 0, fmt.Errorf("reaper: iterate stale: %w", err)
 	}
