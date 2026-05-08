@@ -272,13 +272,9 @@ func splitIdentifier(id string) (string, string, error) {
 // "`db`.`table`"; for a single token returns "`name`".
 // Rejects identifiers with embedded backticks (defense against SQL injection
 // via asset names; legitimate names should never contain backticks — T-02-05-02).
-// Also rejects identifiers with ".." segments (HDFS/S3 path traversal guard — T-02-05-02).
 func quoteIdentifier(id string) (string, error) {
 	if strings.ContainsRune(id, '`') {
 		return "", fmt.Errorf("mysql: identifier contains illegal character: %q", id)
-	}
-	if strings.Contains(id, "..") {
-		return "", fmt.Errorf("mysql: identifier contains path traversal sequence: %q", id)
 	}
 	if !strings.Contains(id, ".") {
 		return "`" + id + "`", nil

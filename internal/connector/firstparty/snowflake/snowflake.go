@@ -289,9 +289,6 @@ func quoteIdentifier(id string) (string, error) {
 	if strings.ContainsRune(id, '"') {
 		return "", fmt.Errorf("snowflake: identifier contains illegal character: %q", id)
 	}
-	if strings.Contains(id, "..") {
-		return "", fmt.Errorf("snowflake: identifier contains path traversal sequence: %q", id)
-	}
 	parts := strings.Split(id, ".")
 	quoted := make([]string, len(parts))
 	for i, p := range parts {
