@@ -30,6 +30,8 @@ func Factory(params map[string]interface{}) (connector.Connector, error) {
 		format = "parquet"
 	}
 
+	// ctx is used only for gcstorage.NewClient (initial dial); the client itself
+	// does not retain ctx. Subsequent operations use the per-request context.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
