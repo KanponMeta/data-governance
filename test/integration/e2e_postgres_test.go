@@ -145,6 +145,59 @@ func applySchema(db *sql.DB) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS concurrencytoken_resource_tag ON concurrency_tokens (resource_tag)`,
 		`CREATE INDEX IF NOT EXISTS concurrencytoken_run_id ON concurrency_tokens (run_id)`,
+
+		// Phase 3: additive run columns (D-10 / D-13 / D-15)
+		`ALTER TABLE runs ADD COLUMN IF NOT EXISTS partition_key varchar(128) NULL`,
+		`ALTER TABLE runs ADD COLUMN IF NOT EXISTS priority varchar(16) NOT NULL DEFAULT 'normal'`,
+		`ALTER TABLE runs ADD COLUMN IF NOT EXISTS backfill_id uuid NULL`,
+		`ALTER TABLE runs DROP CONSTRAINT IF EXISTS runs_priority_check`,
+		`ALTER TABLE runs ADD CONSTRAINT runs_priority_check CHECK (priority IN ('critical','normal','backfill'))`,
+		`DROP INDEX IF EXISTS run_partition_inflight_unique`,
+		`CREATE UNIQUE INDEX run_partition_inflight_unique ON runs (asset_name, partition_key) WHERE state IN ('queued','starting','running') AND partition_key IS NOT NULL`,
+		`CREATE INDEX IF NOT EXISTS run_state_priority_queued_at ON runs (state, priority, queued_at)`,
+		`CREATE INDEX IF NOT EXISTS run_backfill_id ON runs (backfill_id) WHERE backfill_id IS NOT NULL`,
+
+		// Phase 3: schedules
+		`CREATE TABLE IF NOT EXISTS schedules (
+			id uuid NOT NULL,
+			asset_name varchar(256) NOT NULL,
+			cron_expr varchar(128) NOT NULL,
+			last_fire_at timestamptz NULL,
+			next_fire_at timestamptz NULL,
+			paused_at timestamptz NULL,
+			created_at timestamptz NOT NULL DEFAULT now(),
+			updated_at timestamptz NOT NULL DEFAULT now(),
+			PRIMARY KEY (id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS schedule_next_fire_at ON schedules (next_fire_at) WHERE paused_at IS NULL`,
+
+		// Phase 3: sensors
+		`CREATE TABLE IF NOT EXISTS sensors (
+			id uuid NOT NULL,
+			asset_name varchar(256) NOT NULL,
+			min_interval_seconds bigint NOT NULL DEFAULT 60,
+			last_run_key varchar(256) NULL,
+			cooldown_until timestamptz NULL,
+			consecutive_failures bigint NOT NULL DEFAULT 0,
+			disabled_at timestamptz NULL,
+			last_evaluated_at timestamptz NULL,
+			created_at timestamptz NOT NULL DEFAULT now(),
+			updated_at timestamptz NOT NULL DEFAULT now(),
+			PRIMARY KEY (id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS sensor_due_eval ON sensors (last_evaluated_at) WHERE disabled_at IS NULL`,
+
+		// Phase 3: backfills
+		`CREATE TABLE IF NOT EXISTS backfills (
+			id uuid NOT NULL,
+			asset_name varchar(256) NOT NULL,
+			partition_spec varchar(512) NOT NULL,
+			status varchar(16) NOT NULL DEFAULT 'submitted',
+			total_partitions bigint NOT NULL DEFAULT 0,
+			created_at timestamptz NOT NULL DEFAULT now(),
+			completed_at timestamptz NULL,
+			PRIMARY KEY (id)
+		)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := db.ExecContext(context.Background(), stmt); err != nil {
