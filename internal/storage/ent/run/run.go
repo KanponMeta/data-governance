@@ -38,6 +38,12 @@ const (
 	FieldErrorMessage = "error_message"
 	// FieldMetadata holds the string denoting the metadata field in the database.
 	FieldMetadata = "metadata"
+	// FieldPartitionKey holds the string denoting the partition_key field in the database.
+	FieldPartitionKey = "partition_key"
+	// FieldPriority holds the string denoting the priority field in the database.
+	FieldPriority = "priority"
+	// FieldBackfillID holds the string denoting the backfill_id field in the database.
+	FieldBackfillID = "backfill_id"
 	// Table holds the table name of the run in the database.
 	Table = "runs"
 )
@@ -57,6 +63,9 @@ var Columns = []string{
 	FieldLastHeartbeat,
 	FieldErrorMessage,
 	FieldMetadata,
+	FieldPartitionKey,
+	FieldPriority,
+	FieldBackfillID,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -84,6 +93,12 @@ var (
 	ClaimedByValidator func(string) error
 	// DefaultQueuedAt holds the default value on creation for the "queued_at" field.
 	DefaultQueuedAt func() time.Time
+	// PartitionKeyValidator is a validator for the "partition_key" field. It is called by the builders before save.
+	PartitionKeyValidator func(string) error
+	// DefaultPriority holds the default value on creation for the "priority" field.
+	DefaultPriority string
+	// PriorityValidator is a validator for the "priority" field. It is called by the builders before save.
+	PriorityValidator func(string) error
 	// DefaultID holds the default value on creation for the "id" field.
 	DefaultID func() uuid.UUID
 )
@@ -149,4 +164,19 @@ func ByLastHeartbeat(opts ...sql.OrderTermOption) OrderOption {
 // ByErrorMessage orders the results by the error_message field.
 func ByErrorMessage(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldErrorMessage, opts...).ToFunc()
+}
+
+// ByPartitionKey orders the results by the partition_key field.
+func ByPartitionKey(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPartitionKey, opts...).ToFunc()
+}
+
+// ByPriority orders the results by the priority field.
+func ByPriority(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPriority, opts...).ToFunc()
+}
+
+// ByBackfillID orders the results by the backfill_id field.
+func ByBackfillID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBackfillID, opts...).ToFunc()
 }

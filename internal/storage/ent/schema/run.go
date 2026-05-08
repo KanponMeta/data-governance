@@ -37,6 +37,17 @@ func (Run) Fields() []ent.Field {
 		field.Time("last_heartbeat").Optional().Nillable(),
 		field.Text("error_message").Optional(),
 		field.JSON("metadata", map[string]any{}).Optional(),
+		// Phase 3 D-10 — nullable partition key for partitioned assets. Non-partitioned
+		// runs leave this NULL. Length 128 covers ISO weekly/monthly/daily and short
+		// category keys with comfortable headroom.
+		field.String("partition_key").Optional().MaxLen(128),
+		// Phase 3 D-13 layer 1 — three-priority claim ordering. CHECK constraint
+		// (priority IN ('critical','normal','backfill')) is appended in the
+		// hand-managed SQL appendix because ent has no native CHECK support.
+		field.String("priority").NotEmpty().MaxLen(16).Default("normal"),
+		// Phase 3 D-15 — links a run row to the originating backfill submission.
+		// NULL for non-backfill runs.
+		field.UUID("backfill_id", uuid.UUID{}).Optional().Nillable(),
 	}
 }
 
@@ -47,5 +58,9 @@ func (Run) Indexes() []ent.Index {
 		index.Fields("queued_at"),
 		// Reaper scan path (plan 02-04): WHERE state IN ('starting','running') AND last_heartbeat < cutoff.
 		index.Fields("state", "last_heartbeat"),
+		// NOTE: Phase 3 D-10 partial unique index `run_partition_inflight_unique`
+		// and the priority-aware claim index `run_state_priority_queued_at` are
+		// hand-managed in the SQL appendix because ent does not support partial
+		// (WHERE-clause) unique indexes.
 	}
 }

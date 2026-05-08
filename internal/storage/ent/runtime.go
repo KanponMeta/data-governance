@@ -247,6 +247,30 @@ func init() {
 	runDescQueuedAt := runFields[6].Descriptor()
 	// run.DefaultQueuedAt holds the default value on creation for the queued_at field.
 	run.DefaultQueuedAt = runDescQueuedAt.Default.(func() time.Time)
+	// runDescPartitionKey is the schema descriptor for partition_key field.
+	runDescPartitionKey := runFields[13].Descriptor()
+	// run.PartitionKeyValidator is a validator for the "partition_key" field. It is called by the builders before save.
+	run.PartitionKeyValidator = runDescPartitionKey.Validators[0].(func(string) error)
+	// runDescPriority is the schema descriptor for priority field.
+	runDescPriority := runFields[14].Descriptor()
+	// run.DefaultPriority holds the default value on creation for the priority field.
+	run.DefaultPriority = runDescPriority.Default.(string)
+	// run.PriorityValidator is a validator for the "priority" field. It is called by the builders before save.
+	run.PriorityValidator = func() func(string) error {
+		validators := runDescPriority.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(priority string) error {
+			for _, fn := range fns {
+				if err := fn(priority); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
 	// runDescID is the schema descriptor for id field.
 	runDescID := runFields[0].Descriptor()
 	// run.DefaultID holds the default value on creation for the id field.

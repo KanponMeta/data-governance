@@ -42,7 +42,13 @@ type Run struct {
 	// ErrorMessage holds the value of the "error_message" field.
 	ErrorMessage string `json:"error_message,omitempty"`
 	// Metadata holds the value of the "metadata" field.
-	Metadata     map[string]interface{} `json:"metadata,omitempty"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
+	// PartitionKey holds the value of the "partition_key" field.
+	PartitionKey string `json:"partition_key,omitempty"`
+	// Priority holds the value of the "priority" field.
+	Priority string `json:"priority,omitempty"`
+	// BackfillID holds the value of the "backfill_id" field.
+	BackfillID   *uuid.UUID `json:"backfill_id,omitempty"`
 	selectValues sql.SelectValues
 }
 
@@ -51,11 +57,11 @@ func (*Run) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case run.FieldTriggeredBy:
+		case run.FieldTriggeredBy, run.FieldBackfillID:
 			values[i] = &sql.NullScanner{S: new(uuid.UUID)}
 		case run.FieldMetadata:
 			values[i] = new([]byte)
-		case run.FieldAssetName, run.FieldState, run.FieldTrigger, run.FieldClaimedBy, run.FieldErrorMessage:
+		case run.FieldAssetName, run.FieldState, run.FieldTrigger, run.FieldClaimedBy, run.FieldErrorMessage, run.FieldPartitionKey, run.FieldPriority:
 			values[i] = new(sql.NullString)
 		case run.FieldQueuedAt, run.FieldClaimedAt, run.FieldStartedAt, run.FieldFinishedAt, run.FieldLastHeartbeat:
 			values[i] = new(sql.NullTime)
@@ -161,6 +167,25 @@ func (r *Run) assignValues(columns []string, values []any) error {
 					return fmt.Errorf("unmarshal field metadata: %w", err)
 				}
 			}
+		case run.FieldPartitionKey:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field partition_key", values[i])
+			} else if value.Valid {
+				r.PartitionKey = value.String
+			}
+		case run.FieldPriority:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field priority", values[i])
+			} else if value.Valid {
+				r.Priority = value.String
+			}
+		case run.FieldBackfillID:
+			if value, ok := values[i].(*sql.NullScanner); !ok {
+				return fmt.Errorf("unexpected type %T for field backfill_id", values[i])
+			} else if value.Valid {
+				r.BackfillID = new(uuid.UUID)
+				*r.BackfillID = *value.S.(*uuid.UUID)
+			}
 		default:
 			r.selectValues.Set(columns[i], values[i])
 		}
@@ -242,6 +267,17 @@ func (r *Run) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("metadata=")
 	builder.WriteString(fmt.Sprintf("%v", r.Metadata))
+	builder.WriteString(", ")
+	builder.WriteString("partition_key=")
+	builder.WriteString(r.PartitionKey)
+	builder.WriteString(", ")
+	builder.WriteString("priority=")
+	builder.WriteString(r.Priority)
+	builder.WriteString(", ")
+	if v := r.BackfillID; v != nil {
+		builder.WriteString("backfill_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteByte(')')
 	return builder.String()
 }

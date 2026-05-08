@@ -209,6 +209,60 @@ func (ru *RunUpdate) ClearMetadata() *RunUpdate {
 	return ru
 }
 
+// SetPartitionKey sets the "partition_key" field.
+func (ru *RunUpdate) SetPartitionKey(s string) *RunUpdate {
+	ru.mutation.SetPartitionKey(s)
+	return ru
+}
+
+// SetNillablePartitionKey sets the "partition_key" field if the given value is not nil.
+func (ru *RunUpdate) SetNillablePartitionKey(s *string) *RunUpdate {
+	if s != nil {
+		ru.SetPartitionKey(*s)
+	}
+	return ru
+}
+
+// ClearPartitionKey clears the value of the "partition_key" field.
+func (ru *RunUpdate) ClearPartitionKey() *RunUpdate {
+	ru.mutation.ClearPartitionKey()
+	return ru
+}
+
+// SetPriority sets the "priority" field.
+func (ru *RunUpdate) SetPriority(s string) *RunUpdate {
+	ru.mutation.SetPriority(s)
+	return ru
+}
+
+// SetNillablePriority sets the "priority" field if the given value is not nil.
+func (ru *RunUpdate) SetNillablePriority(s *string) *RunUpdate {
+	if s != nil {
+		ru.SetPriority(*s)
+	}
+	return ru
+}
+
+// SetBackfillID sets the "backfill_id" field.
+func (ru *RunUpdate) SetBackfillID(u uuid.UUID) *RunUpdate {
+	ru.mutation.SetBackfillID(u)
+	return ru
+}
+
+// SetNillableBackfillID sets the "backfill_id" field if the given value is not nil.
+func (ru *RunUpdate) SetNillableBackfillID(u *uuid.UUID) *RunUpdate {
+	if u != nil {
+		ru.SetBackfillID(*u)
+	}
+	return ru
+}
+
+// ClearBackfillID clears the value of the "backfill_id" field.
+func (ru *RunUpdate) ClearBackfillID() *RunUpdate {
+	ru.mutation.ClearBackfillID()
+	return ru
+}
+
 // Mutation returns the RunMutation object of the builder.
 func (ru *RunUpdate) Mutation() *RunMutation {
 	return ru.mutation
@@ -256,6 +310,16 @@ func (ru *RunUpdate) check() error {
 	if v, ok := ru.mutation.ClaimedBy(); ok {
 		if err := run.ClaimedByValidator(v); err != nil {
 			return &ValidationError{Name: "claimed_by", err: fmt.Errorf(`ent: validator failed for field "Run.claimed_by": %w`, err)}
+		}
+	}
+	if v, ok := ru.mutation.PartitionKey(); ok {
+		if err := run.PartitionKeyValidator(v); err != nil {
+			return &ValidationError{Name: "partition_key", err: fmt.Errorf(`ent: validator failed for field "Run.partition_key": %w`, err)}
+		}
+	}
+	if v, ok := ru.mutation.Priority(); ok {
+		if err := run.PriorityValidator(v); err != nil {
+			return &ValidationError{Name: "priority", err: fmt.Errorf(`ent: validator failed for field "Run.priority": %w`, err)}
 		}
 	}
 	return nil
@@ -326,6 +390,21 @@ func (ru *RunUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if ru.mutation.MetadataCleared() {
 		_spec.ClearField(run.FieldMetadata, field.TypeJSON)
+	}
+	if value, ok := ru.mutation.PartitionKey(); ok {
+		_spec.SetField(run.FieldPartitionKey, field.TypeString, value)
+	}
+	if ru.mutation.PartitionKeyCleared() {
+		_spec.ClearField(run.FieldPartitionKey, field.TypeString)
+	}
+	if value, ok := ru.mutation.Priority(); ok {
+		_spec.SetField(run.FieldPriority, field.TypeString, value)
+	}
+	if value, ok := ru.mutation.BackfillID(); ok {
+		_spec.SetField(run.FieldBackfillID, field.TypeUUID, value)
+	}
+	if ru.mutation.BackfillIDCleared() {
+		_spec.ClearField(run.FieldBackfillID, field.TypeUUID)
 	}
 	if n, err = sqlgraph.UpdateNodes(ctx, ru.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -527,6 +606,60 @@ func (ruo *RunUpdateOne) ClearMetadata() *RunUpdateOne {
 	return ruo
 }
 
+// SetPartitionKey sets the "partition_key" field.
+func (ruo *RunUpdateOne) SetPartitionKey(s string) *RunUpdateOne {
+	ruo.mutation.SetPartitionKey(s)
+	return ruo
+}
+
+// SetNillablePartitionKey sets the "partition_key" field if the given value is not nil.
+func (ruo *RunUpdateOne) SetNillablePartitionKey(s *string) *RunUpdateOne {
+	if s != nil {
+		ruo.SetPartitionKey(*s)
+	}
+	return ruo
+}
+
+// ClearPartitionKey clears the value of the "partition_key" field.
+func (ruo *RunUpdateOne) ClearPartitionKey() *RunUpdateOne {
+	ruo.mutation.ClearPartitionKey()
+	return ruo
+}
+
+// SetPriority sets the "priority" field.
+func (ruo *RunUpdateOne) SetPriority(s string) *RunUpdateOne {
+	ruo.mutation.SetPriority(s)
+	return ruo
+}
+
+// SetNillablePriority sets the "priority" field if the given value is not nil.
+func (ruo *RunUpdateOne) SetNillablePriority(s *string) *RunUpdateOne {
+	if s != nil {
+		ruo.SetPriority(*s)
+	}
+	return ruo
+}
+
+// SetBackfillID sets the "backfill_id" field.
+func (ruo *RunUpdateOne) SetBackfillID(u uuid.UUID) *RunUpdateOne {
+	ruo.mutation.SetBackfillID(u)
+	return ruo
+}
+
+// SetNillableBackfillID sets the "backfill_id" field if the given value is not nil.
+func (ruo *RunUpdateOne) SetNillableBackfillID(u *uuid.UUID) *RunUpdateOne {
+	if u != nil {
+		ruo.SetBackfillID(*u)
+	}
+	return ruo
+}
+
+// ClearBackfillID clears the value of the "backfill_id" field.
+func (ruo *RunUpdateOne) ClearBackfillID() *RunUpdateOne {
+	ruo.mutation.ClearBackfillID()
+	return ruo
+}
+
 // Mutation returns the RunMutation object of the builder.
 func (ruo *RunUpdateOne) Mutation() *RunMutation {
 	return ruo.mutation
@@ -587,6 +720,16 @@ func (ruo *RunUpdateOne) check() error {
 	if v, ok := ruo.mutation.ClaimedBy(); ok {
 		if err := run.ClaimedByValidator(v); err != nil {
 			return &ValidationError{Name: "claimed_by", err: fmt.Errorf(`ent: validator failed for field "Run.claimed_by": %w`, err)}
+		}
+	}
+	if v, ok := ruo.mutation.PartitionKey(); ok {
+		if err := run.PartitionKeyValidator(v); err != nil {
+			return &ValidationError{Name: "partition_key", err: fmt.Errorf(`ent: validator failed for field "Run.partition_key": %w`, err)}
+		}
+	}
+	if v, ok := ruo.mutation.Priority(); ok {
+		if err := run.PriorityValidator(v); err != nil {
+			return &ValidationError{Name: "priority", err: fmt.Errorf(`ent: validator failed for field "Run.priority": %w`, err)}
 		}
 	}
 	return nil
@@ -674,6 +817,21 @@ func (ruo *RunUpdateOne) sqlSave(ctx context.Context) (_node *Run, err error) {
 	}
 	if ruo.mutation.MetadataCleared() {
 		_spec.ClearField(run.FieldMetadata, field.TypeJSON)
+	}
+	if value, ok := ruo.mutation.PartitionKey(); ok {
+		_spec.SetField(run.FieldPartitionKey, field.TypeString, value)
+	}
+	if ruo.mutation.PartitionKeyCleared() {
+		_spec.ClearField(run.FieldPartitionKey, field.TypeString)
+	}
+	if value, ok := ruo.mutation.Priority(); ok {
+		_spec.SetField(run.FieldPriority, field.TypeString, value)
+	}
+	if value, ok := ruo.mutation.BackfillID(); ok {
+		_spec.SetField(run.FieldBackfillID, field.TypeUUID, value)
+	}
+	if ruo.mutation.BackfillIDCleared() {
+		_spec.ClearField(run.FieldBackfillID, field.TypeUUID)
 	}
 	_node = &Run{config: ruo.config}
 	_spec.Assign = _node.assignValues

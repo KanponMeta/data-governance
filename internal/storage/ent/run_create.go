@@ -176,6 +176,48 @@ func (rc *RunCreate) SetMetadata(m map[string]interface{}) *RunCreate {
 	return rc
 }
 
+// SetPartitionKey sets the "partition_key" field.
+func (rc *RunCreate) SetPartitionKey(s string) *RunCreate {
+	rc.mutation.SetPartitionKey(s)
+	return rc
+}
+
+// SetNillablePartitionKey sets the "partition_key" field if the given value is not nil.
+func (rc *RunCreate) SetNillablePartitionKey(s *string) *RunCreate {
+	if s != nil {
+		rc.SetPartitionKey(*s)
+	}
+	return rc
+}
+
+// SetPriority sets the "priority" field.
+func (rc *RunCreate) SetPriority(s string) *RunCreate {
+	rc.mutation.SetPriority(s)
+	return rc
+}
+
+// SetNillablePriority sets the "priority" field if the given value is not nil.
+func (rc *RunCreate) SetNillablePriority(s *string) *RunCreate {
+	if s != nil {
+		rc.SetPriority(*s)
+	}
+	return rc
+}
+
+// SetBackfillID sets the "backfill_id" field.
+func (rc *RunCreate) SetBackfillID(u uuid.UUID) *RunCreate {
+	rc.mutation.SetBackfillID(u)
+	return rc
+}
+
+// SetNillableBackfillID sets the "backfill_id" field if the given value is not nil.
+func (rc *RunCreate) SetNillableBackfillID(u *uuid.UUID) *RunCreate {
+	if u != nil {
+		rc.SetBackfillID(*u)
+	}
+	return rc
+}
+
 // SetID sets the "id" field.
 func (rc *RunCreate) SetID(u uuid.UUID) *RunCreate {
 	rc.mutation.SetID(u)
@@ -237,6 +279,10 @@ func (rc *RunCreate) defaults() {
 		v := run.DefaultQueuedAt()
 		rc.mutation.SetQueuedAt(v)
 	}
+	if _, ok := rc.mutation.Priority(); !ok {
+		v := run.DefaultPriority
+		rc.mutation.SetPriority(v)
+	}
 	if _, ok := rc.mutation.ID(); !ok {
 		v := run.DefaultID()
 		rc.mutation.SetID(v)
@@ -276,6 +322,19 @@ func (rc *RunCreate) check() error {
 	}
 	if _, ok := rc.mutation.QueuedAt(); !ok {
 		return &ValidationError{Name: "queued_at", err: errors.New(`ent: missing required field "Run.queued_at"`)}
+	}
+	if v, ok := rc.mutation.PartitionKey(); ok {
+		if err := run.PartitionKeyValidator(v); err != nil {
+			return &ValidationError{Name: "partition_key", err: fmt.Errorf(`ent: validator failed for field "Run.partition_key": %w`, err)}
+		}
+	}
+	if _, ok := rc.mutation.Priority(); !ok {
+		return &ValidationError{Name: "priority", err: errors.New(`ent: missing required field "Run.priority"`)}
+	}
+	if v, ok := rc.mutation.Priority(); ok {
+		if err := run.PriorityValidator(v); err != nil {
+			return &ValidationError{Name: "priority", err: fmt.Errorf(`ent: validator failed for field "Run.priority": %w`, err)}
+		}
 	}
 	return nil
 }
@@ -360,6 +419,18 @@ func (rc *RunCreate) createSpec() (*Run, *sqlgraph.CreateSpec) {
 	if value, ok := rc.mutation.Metadata(); ok {
 		_spec.SetField(run.FieldMetadata, field.TypeJSON, value)
 		_node.Metadata = value
+	}
+	if value, ok := rc.mutation.PartitionKey(); ok {
+		_spec.SetField(run.FieldPartitionKey, field.TypeString, value)
+		_node.PartitionKey = value
+	}
+	if value, ok := rc.mutation.Priority(); ok {
+		_spec.SetField(run.FieldPriority, field.TypeString, value)
+		_node.Priority = value
+	}
+	if value, ok := rc.mutation.BackfillID(); ok {
+		_spec.SetField(run.FieldBackfillID, field.TypeUUID, value)
+		_node.BackfillID = &value
 	}
 	return _node, _spec
 }
@@ -578,6 +649,54 @@ func (u *RunUpsert) UpdateMetadata() *RunUpsert {
 // ClearMetadata clears the value of the "metadata" field.
 func (u *RunUpsert) ClearMetadata() *RunUpsert {
 	u.SetNull(run.FieldMetadata)
+	return u
+}
+
+// SetPartitionKey sets the "partition_key" field.
+func (u *RunUpsert) SetPartitionKey(v string) *RunUpsert {
+	u.Set(run.FieldPartitionKey, v)
+	return u
+}
+
+// UpdatePartitionKey sets the "partition_key" field to the value that was provided on create.
+func (u *RunUpsert) UpdatePartitionKey() *RunUpsert {
+	u.SetExcluded(run.FieldPartitionKey)
+	return u
+}
+
+// ClearPartitionKey clears the value of the "partition_key" field.
+func (u *RunUpsert) ClearPartitionKey() *RunUpsert {
+	u.SetNull(run.FieldPartitionKey)
+	return u
+}
+
+// SetPriority sets the "priority" field.
+func (u *RunUpsert) SetPriority(v string) *RunUpsert {
+	u.Set(run.FieldPriority, v)
+	return u
+}
+
+// UpdatePriority sets the "priority" field to the value that was provided on create.
+func (u *RunUpsert) UpdatePriority() *RunUpsert {
+	u.SetExcluded(run.FieldPriority)
+	return u
+}
+
+// SetBackfillID sets the "backfill_id" field.
+func (u *RunUpsert) SetBackfillID(v uuid.UUID) *RunUpsert {
+	u.Set(run.FieldBackfillID, v)
+	return u
+}
+
+// UpdateBackfillID sets the "backfill_id" field to the value that was provided on create.
+func (u *RunUpsert) UpdateBackfillID() *RunUpsert {
+	u.SetExcluded(run.FieldBackfillID)
+	return u
+}
+
+// ClearBackfillID clears the value of the "backfill_id" field.
+func (u *RunUpsert) ClearBackfillID() *RunUpsert {
+	u.SetNull(run.FieldBackfillID)
 	return u
 }
 
@@ -828,6 +947,62 @@ func (u *RunUpsertOne) UpdateMetadata() *RunUpsertOne {
 func (u *RunUpsertOne) ClearMetadata() *RunUpsertOne {
 	return u.Update(func(s *RunUpsert) {
 		s.ClearMetadata()
+	})
+}
+
+// SetPartitionKey sets the "partition_key" field.
+func (u *RunUpsertOne) SetPartitionKey(v string) *RunUpsertOne {
+	return u.Update(func(s *RunUpsert) {
+		s.SetPartitionKey(v)
+	})
+}
+
+// UpdatePartitionKey sets the "partition_key" field to the value that was provided on create.
+func (u *RunUpsertOne) UpdatePartitionKey() *RunUpsertOne {
+	return u.Update(func(s *RunUpsert) {
+		s.UpdatePartitionKey()
+	})
+}
+
+// ClearPartitionKey clears the value of the "partition_key" field.
+func (u *RunUpsertOne) ClearPartitionKey() *RunUpsertOne {
+	return u.Update(func(s *RunUpsert) {
+		s.ClearPartitionKey()
+	})
+}
+
+// SetPriority sets the "priority" field.
+func (u *RunUpsertOne) SetPriority(v string) *RunUpsertOne {
+	return u.Update(func(s *RunUpsert) {
+		s.SetPriority(v)
+	})
+}
+
+// UpdatePriority sets the "priority" field to the value that was provided on create.
+func (u *RunUpsertOne) UpdatePriority() *RunUpsertOne {
+	return u.Update(func(s *RunUpsert) {
+		s.UpdatePriority()
+	})
+}
+
+// SetBackfillID sets the "backfill_id" field.
+func (u *RunUpsertOne) SetBackfillID(v uuid.UUID) *RunUpsertOne {
+	return u.Update(func(s *RunUpsert) {
+		s.SetBackfillID(v)
+	})
+}
+
+// UpdateBackfillID sets the "backfill_id" field to the value that was provided on create.
+func (u *RunUpsertOne) UpdateBackfillID() *RunUpsertOne {
+	return u.Update(func(s *RunUpsert) {
+		s.UpdateBackfillID()
+	})
+}
+
+// ClearBackfillID clears the value of the "backfill_id" field.
+func (u *RunUpsertOne) ClearBackfillID() *RunUpsertOne {
+	return u.Update(func(s *RunUpsert) {
+		s.ClearBackfillID()
 	})
 }
 
@@ -1245,6 +1420,62 @@ func (u *RunUpsertBulk) UpdateMetadata() *RunUpsertBulk {
 func (u *RunUpsertBulk) ClearMetadata() *RunUpsertBulk {
 	return u.Update(func(s *RunUpsert) {
 		s.ClearMetadata()
+	})
+}
+
+// SetPartitionKey sets the "partition_key" field.
+func (u *RunUpsertBulk) SetPartitionKey(v string) *RunUpsertBulk {
+	return u.Update(func(s *RunUpsert) {
+		s.SetPartitionKey(v)
+	})
+}
+
+// UpdatePartitionKey sets the "partition_key" field to the value that was provided on create.
+func (u *RunUpsertBulk) UpdatePartitionKey() *RunUpsertBulk {
+	return u.Update(func(s *RunUpsert) {
+		s.UpdatePartitionKey()
+	})
+}
+
+// ClearPartitionKey clears the value of the "partition_key" field.
+func (u *RunUpsertBulk) ClearPartitionKey() *RunUpsertBulk {
+	return u.Update(func(s *RunUpsert) {
+		s.ClearPartitionKey()
+	})
+}
+
+// SetPriority sets the "priority" field.
+func (u *RunUpsertBulk) SetPriority(v string) *RunUpsertBulk {
+	return u.Update(func(s *RunUpsert) {
+		s.SetPriority(v)
+	})
+}
+
+// UpdatePriority sets the "priority" field to the value that was provided on create.
+func (u *RunUpsertBulk) UpdatePriority() *RunUpsertBulk {
+	return u.Update(func(s *RunUpsert) {
+		s.UpdatePriority()
+	})
+}
+
+// SetBackfillID sets the "backfill_id" field.
+func (u *RunUpsertBulk) SetBackfillID(v uuid.UUID) *RunUpsertBulk {
+	return u.Update(func(s *RunUpsert) {
+		s.SetBackfillID(v)
+	})
+}
+
+// UpdateBackfillID sets the "backfill_id" field to the value that was provided on create.
+func (u *RunUpsertBulk) UpdateBackfillID() *RunUpsertBulk {
+	return u.Update(func(s *RunUpsert) {
+		s.UpdateBackfillID()
+	})
+}
+
+// ClearBackfillID clears the value of the "backfill_id" field.
+func (u *RunUpsertBulk) ClearBackfillID() *RunUpsertBulk {
+	return u.Update(func(s *RunUpsert) {
+		s.ClearBackfillID()
 	})
 }
 

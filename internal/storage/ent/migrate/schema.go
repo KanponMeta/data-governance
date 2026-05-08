@@ -117,6 +117,9 @@ var (
 		{Name: "last_heartbeat", Type: field.TypeTime, Nullable: true},
 		{Name: "error_message", Type: field.TypeString, Nullable: true, Size: 2147483647},
 		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
+		{Name: "partition_key", Type: field.TypeString, Nullable: true, Size: 128},
+		{Name: "priority", Type: field.TypeString, Size: 16, Default: "normal"},
+		{Name: "backfill_id", Type: field.TypeUUID, Nullable: true},
 	}
 	// RunsTable holds the schema information for the "runs" table.
 	RunsTable = &schema.Table{

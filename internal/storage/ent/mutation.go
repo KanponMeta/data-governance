@@ -1907,6 +1907,9 @@ type RunMutation struct {
 	last_heartbeat *time.Time
 	error_message  *string
 	metadata       *map[string]interface{}
+	partition_key  *string
+	priority       *string
+	backfill_id    *uuid.UUID
 	clearedFields  map[string]struct{}
 	done           bool
 	oldValue       func(context.Context) (*Run, error)
@@ -2553,6 +2556,140 @@ func (m *RunMutation) ResetMetadata() {
 	delete(m.clearedFields, run.FieldMetadata)
 }
 
+// SetPartitionKey sets the "partition_key" field.
+func (m *RunMutation) SetPartitionKey(s string) {
+	m.partition_key = &s
+}
+
+// PartitionKey returns the value of the "partition_key" field in the mutation.
+func (m *RunMutation) PartitionKey() (r string, exists bool) {
+	v := m.partition_key
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPartitionKey returns the old "partition_key" field's value of the Run entity.
+// If the Run object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunMutation) OldPartitionKey(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPartitionKey is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPartitionKey requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPartitionKey: %w", err)
+	}
+	return oldValue.PartitionKey, nil
+}
+
+// ClearPartitionKey clears the value of the "partition_key" field.
+func (m *RunMutation) ClearPartitionKey() {
+	m.partition_key = nil
+	m.clearedFields[run.FieldPartitionKey] = struct{}{}
+}
+
+// PartitionKeyCleared returns if the "partition_key" field was cleared in this mutation.
+func (m *RunMutation) PartitionKeyCleared() bool {
+	_, ok := m.clearedFields[run.FieldPartitionKey]
+	return ok
+}
+
+// ResetPartitionKey resets all changes to the "partition_key" field.
+func (m *RunMutation) ResetPartitionKey() {
+	m.partition_key = nil
+	delete(m.clearedFields, run.FieldPartitionKey)
+}
+
+// SetPriority sets the "priority" field.
+func (m *RunMutation) SetPriority(s string) {
+	m.priority = &s
+}
+
+// Priority returns the value of the "priority" field in the mutation.
+func (m *RunMutation) Priority() (r string, exists bool) {
+	v := m.priority
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPriority returns the old "priority" field's value of the Run entity.
+// If the Run object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunMutation) OldPriority(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPriority is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPriority requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPriority: %w", err)
+	}
+	return oldValue.Priority, nil
+}
+
+// ResetPriority resets all changes to the "priority" field.
+func (m *RunMutation) ResetPriority() {
+	m.priority = nil
+}
+
+// SetBackfillID sets the "backfill_id" field.
+func (m *RunMutation) SetBackfillID(u uuid.UUID) {
+	m.backfill_id = &u
+}
+
+// BackfillID returns the value of the "backfill_id" field in the mutation.
+func (m *RunMutation) BackfillID() (r uuid.UUID, exists bool) {
+	v := m.backfill_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBackfillID returns the old "backfill_id" field's value of the Run entity.
+// If the Run object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunMutation) OldBackfillID(ctx context.Context) (v *uuid.UUID, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBackfillID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBackfillID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBackfillID: %w", err)
+	}
+	return oldValue.BackfillID, nil
+}
+
+// ClearBackfillID clears the value of the "backfill_id" field.
+func (m *RunMutation) ClearBackfillID() {
+	m.backfill_id = nil
+	m.clearedFields[run.FieldBackfillID] = struct{}{}
+}
+
+// BackfillIDCleared returns if the "backfill_id" field was cleared in this mutation.
+func (m *RunMutation) BackfillIDCleared() bool {
+	_, ok := m.clearedFields[run.FieldBackfillID]
+	return ok
+}
+
+// ResetBackfillID resets all changes to the "backfill_id" field.
+func (m *RunMutation) ResetBackfillID() {
+	m.backfill_id = nil
+	delete(m.clearedFields, run.FieldBackfillID)
+}
+
 // Where appends a list predicates to the RunMutation builder.
 func (m *RunMutation) Where(ps ...predicate.Run) {
 	m.predicates = append(m.predicates, ps...)
@@ -2587,7 +2724,7 @@ func (m *RunMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *RunMutation) Fields() []string {
-	fields := make([]string, 0, 12)
+	fields := make([]string, 0, 15)
 	if m.asset_name != nil {
 		fields = append(fields, run.FieldAssetName)
 	}
@@ -2624,6 +2761,15 @@ func (m *RunMutation) Fields() []string {
 	if m.metadata != nil {
 		fields = append(fields, run.FieldMetadata)
 	}
+	if m.partition_key != nil {
+		fields = append(fields, run.FieldPartitionKey)
+	}
+	if m.priority != nil {
+		fields = append(fields, run.FieldPriority)
+	}
+	if m.backfill_id != nil {
+		fields = append(fields, run.FieldBackfillID)
+	}
 	return fields
 }
 
@@ -2656,6 +2802,12 @@ func (m *RunMutation) Field(name string) (ent.Value, bool) {
 		return m.ErrorMessage()
 	case run.FieldMetadata:
 		return m.Metadata()
+	case run.FieldPartitionKey:
+		return m.PartitionKey()
+	case run.FieldPriority:
+		return m.Priority()
+	case run.FieldBackfillID:
+		return m.BackfillID()
 	}
 	return nil, false
 }
@@ -2689,6 +2841,12 @@ func (m *RunMutation) OldField(ctx context.Context, name string) (ent.Value, err
 		return m.OldErrorMessage(ctx)
 	case run.FieldMetadata:
 		return m.OldMetadata(ctx)
+	case run.FieldPartitionKey:
+		return m.OldPartitionKey(ctx)
+	case run.FieldPriority:
+		return m.OldPriority(ctx)
+	case run.FieldBackfillID:
+		return m.OldBackfillID(ctx)
 	}
 	return nil, fmt.Errorf("unknown Run field %s", name)
 }
@@ -2782,6 +2940,27 @@ func (m *RunMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetMetadata(v)
 		return nil
+	case run.FieldPartitionKey:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPartitionKey(v)
+		return nil
+	case run.FieldPriority:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPriority(v)
+		return nil
+	case run.FieldBackfillID:
+		v, ok := value.(uuid.UUID)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBackfillID(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Run field %s", name)
 }
@@ -2836,6 +3015,12 @@ func (m *RunMutation) ClearedFields() []string {
 	if m.FieldCleared(run.FieldMetadata) {
 		fields = append(fields, run.FieldMetadata)
 	}
+	if m.FieldCleared(run.FieldPartitionKey) {
+		fields = append(fields, run.FieldPartitionKey)
+	}
+	if m.FieldCleared(run.FieldBackfillID) {
+		fields = append(fields, run.FieldBackfillID)
+	}
 	return fields
 }
 
@@ -2873,6 +3058,12 @@ func (m *RunMutation) ClearField(name string) error {
 		return nil
 	case run.FieldMetadata:
 		m.ClearMetadata()
+		return nil
+	case run.FieldPartitionKey:
+		m.ClearPartitionKey()
+		return nil
+	case run.FieldBackfillID:
+		m.ClearBackfillID()
 		return nil
 	}
 	return fmt.Errorf("unknown Run nullable field %s", name)
@@ -2917,6 +3108,15 @@ func (m *RunMutation) ResetField(name string) error {
 		return nil
 	case run.FieldMetadata:
 		m.ResetMetadata()
+		return nil
+	case run.FieldPartitionKey:
+		m.ResetPartitionKey()
+		return nil
+	case run.FieldPriority:
+		m.ResetPriority()
+		return nil
+	case run.FieldBackfillID:
+		m.ResetBackfillID()
 		return nil
 	}
 	return fmt.Errorf("unknown Run field %s", name)

@@ -110,6 +110,21 @@ func ErrorMessage(v string) predicate.Run {
 	return predicate.Run(sql.FieldEQ(FieldErrorMessage, v))
 }
 
+// PartitionKey applies equality check predicate on the "partition_key" field. It's identical to PartitionKeyEQ.
+func PartitionKey(v string) predicate.Run {
+	return predicate.Run(sql.FieldEQ(FieldPartitionKey, v))
+}
+
+// Priority applies equality check predicate on the "priority" field. It's identical to PriorityEQ.
+func Priority(v string) predicate.Run {
+	return predicate.Run(sql.FieldEQ(FieldPriority, v))
+}
+
+// BackfillID applies equality check predicate on the "backfill_id" field. It's identical to BackfillIDEQ.
+func BackfillID(v uuid.UUID) predicate.Run {
+	return predicate.Run(sql.FieldEQ(FieldBackfillID, v))
+}
+
 // AssetNameEQ applies the EQ predicate on the "asset_name" field.
 func AssetNameEQ(v string) predicate.Run {
 	return predicate.Run(sql.FieldEQ(FieldAssetName, v))
@@ -753,6 +768,196 @@ func MetadataIsNil() predicate.Run {
 // MetadataNotNil applies the NotNil predicate on the "metadata" field.
 func MetadataNotNil() predicate.Run {
 	return predicate.Run(sql.FieldNotNull(FieldMetadata))
+}
+
+// PartitionKeyEQ applies the EQ predicate on the "partition_key" field.
+func PartitionKeyEQ(v string) predicate.Run {
+	return predicate.Run(sql.FieldEQ(FieldPartitionKey, v))
+}
+
+// PartitionKeyNEQ applies the NEQ predicate on the "partition_key" field.
+func PartitionKeyNEQ(v string) predicate.Run {
+	return predicate.Run(sql.FieldNEQ(FieldPartitionKey, v))
+}
+
+// PartitionKeyIn applies the In predicate on the "partition_key" field.
+func PartitionKeyIn(vs ...string) predicate.Run {
+	return predicate.Run(sql.FieldIn(FieldPartitionKey, vs...))
+}
+
+// PartitionKeyNotIn applies the NotIn predicate on the "partition_key" field.
+func PartitionKeyNotIn(vs ...string) predicate.Run {
+	return predicate.Run(sql.FieldNotIn(FieldPartitionKey, vs...))
+}
+
+// PartitionKeyGT applies the GT predicate on the "partition_key" field.
+func PartitionKeyGT(v string) predicate.Run {
+	return predicate.Run(sql.FieldGT(FieldPartitionKey, v))
+}
+
+// PartitionKeyGTE applies the GTE predicate on the "partition_key" field.
+func PartitionKeyGTE(v string) predicate.Run {
+	return predicate.Run(sql.FieldGTE(FieldPartitionKey, v))
+}
+
+// PartitionKeyLT applies the LT predicate on the "partition_key" field.
+func PartitionKeyLT(v string) predicate.Run {
+	return predicate.Run(sql.FieldLT(FieldPartitionKey, v))
+}
+
+// PartitionKeyLTE applies the LTE predicate on the "partition_key" field.
+func PartitionKeyLTE(v string) predicate.Run {
+	return predicate.Run(sql.FieldLTE(FieldPartitionKey, v))
+}
+
+// PartitionKeyContains applies the Contains predicate on the "partition_key" field.
+func PartitionKeyContains(v string) predicate.Run {
+	return predicate.Run(sql.FieldContains(FieldPartitionKey, v))
+}
+
+// PartitionKeyHasPrefix applies the HasPrefix predicate on the "partition_key" field.
+func PartitionKeyHasPrefix(v string) predicate.Run {
+	return predicate.Run(sql.FieldHasPrefix(FieldPartitionKey, v))
+}
+
+// PartitionKeyHasSuffix applies the HasSuffix predicate on the "partition_key" field.
+func PartitionKeyHasSuffix(v string) predicate.Run {
+	return predicate.Run(sql.FieldHasSuffix(FieldPartitionKey, v))
+}
+
+// PartitionKeyIsNil applies the IsNil predicate on the "partition_key" field.
+func PartitionKeyIsNil() predicate.Run {
+	return predicate.Run(sql.FieldIsNull(FieldPartitionKey))
+}
+
+// PartitionKeyNotNil applies the NotNil predicate on the "partition_key" field.
+func PartitionKeyNotNil() predicate.Run {
+	return predicate.Run(sql.FieldNotNull(FieldPartitionKey))
+}
+
+// PartitionKeyEqualFold applies the EqualFold predicate on the "partition_key" field.
+func PartitionKeyEqualFold(v string) predicate.Run {
+	return predicate.Run(sql.FieldEqualFold(FieldPartitionKey, v))
+}
+
+// PartitionKeyContainsFold applies the ContainsFold predicate on the "partition_key" field.
+func PartitionKeyContainsFold(v string) predicate.Run {
+	return predicate.Run(sql.FieldContainsFold(FieldPartitionKey, v))
+}
+
+// PriorityEQ applies the EQ predicate on the "priority" field.
+func PriorityEQ(v string) predicate.Run {
+	return predicate.Run(sql.FieldEQ(FieldPriority, v))
+}
+
+// PriorityNEQ applies the NEQ predicate on the "priority" field.
+func PriorityNEQ(v string) predicate.Run {
+	return predicate.Run(sql.FieldNEQ(FieldPriority, v))
+}
+
+// PriorityIn applies the In predicate on the "priority" field.
+func PriorityIn(vs ...string) predicate.Run {
+	return predicate.Run(sql.FieldIn(FieldPriority, vs...))
+}
+
+// PriorityNotIn applies the NotIn predicate on the "priority" field.
+func PriorityNotIn(vs ...string) predicate.Run {
+	return predicate.Run(sql.FieldNotIn(FieldPriority, vs...))
+}
+
+// PriorityGT applies the GT predicate on the "priority" field.
+func PriorityGT(v string) predicate.Run {
+	return predicate.Run(sql.FieldGT(FieldPriority, v))
+}
+
+// PriorityGTE applies the GTE predicate on the "priority" field.
+func PriorityGTE(v string) predicate.Run {
+	return predicate.Run(sql.FieldGTE(FieldPriority, v))
+}
+
+// PriorityLT applies the LT predicate on the "priority" field.
+func PriorityLT(v string) predicate.Run {
+	return predicate.Run(sql.FieldLT(FieldPriority, v))
+}
+
+// PriorityLTE applies the LTE predicate on the "priority" field.
+func PriorityLTE(v string) predicate.Run {
+	return predicate.Run(sql.FieldLTE(FieldPriority, v))
+}
+
+// PriorityContains applies the Contains predicate on the "priority" field.
+func PriorityContains(v string) predicate.Run {
+	return predicate.Run(sql.FieldContains(FieldPriority, v))
+}
+
+// PriorityHasPrefix applies the HasPrefix predicate on the "priority" field.
+func PriorityHasPrefix(v string) predicate.Run {
+	return predicate.Run(sql.FieldHasPrefix(FieldPriority, v))
+}
+
+// PriorityHasSuffix applies the HasSuffix predicate on the "priority" field.
+func PriorityHasSuffix(v string) predicate.Run {
+	return predicate.Run(sql.FieldHasSuffix(FieldPriority, v))
+}
+
+// PriorityEqualFold applies the EqualFold predicate on the "priority" field.
+func PriorityEqualFold(v string) predicate.Run {
+	return predicate.Run(sql.FieldEqualFold(FieldPriority, v))
+}
+
+// PriorityContainsFold applies the ContainsFold predicate on the "priority" field.
+func PriorityContainsFold(v string) predicate.Run {
+	return predicate.Run(sql.FieldContainsFold(FieldPriority, v))
+}
+
+// BackfillIDEQ applies the EQ predicate on the "backfill_id" field.
+func BackfillIDEQ(v uuid.UUID) predicate.Run {
+	return predicate.Run(sql.FieldEQ(FieldBackfillID, v))
+}
+
+// BackfillIDNEQ applies the NEQ predicate on the "backfill_id" field.
+func BackfillIDNEQ(v uuid.UUID) predicate.Run {
+	return predicate.Run(sql.FieldNEQ(FieldBackfillID, v))
+}
+
+// BackfillIDIn applies the In predicate on the "backfill_id" field.
+func BackfillIDIn(vs ...uuid.UUID) predicate.Run {
+	return predicate.Run(sql.FieldIn(FieldBackfillID, vs...))
+}
+
+// BackfillIDNotIn applies the NotIn predicate on the "backfill_id" field.
+func BackfillIDNotIn(vs ...uuid.UUID) predicate.Run {
+	return predicate.Run(sql.FieldNotIn(FieldBackfillID, vs...))
+}
+
+// BackfillIDGT applies the GT predicate on the "backfill_id" field.
+func BackfillIDGT(v uuid.UUID) predicate.Run {
+	return predicate.Run(sql.FieldGT(FieldBackfillID, v))
+}
+
+// BackfillIDGTE applies the GTE predicate on the "backfill_id" field.
+func BackfillIDGTE(v uuid.UUID) predicate.Run {
+	return predicate.Run(sql.FieldGTE(FieldBackfillID, v))
+}
+
+// BackfillIDLT applies the LT predicate on the "backfill_id" field.
+func BackfillIDLT(v uuid.UUID) predicate.Run {
+	return predicate.Run(sql.FieldLT(FieldBackfillID, v))
+}
+
+// BackfillIDLTE applies the LTE predicate on the "backfill_id" field.
+func BackfillIDLTE(v uuid.UUID) predicate.Run {
+	return predicate.Run(sql.FieldLTE(FieldBackfillID, v))
+}
+
+// BackfillIDIsNil applies the IsNil predicate on the "backfill_id" field.
+func BackfillIDIsNil() predicate.Run {
+	return predicate.Run(sql.FieldIsNull(FieldBackfillID))
+}
+
+// BackfillIDNotNil applies the NotNil predicate on the "backfill_id" field.
+func BackfillIDNotNil() predicate.Run {
+	return predicate.Run(sql.FieldNotNull(FieldBackfillID))
 }
 
 // And groups predicates with the AND operator between them.
