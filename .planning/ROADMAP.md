@@ -50,7 +50,7 @@ Plans:
 - [x] 02-02-PLAN.md — DAG executor + run lifecycle state machine + atomic claim with 50-goroutine test (Wave 1)
 - [x] 02-03-PLAN.md — Retry engine + global concurrency token pool + connector config + executor (Wave 2)
 - [x] 02-04-PLAN.md — PostgreSQL connector + worker / materialize CLI subcommands + e2e (Wave 3)
-- [ ] 02-05-PLAN.md — Six remaining first-party connectors (MySQL, BigQuery, Snowflake, S3, GCS, HDFS) (Wave 4)
+- [x] 02-05-PLAN.md — Six remaining first-party connectors (MySQL, BigQuery, Snowflake, S3, GCS, HDFS) (Wave 4)
 **UI 提示**：否
 
 ### Phase 3: 调度、传感器与分区
