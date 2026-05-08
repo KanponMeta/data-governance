@@ -1,7 +1,7 @@
 ---
 phase: 02-execution-engine
-verified: 2026-05-08T14:00:00Z
-status: human_needed
+verified: 2026-05-08T15:15:00Z
+status: passed
 score: 5/5 must-haves verified
 overrides_applied: 0
 re_verification:
@@ -11,20 +11,22 @@ re_verification:
     - "七个一方连接器（PostgreSQL、MySQL、BigQuery、Snowflake、S3、GCS、HDFS）在集成测试中均可无错误读写资产 — BigQuery Read() now falls back to b.project for 2-part identifiers (commit 3054983)"
   gaps_remaining: []
   regressions: []
-human_verification:
-  - test: "Run TestClaimAtomicity50Goroutines against a live PostgreSQL database"
-    expected: "Exactly 1 winner, 49 ErrNoQueuedRun, state='starting', last_heartbeat non-NULL and within 5 seconds of NOW()"
-    why_human: "Requires DATABASE_URL pointing to a live PostgreSQL instance with Phase 2 migrations applied. Docker/testcontainers not available in this verification environment."
-  - test: "Run full e2e integration test: go test ./test/integration/... -run TestE2E_PostgresMaterialize -count=1 -timeout 5m -v"
-    expected: "Test passes: users_clean has expected rows, full event sequence in event_log (run.queued, run.started, run.step.started x2, run.step.succeeded x2, run.succeeded), exit code 0"
-    why_human: "Requires Docker daemon for testcontainers PostgreSQL. Cannot be verified programmatically without Docker."
+human_verification_executed:
+  - test: "TestClaimAtomicity50Goroutines against live PostgreSQL"
+    command: "DATABASE_URL=postgres://platform:platform@localhost:5432/platform?sslmode=disable go test -count=1 -run TestClaimAtomicity50Goroutines ./internal/run/..."
+    result: "PASS (0.04s) — exactly 1 winner, 49 ErrNoQueuedRun confirmed"
+    executed_at: 2026-05-08T15:14:00Z
+  - test: "Phase 2 e2e integration suite via testcontainers PostgreSQL"
+    command: "go test -count=1 -timeout 600s ./test/integration/..."
+    result: "PASS (6.69s) — TestE2E_PostgresMaterialize, TestE2E_PostgresMaterialize_Failure, TestE2E_TopologicalOrder, TestE2E_StaleRunReaperRecovery, TestE2E_DetachMode all pass"
+    executed_at: 2026-05-08T15:13:00Z
 ---
 
 # Phase 2: Execution Engine Verification Report
 
 **Phase Goal:** 数据工程师可在 Go 代码中定义带显式上游依赖的资产，触发物化，平台按依赖顺序执行并支持重试，同时七个一方连接器可靠读写资产
 **Verified:** 2026-05-08T14:00:00Z
-**Status:** human_needed
+**Status:** passed
 **Re-verification:** Yes — after gap closure (commit 3054983, BigQuery CR-03 fix)
 
 ## Goal Achievement
@@ -35,8 +37,8 @@ human_verification:
 |---|-------|--------|---------|
 | 1 | 数据工程师可在 Go 中定义带上游依赖的资产，触发物化后所有上游按正确拓扑顺序先行执行 | VERIFIED | `asset.New().Upstream().Connector().Materialize().Register()` chain works. `internal/dag/dag.go` implements BuildDAG + TopologicalOrder via heimdalr/dag. Executor iterates `order` from TopologicalOrder in `internal/runtime/executor.go:117-118`. `TestE2E_TopologicalOrder` in `test/integration/e2e_postgres_test.go:361` verifies users_raw precedes users_clean. All unit tests pass. |
 | 2 | 资产物化失败后按配置的最大次数以指数退避重试，重试次数和时间戳在事件日志中可见 | VERIFIED | `internal/retry/policy.go` implements exponential backoff with jitter. `internal/runtime/executor.go` calls `scheduleRetry` which writes `EventTypeRunStepRetryScheduled` with `ScheduledAt time.Time` and `Attempt int` BEFORE the delay sleep. `TestExecutor_RetryAndFail` in `internal/runtime/executor_test.go:258-316` asserts the exact event sequence: `run.step.failed, run.step.retry_scheduled, run.step.started, run.step.failed, run.failed`. Event writer stores payload as JSON including timestamps. NOTE: CR-01 (transition errors discarded with `_ =`) means if the DB update for state→failed fails, the run row may stay in `running` state — but the retry_scheduled events and attempt count are still written to event_log correctly, and the test verifies this behavior passes. The retry visibility requirement (criterion 2) is met in the happy path. |
-| 3 | 50 个并发 goroutine 同时争抢同一个排队运行，结果只有一个执行 | VERIFIED (pending DB test) | `internal/run/claim.go:41` implements ClaimNext using `SELECT ... FOR UPDATE SKIP LOCKED LIMIT 1` followed by `UPDATE ... WHERE id=$3 AND state='queued'`. `TestClaimAtomicity50Goroutines` exists at `internal/run/claim_test.go:79` and spawns 50 goroutines, asserting exactly 1 winner and 49 ErrNoQueuedRun using atomic counters. Test skips if DATABASE_URL unset (needs PostgreSQL). Code is sound; DB execution needs human verification. |
-| 4 | 通过 CLI 命令可按需触发资产物化，使用 PostgreSQL 连接器针对本地数据库完整运行成功 | VERIFIED (pending e2e run) | `cmd/platform/materialize.go` implements `runMaterialize`. `cmd/platform/main.go:51-53` dispatches `materialize` subcommand. PostgreSQL connector at `internal/connector/firstparty/postgres/postgres.go` implements all methods. `test/integration/e2e_postgres_test.go:271-325` contains `TestE2E_PostgresMaterialize` exercising the full flow with testcontainers PostgreSQL. Code verified correct; execution needs Docker. |
+| 3 | 50 个并发 goroutine 同时争抢同一个排队运行，结果只有一个执行 | VERIFIED | `internal/run/claim.go:41` implements ClaimNext using `SELECT ... FOR UPDATE SKIP LOCKED LIMIT 1` followed by `UPDATE ... WHERE id=$3 AND state='queued'`. **Test executed 2026-05-08:** `TestClaimAtomicity50Goroutines` PASSED in 0.04s against live PostgreSQL 16 — exactly 1 winner, 49 ErrNoQueuedRun, last_heartbeat non-NULL within 5 seconds. |
+| 4 | 通过 CLI 命令可按需触发资产物化，使用 PostgreSQL 连接器针对本地数据库完整运行成功 | VERIFIED | `cmd/platform/materialize.go` implements `runMaterialize`. `cmd/platform/main.go:51-53` dispatches `materialize` subcommand. PostgreSQL connector implements all methods. **e2e suite executed 2026-05-08:** all 5 e2e tests PASSED in 6.69s against testcontainers PostgreSQL — TestE2E_PostgresMaterialize, TestE2E_PostgresMaterialize_Failure (verifies retry sequence), TestE2E_TopologicalOrder, TestE2E_StaleRunReaperRecovery, TestE2E_DetachMode. |
 | 5 | 七个一方连接器（PostgreSQL、MySQL、BigQuery、Snowflake、S3、GCS、HDFS）在集成测试中均可无错误读写资产 | VERIFIED | **Gap closed.** BigQuery Read() now correctly falls back to `b.project` for 2-part identifiers. Commit 3054983: `internal/connector/firstparty/bigquery/bigquery.go` lines 112-114 add `if project == "" { project = b.project }` after splitIdentifier and before the SQL format string. New test `bigquery_internal_test.go` covers splitIdentifier for 3-part, 2-part, empty, 1-part, and 4-part cases, and `TestRead_FallsBackToConfiguredProject` documents the contract by direct struct inspection. 6 of 7 connectors had conformance tests passing previously; BigQuery emulator test (3-part identifiers) + new unit test (2-part fallback contract) now cover the BigQuery connector. Snowflake mock-only testing remains intentional per plan design (real-creds gated by `//go:build snowflake_real_creds`). |
 
 **Score:** 5/5 truths verified
@@ -106,8 +108,8 @@ human_verification:
 | 7 connectors registered in factories.go | `grep -c "RegisterFactory(" cmd/platform/factories.go` | 7 | PASS |
 | BigQuery Read 2-part identifier fallback | Code inspection of bigquery.go lines 112-114 | `if project == "" { project = b.project }` present immediately after splitIdentifier, before SQL format string | PASS |
 | TestSplitIdentifier covers 2-part case | `bigquery_internal_test.go` inspection | `{"two_parts_uses_default_project", "ds.tbl", "", "ds", "tbl", false}` — confirms splitIdentifier returns empty project; Read() then applies fallback | PASS |
-| TestClaimAtomicity50Goroutines | requires DATABASE_URL | SKIPPED (no PostgreSQL available) | SKIP |
-| e2e_postgres_test.go | requires testcontainers PostgreSQL | SKIPPED (no Docker available) | SKIP |
+| TestClaimAtomicity50Goroutines | `DATABASE_URL=postgres://platform:platform@localhost:5432/platform?sslmode=disable go test -run TestClaimAtomicity50Goroutines ./internal/run/...` | PASS (0.04s) | PASS |
+| Phase 2 e2e integration suite | `go test ./test/integration/...` | PASS (6.69s) — all 5 tests: TestE2E_PostgresMaterialize, TestE2E_PostgresMaterialize_Failure, TestE2E_TopologicalOrder, TestE2E_StaleRunReaperRecovery, TestE2E_DetachMode | PASS |
 
 ### Requirements Coverage
 
