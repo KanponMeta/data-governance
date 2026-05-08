@@ -12,12 +12,16 @@ files_modified:
   - internal/run/claim_test.go
   - internal/run/priority.go
   - internal/run/priority_test.go
+  - internal/runtime/executor.go
+  - cmd/platform/worker.go
+  - cmd/platform/materialize.go
 autonomous: true
 must_haves:
   truths:
     - "ClaimNext SQL ORDER BY clause is `CASE priority WHEN 'critical' THEN 0 WHEN 'normal' THEN 1 WHEN 'backfill' THEN 2 ELSE 1 END ASC, queued_at ASC`"
     - "ClaimNext SELECT projects partition_key, priority, backfill_id in addition to existing columns"
     - "ClaimedRun struct exposes PartitionKey *string, Priority string, BackfillID *uuid.UUID"
+    - "Executor.Run signature is `Run(ctx context.Context, claimed *run.ClaimedRun) error` — single migration, no intermediate signature"
     - "Existing TestClaimAtomicity50Goroutines still passes after ORDER BY change (regression guard)"
     - "TestClaimPriorityOrdering proves: insert 5 backfill + 5 normal + 1 critical → claim order is critical, then 5 normals, then 5 backfills"
     - "TestPriorityClaimLoad proves: 1000 backfill + 50 normal + 50 concurrent claimers → first 50 claims are all 'normal', no duplicate claims, second 50 claims are all 'backfill'"
@@ -32,6 +36,9 @@ must_haves:
     - path: "internal/run/claim_test.go"
       provides: "TestClaimAtomicity50Goroutines (existing) + TestClaimPriorityOrdering (new) + TestPriorityClaimLoad (new)"
       contains: "TestClaimPriorityOrdering"
+    - path: "internal/runtime/executor.go"
+      provides: "Executor.Run takes *run.ClaimedRun (final signature, set ONCE in this plan)"
+      contains: "claimed *run.ClaimedRun"
   key_links:
     - from: "internal/run.ClaimNext SELECT"
       to: "runs table partition_key/priority/backfill_id columns (plan 03-01)"
@@ -41,6 +48,10 @@ must_haves:
       to: "claim.go SQL CASE expression"
       via: "Both encode critical=0, normal=1, backfill=2 — drift prevention test asserts agreement"
       pattern: "PriorityOrder.*critical.*normal.*backfill"
+    - from: "cmd/platform/worker.go ClaimNext call site"
+      to: "internal/runtime.Executor.Run(ctx, claimed)"
+      via: "passes the entire *run.ClaimedRun struct (priority, partition_key, backfill_id all reachable downstream)"
+      pattern: "executor.Run\\(ctx, claimed\\)"
 ---
 
 <objective>
@@ -50,6 +61,8 @@ Modify `internal/run/claim.go` to claim runs in priority order (`critical` → `
 2. **TestPriorityClaimLoad** — load test with 1000 backfill + 50 normal runs claimed by 50 concurrent goroutines, asserting normal runs claim first, no duplicate claims (SKIP LOCKED preserved), and backfill runs only claim after normal runs are exhausted.
 
 This plan is the **single point of truth** for the priority enum integer mapping (Pitfall 5). A dedicated `PriorityOrder(string) int` function in Go matches the SQL CASE expression; a unit test asserts they agree by enumerating each value.
+
+**Single signature migration for Executor.Run:** Plan 03-03 sets `Executor.Run(ctx context.Context, claimed *run.ClaimedRun) error` as the final signature. Plan 03-07 (backfill CLI) will only READ additional fields off the same struct (e.g., `claimed.Priority == "backfill"` for layer-3 token tag); it does NOT change the signature again. This avoids the double-migration issue where callers updated by an intermediate signature break when a later plan changes it.
 </objective>
 
 <execution_context>
@@ -62,13 +75,15 @@ This plan implements D-13 layers 2 (priority-then-FIFO claim) — the foundation
 
 **Why Wave 2:** This plan modifies `internal/run/claim.go`. It cannot run until plan 03-01 has added the `partition_key`, `priority`, `backfill_id` columns to the `runs` table — otherwise the new SELECT projection fails. depends_on = [01].
 
-**Why parallel with 03-04 and 03-05 in Wave 2:** This plan touches `internal/run/*` only. Plan 03-04 touches `internal/schedule/*`; plan 03-05 touches `internal/sensor/*`. Zero file overlap → safe to run in parallel.
+**Why parallel with 03-04 and 03-05 in Wave 2:** This plan touches `internal/run/*`, `internal/runtime/*`, and `cmd/platform/{worker.go,materialize.go}` only. Plan 03-04 touches `internal/schedule/*`; plan 03-05 touches `internal/sensor/*`. Zero file overlap → safe to run in parallel.
 
 **Why a dedicated PriorityOrder function (Pitfall 5):** The CASE expression in SQL and any future in-memory priority comparison in Go must agree on the integer mapping. By centralizing in `internal/run/priority.go`, future code paths (e.g., logging, observability, in-memory backfill scoring) call the same function. The drift-prevention test (`TestPriorityOrderConsistency`) asserts that `PriorityOrder("critical") < PriorityOrder("normal") < PriorityOrder("backfill")`.
 
 **Why the 50-goroutine atomicity test still passes:** The Phase 2 test (`TestClaimAtomicity50Goroutines`) inserts ONE queued run and asserts exactly one claimer wins. The new ORDER BY is irrelevant when there's only one row to choose from. The SKIP LOCKED + `WHERE state='queued'` + the defense-in-depth UPDATE guard (`WHERE id=$1 AND state='queued'`) all remain unchanged. The test asserts atomicity, not ordering — and atomicity is unchanged. **This plan must explicitly run the test as an acceptance gate.**
 
 **Why the load test is in Wave 2, not Wave 3:** Per the dependency note in the planning context — "priority-aware claim must land BEFORE backfill mass-enqueue is exercised at scale." The load test inserts directly into the `runs` table (no backfill API needed), so it can run as soon as schema (plan 03-01) and claim change (this plan) land. Backfill CLI (plan 03-07) then assumes the priority-aware claim is already verified.
+
+**Why Executor.Run takes *run.ClaimedRun (single signature migration):** Adding `partition_key` (plan 03-03) and `priority`-based token acquisition (plan 03-07 D-13 layer 3) both need executor-side access to fields populated by ClaimNext. The cleanest way to expose them is to thread the entire `*run.ClaimedRun` struct down. This plan performs the single signature change (`Run(ctx, runID, assetName) → Run(ctx, claimed)`) and updates all callers (`cmd/platform/worker.go`, `cmd/platform/materialize.go`). Plan 03-07 then only READS `claimed.Priority` to gate the backfill-tag acquisition — no further signature change. This eliminates the dual-migration risk where 03-03 intermediate `(ctx, runID, assetName, partitionKey)` and 03-07 final `(ctx, claimed)` would both update callers and break each other.
 
 **Pgx dialect note:** ClaimNext currently uses `tx.QueryRowContext` against `*sql.DB` (pgx via stdlib driver). The CASE expression is portable PostgreSQL SQL; no driver-specific syntax. The claim test file already opens a `pgx`-driven connection — same path.
 
@@ -79,12 +94,16 @@ This plan implements D-13 layers 2 (priority-then-FIFO claim) — the foundation
 **Frozen interfaces produced:**
 - `internal/run.ClaimedRun` extended struct (consumed by plan 03-04 scheduler enqueue, plan 03-07 backfill CLI for status)
 - `internal/run.Priority` constants and `PriorityOrder` function (consumed by plan 03-04, plan 03-05, plan 03-07)
+- `internal/runtime.Executor.Run(ctx, *run.ClaimedRun) error` final signature (consumed by plan 03-07 layer-3 acquisition WITHOUT changing the signature again)
 
 @.planning/phases/03-scheduling-sensors-partitions/03-CONTEXT.md
 @.planning/phases/03-scheduling-sensors-partitions/03-RESEARCH.md
 @.planning/phases/03-scheduling-sensors-partitions/03-VALIDATION.md
 @internal/run/claim.go
 @internal/run/claim_test.go
+@internal/runtime/executor.go
+@cmd/platform/worker.go
+@cmd/platform/materialize.go
 @migrations/20260507120000_phase2_run_tables.sql
 @.planning/phases/02-execution-engine/02-02-SUMMARY.md
 
@@ -110,6 +129,22 @@ func ClaimNext(ctx context.Context, store storage.Storage, workerID string) (*Cl
 
 // Heartbeat updates runs.last_heartbeat to NOW().
 func Heartbeat(ctx context.Context, store storage.Storage, runID uuid.UUID) error
+```
+
+From internal/runtime/executor.go (Phase 2 baseline — to change in this plan):
+```go
+// Current signature:
+func (e *Executor) Run(ctx context.Context, runID uuid.UUID, assetName string) error
+// New signature this plan installs (FINAL — plan 03-07 does NOT change again):
+func (e *Executor) Run(ctx context.Context, claimed *run.ClaimedRun) error
+```
+
+From cmd/platform/worker.go (Phase 2 baseline — to update in this plan):
+```go
+// Current call site (line 85):
+execErr := deps.executor.Run(ctx, claimed.ID, claimed.AssetName)
+// New call site this plan installs (FINAL):
+execErr := deps.executor.Run(ctx, claimed)
 ```
 
 From internal/run/claim_test.go (Phase 2 baseline — extending):
@@ -229,11 +264,14 @@ type ClaimedRun struct {
 </task>
 
 <task id="3.3.2" type="auto" tdd="true">
-  <name>Task 2: Modify internal/run/claim.go — extend ClaimedRun struct + add CASE ORDER BY + add TestClaimPriorityOrdering + verify TestClaimAtomicity50Goroutines still passes</name>
-  <files>internal/run/claim.go, internal/run/claim_test.go</files>
+  <name>Task 2: Modify internal/run/claim.go — extend ClaimedRun struct + add CASE ORDER BY + change Executor.Run signature ONCE to (ctx, *run.ClaimedRun) + update worker.go/materialize.go callers + add TestClaimPriorityOrdering + verify TestClaimAtomicity50Goroutines still passes</name>
+  <files>internal/run/claim.go, internal/run/claim_test.go, internal/runtime/executor.go, cmd/platform/worker.go, cmd/platform/materialize.go</files>
   <read_first>
     - internal/run/claim.go (current full file — selectSQL constant, ClaimedRun struct, ClaimNext function)
     - internal/run/claim_test.go (existing TestClaimAtomicity50Goroutines + helpers `openTestDB`, `insertQueuedRun`, `deleteRuns`)
+    - internal/runtime/executor.go (current Executor.Run signature: `Run(ctx, runID uuid.UUID, assetName string) error` at line 78)
+    - cmd/platform/worker.go (current call site at line 85: `deps.executor.Run(ctx, claimed.ID, claimed.AssetName)`)
+    - cmd/platform/materialize.go (any call to executor.Run that must be updated)
     - .planning/phases/03-scheduling-sensors-partitions/03-RESEARCH.md § Pattern 4 — Priority-Aware Claim SQL (verbatim)
     - .planning/phases/03-scheduling-sensors-partitions/03-RESEARCH.md § Pitfall 1 — Priority ORDER BY breaks SKIP LOCKED guarantee
   </read_first>
@@ -244,6 +282,9 @@ type ClaimedRun struct {
     - ClaimNext WHERE clause is unchanged: `WHERE state = 'queued'`
     - SKIP LOCKED retained
     - Defense-in-depth UPDATE guard `WHERE id=$3 AND state='queued'` retained
+    - Executor.Run signature changed ONCE (and only once, in this plan) from `Run(ctx, runID, assetName)` to `Run(ctx, claimed *run.ClaimedRun)`. Plan 03-07 will NOT change this signature again — it only reads `claimed.Priority`.
+    - All callers of executor.Run (cmd/platform/worker.go, cmd/platform/materialize.go, runtime/executor_test.go fixtures) updated to pass *run.ClaimedRun
+    - asset.NewAssetIO is called with `derefString(claimed.PartitionKey)` as the third argument (per plan 03-02 task 3 NewAssetIO signature)
     - TestClaimAtomicity50Goroutines still passes (regression)
     - TestClaimPriorityOrdering proves: insert 5 backfill + 5 normal + 1 critical, sequentially call ClaimNext 11 times, assert claim order: critical, then 5 normals (in queued_at order), then 5 backfills (in queued_at order)
   </behavior>
@@ -318,23 +359,69 @@ type ClaimedRun struct {
           return claimed, nil
           ```
        e. The existing `updateSQL` (`UPDATE runs SET state='starting', claimed_by=$1, claimed_at=$2, last_heartbeat=$2 WHERE id=$3 AND state='queued'`) is **unchanged**. The defense-in-depth state guard remains.
-    2. Update any caller of `ClaimedRun{...}` literal constructors in tests / fixtures to populate the new fields explicitly (or zero-value them — defaults are nil/empty/empty which are valid).
-    3. Update `cmd/platform/worker.go` line 84 (`slog.Info("worker.run_claimed"...)`) to log the new fields:
+    2. Edit `internal/runtime/executor.go` — change the `Executor.Run` signature ONCE (final form for Phase 3):
+       a. Change the signature from
+          ```go
+          func (e *Executor) Run(ctx context.Context, runID uuid.UUID, assetName string) error {
+          ```
+          to
+          ```go
+          func (e *Executor) Run(ctx context.Context, claimed *run.ClaimedRun) error {
+              runID := claimed.ID
+              assetName := claimed.AssetName
+              // partitionKey is "" for non-partitioned runs (claimed.PartitionKey == nil).
+              partitionKey := ""
+              if claimed.PartitionKey != nil {
+                  partitionKey = *claimed.PartitionKey
+              }
+          ```
+       b. Inside `runStep` (or wherever `asset.NewAssetIO(a, e)` is called — line 239 in current source), the call must be updated to pass partitionKey through. Since `runStep` does not currently receive partitionKey, thread it through `runStep(ctx, runID, stepAsset, i, partitionKey)`. Update the call site in `Run` accordingly. The new `runStep` signature:
+          ```go
+          func (e *Executor) runStep(ctx context.Context, runID uuid.UUID, a *asset.Asset, topoOrder int, partitionKey string) error {
+              // ...
+              io := asset.NewAssetIO(a, e, partitionKey)  // ← plan 03-02 task 3 added third arg
+              // ...
+          }
+          ```
+       c. The import `"github.com/google/uuid"` is no longer strictly required for `Run` itself (since `runID` comes from `claimed.ID`), but it remains imported because `runStep`, `transition`, `appendEvent` still use `uuid.UUID`. No import change needed.
+    3. Edit `cmd/platform/worker.go`:
+       a. Change line 85 from `execErr := deps.executor.Run(ctx, claimed.ID, claimed.AssetName)` to `execErr := deps.executor.Run(ctx, claimed)`.
+       b. Update the slog.Info at line 84 to log the new fields:
+          ```go
+          slog.Info("worker.run_claimed",
+              "run_id", claimed.ID,
+              "asset", claimed.AssetName,
+              "priority", claimed.Priority,
+              "partition_key", derefString(claimed.PartitionKey),
+          )
+          ```
+       c. Add a small helper at the bottom of worker.go:
+          ```go
+          // derefString returns *s, or "" if s is nil.
+          func derefString(s *string) string {
+              if s == nil {
+                  return ""
+              }
+              return *s
+          }
+          ```
+    4. Edit `cmd/platform/materialize.go` — find any call to `executor.Run(...)` and update it to pass a synthesized `*run.ClaimedRun`. The `materialize` subcommand creates an ad-hoc run row (not via ClaimNext), so it must construct a ClaimedRun by-hand:
        ```go
-       slog.Info("worker.run_claimed",
-           "run_id", claimed.ID,
-           "asset", claimed.AssetName,
-           "priority", claimed.Priority,
-           "partition_key", derefString(claimed.PartitionKey),
-       )
+       claimed := &run.ClaimedRun{
+           ID:        runID,        // freshly inserted run row
+           AssetName: assetName,
+           Trigger:   "manual",
+           QueuedAt:  time.Now().UTC(),
+           Priority:  "normal",
+           // PartitionKey nil (manual materialize is non-partitioned for v1)
+           // BackfillID nil
+       }
+       if err := exec.Run(ctx, claimed); err != nil { ... }
        ```
-       Add a small helper `derefString(s *string) string { if s == nil { return "" }; return *s }` to worker.go (or use `cmp.Or` if Go version supports it — but the existing codebase uses Go 1.25, so the helper is fine).
-    4. Update `internal/runtime/executor.go` to extract `partitionKey` from the claimed run and forward to `NewAssetIO`:
-       Find the line `io := asset.NewAssetIO(self, resolver)` (or equivalent) and change to `io := asset.NewAssetIO(self, resolver, partitionKey)` where `partitionKey` is derived from the run row. Since the executor receives `runID` and `assetName` (not the full ClaimedRun), this requires either:
-       - Threading the ClaimedRun down to Executor.Run (cleaner — modify the worker.go call site to pass the claimed.PartitionKey), OR
-       - Have Executor.Run query `SELECT partition_key FROM runs WHERE id=$1` once at the top.
-       Pick the threading approach: change `Executor.Run` signature to accept `partitionKey string` as an additional parameter, and update the worker.go call site `deps.executor.Run(ctx, claimed.ID, claimed.AssetName, derefString(claimed.PartitionKey))`. This is a 3-line change to the executor.
-    5. Extend `internal/run/claim_test.go` with two new tests:
+       (If materialize.go does not currently call executor.Run — e.g., it uses a different code path — skip this sub-step. Run `grep -n "executor.Run\\|exec.Run" cmd/platform/*.go` to find ALL callers and update each.)
+    5. Update test fixtures in `internal/runtime/executor_test.go` (if any) — find every `e.Run(ctx, runID, assetName)` invocation and replace with `e.Run(ctx, &run.ClaimedRun{ID: runID, AssetName: assetName, Priority: "normal"})`. Also import `"github.com/kanpon/data-governance/internal/run"` if not already.
+    6. Update any caller of `ClaimedRun{...}` literal constructors in tests / fixtures to populate the new fields explicitly (or zero-value them — defaults are nil/empty/empty which are valid).
+    7. Extend `internal/run/claim_test.go` with two new tests:
        a. `TestClaimPriorityOrdering(t *testing.T)`:
           ```go
           func TestClaimPriorityOrdering(t *testing.T) {
@@ -441,7 +528,7 @@ type ClaimedRun struct {
           }
           ```
        Add necessary imports to claim_test.go: `"strings"`, `"sync"` (already imported), `"github.com/google/uuid"` (already imported).
-    6. Run the full claim_test suite to confirm all three tests pass:
+    8. Run the full claim_test suite to confirm all three tests pass:
        ```bash
        DATABASE_URL=postgres://platform_app:platform_app@localhost:5432/data_governance?sslmode=disable \
          go test ./internal/run/... -count=1 -timeout 300s
@@ -459,6 +546,9 @@ type ClaimedRun struct {
     - `grep -q 'FOR UPDATE SKIP LOCKED' internal/run/claim.go`
     - `grep -q 'WHERE state = .queued.' internal/run/claim.go` (still WHERE state='queued', no WHERE priority)
     - `grep -q 'WHERE id = \\$3 AND state = .queued.' internal/run/claim.go` (defense-in-depth UPDATE guard)
+    - `grep -q 'func (e \\*Executor) Run(ctx context.Context, claimed \\*run.ClaimedRun) error' internal/runtime/executor.go`
+    - `grep -q 'deps.executor.Run(ctx, claimed)' cmd/platform/worker.go`
+    - `! grep -q 'deps.executor.Run(ctx, claimed.ID, claimed.AssetName)' cmd/platform/worker.go` (old call site removed)
     - `grep -q 'func TestClaimPriorityOrdering' internal/run/claim_test.go`
     - `grep -q 'func TestPriorityClaimLoad' internal/run/claim_test.go`
     - `DATABASE_URL=... go test ./internal/run/... -run TestClaimAtomicity50Goroutines -count=1 -timeout 60s` exits 0 (Phase 2 regression — MANDATORY)
@@ -469,7 +559,7 @@ type ClaimedRun struct {
   <verify>
     <automated>DATABASE_URL=postgres://platform_app:platform_app@localhost:5432/data_governance?sslmode=disable go test ./internal/run/... -count=1 -timeout 300s</automated>
   </verify>
-  <done>claim.go has CASE ORDER BY + extended ClaimedRun + projection of new columns; PriorityOrder + claim SQL agree on integer mapping; TestClaimAtomicity50Goroutines still passes (regression guard); TestClaimPriorityOrdering proves CASE actually reorders; TestPriorityClaimLoad proves no duplicates under 100 goroutines + 1050 rows; worker.go / executor.go updated to consume new fields; build green.</done>
+  <done>claim.go has CASE ORDER BY + extended ClaimedRun + projection of new columns; PriorityOrder + claim SQL agree on integer mapping; TestClaimAtomicity50Goroutines still passes (regression guard); TestClaimPriorityOrdering proves CASE actually reorders; TestPriorityClaimLoad proves no duplicates under 100 goroutines + 1050 rows; Executor.Run signature changed ONCE to (ctx, *run.ClaimedRun) — plan 03-07 will not change it again; worker.go / materialize.go / runtime tests updated to consume new field; build green.</done>
 </task>
 
 </tasks>
@@ -495,20 +585,23 @@ type ClaimedRun struct {
 </threat_model>
 
 <verification>
-- `go build ./...` passes after all caller updates (worker.go, executor.go).
+- `go build ./...` passes after all caller updates (worker.go, materialize.go, executor.go).
 - `DATABASE_URL=... go test ./internal/run/... -count=1 -timeout 300s` exits 0 (covers all four tests: TestClaimAtomicity50Goroutines, TestClaimPriorityOrdering, TestPriorityClaimLoad, TestPriorityOrderConsistency).
+- `DATABASE_URL=... go test ./internal/runtime/... -count=1 -timeout 120s` still passes (executor signature change does not break existing tests once fixtures updated).
 - The worker subcommand still claims runs end-to-end (smoke check via existing Phase 2 e2e if available).
 - ClaimedRun struct now exposes PartitionKey, Priority, BackfillID; downstream plans (03-04, 03-07) can consume these fields.
+- Executor.Run final signature `Run(ctx, *run.ClaimedRun) error` — plan 03-07 will not change it again.
 </verification>
 
 <success_criteria>
 - internal/run/priority.go exists with Priority enum + PriorityOrder + AllPriorities; drift-prevention test passes.
 - internal/run/claim.go has the priority-aware ORDER BY (CASE expression) and projects partition_key/priority/backfill_id.
 - ClaimedRun struct exposes the three new fields.
+- Executor.Run signature changed ONCE to `Run(ctx context.Context, claimed *run.ClaimedRun) error` — final form for Phase 3.
+- worker.go and materialize.go updated to pass `*run.ClaimedRun` to Executor.Run; partition_key threaded into AssetIO via NewAssetIO third arg.
 - TestClaimAtomicity50Goroutines (Phase 2 acceptance criterion 3) still passes — regression guard met.
 - TestClaimPriorityOrdering passes — proves CASE actually reorders claims.
 - TestPriorityClaimLoad passes — proves SKIP LOCKED atomicity holds under 100 goroutines + 1050 rows; satisfies D-13 deferred load test obligation.
-- worker.go and executor.go updated to thread partition_key through to AssetIO.
 - All builds green.
 </success_criteria>
 
@@ -517,6 +610,8 @@ After completion, create `.planning/phases/03-scheduling-sensors-partitions/03-0
 - Final claim.go SQL (CASE expression — quoted verbatim).
 - Confirmation that TestClaimAtomicity50Goroutines still passes.
 - Load test runtime (expect ~5-30s for 1050 rows + 100 goroutines).
-- Caller-update map: which files outside `internal/run/` were modified to pass partition_key through (worker.go, executor.go).
+- Caller-update map: which files outside `internal/run/` were modified to pass *ClaimedRun (worker.go, materialize.go, runtime/executor.go).
+- Final Executor.Run signature documented as STABLE for the rest of Phase 3 — plan 03-07 must NOT change it again.
 - Decision-coverage: D-13 layer 2 → which test names cover it (TestClaimPriorityOrdering for correctness, TestPriorityClaimLoad for atomicity at scale).
+</output>
 </output>

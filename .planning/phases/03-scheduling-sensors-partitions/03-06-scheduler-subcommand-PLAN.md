@@ -1,7 +1,7 @@
 ---
 phase: 3
 plan: 06
-title: ./platform scheduler subcommand — wire schedule.Daemon + sensor.Daemon with graceful shutdown
+title: ./platform scheduler subcommand — wire schedule.FireOneSchedule + sensor.Daemon.RunOnce in single tick loop with graceful shutdown
 type: execute
 wave: 3
 depends_on: [04, 05]
@@ -15,13 +15,14 @@ autonomous: true
 must_haves:
   truths:
     - "./platform scheduler subcommand exists alongside server/worker/materialize cases in cmd/platform/main.go"
-    - "runScheduler() bootstraps storage + asset registry + event writer, constructs schedule.Daemon and sensor.Daemon, runs schedule tick loop that calls sensor.Daemon.RunOnce after each schedule tick"
+    - "runScheduler() bootstraps storage + asset registry + event writer, then runs a single tick loop that calls schedule.FireOneSchedule (drained until ErrNoDueSchedule) followed by sensor.Daemon.RunOnce — D-05 single-loop architecture"
+    - "runScheduler does NOT call schedule.Daemon.Run (which is unexported in plan 03-04 anyway) — it owns its ticker and calls FireOneSchedule + sensor.RunOnce directly"
     - "SIGINT/SIGTERM triggers graceful shutdown — current tick completes, no new ticks, daemon exits within configured GracefulShutdownTimeout (default 30s)"
     - "./platform scheduler logs scheduler.started on entry and scheduler.shutdown on exit (slog structured)"
     - "TestSchedulerGracefulShutdown spawns runScheduler in subprocess, sends SIGTERM, asserts process exits with code 0 within 5s and emits scheduler.shutdown log line"
   artifacts:
     - path: "cmd/platform/scheduler.go"
-      provides: "runScheduler() entry point"
+      provides: "runScheduler() entry point — owns its own tick loop, drives schedule.FireOneSchedule + sensor.Daemon.RunOnce per tick"
       contains: "func runScheduler"
     - path: "cmd/platform/main.go"
       provides: "scheduler case in switch — calls runScheduler()"
@@ -31,9 +32,9 @@ must_haves:
       contains: "TestSchedulerGracefulShutdown"
   key_links:
     - from: "cmd/platform/scheduler.go runScheduler"
-      to: "internal/schedule.Daemon + internal/sensor.Daemon"
-      via: "shared tick loop — schedule.Daemon.tick triggers sensor.Daemon.RunOnce after"
-      pattern: "schedule.Daemon|sensor.Daemon"
+      to: "internal/schedule.FireOneSchedule + internal/sensor.Daemon.RunOnce"
+      via: "shared tick loop — runScheduler drains FireOneSchedule until ErrNoDueSchedule, then calls sensor.Daemon.RunOnce; the schedule.Daemon type itself is not constructed (its `run` driver is unexported and exists only for package-internal tests)"
+      pattern: "schedule.FireOneSchedule|sensor.*RunOnce"
     - from: "cmd/platform/main.go switch"
       to: "cmd/platform/scheduler.go runScheduler"
       via: "case \"scheduler\": runScheduler()"
@@ -41,7 +42,7 @@ must_haves:
 ---
 
 <objective>
-Wire the scheduler subcommand: `./platform scheduler` starts a process that runs `schedule.Daemon` and `sensor.Daemon` together, sharing a single tick loop (D-05). On SIGINT/SIGTERM, the daemon completes its current tick and exits within `GracefulShutdownTimeout` (default 30s) — no in-flight schedule fires are abandoned mid-transaction; the per-row tx model from plan 03-04 ensures consistency.
+Wire the scheduler subcommand: `./platform scheduler` starts a process that runs the `schedule` and `sensor` evaluation passes together, sharing a single tick loop (D-05). On SIGINT/SIGTERM, the daemon completes its current tick and exits within `GracefulShutdownTimeout` (default 30s) — no in-flight schedule fires are abandoned mid-transaction; the per-row tx model from plan 03-04 ensures consistency.
 
 This is the only Phase 3 plan that touches `cmd/platform/main.go`. The backfill subcommand (plan 03-07) is layered on top of this in Wave 4 to avoid main.go merge conflicts within Wave 3.
 </objective>
@@ -52,29 +53,28 @@ This is the only Phase 3 plan that touches `cmd/platform/main.go`. The backfill 
 </execution_context>
 
 <context>
-This plan implements D-01 (scheduler subcommand pattern, alongside server/worker/materialize) and D-05 (sensors share the scheduler subcommand goroutine). It bridges plans 03-04 (schedule.Daemon) and 03-05 (sensor.Daemon) into a runnable binary mode.
+This plan implements D-01 (scheduler subcommand pattern, alongside server/worker/materialize) and D-05 (sensors share the scheduler subcommand goroutine). It bridges plans 03-04 (schedule.FireOneSchedule + UpsertSchedules) and 03-05 (sensor.Daemon.RunOnce + UpsertSensors) into a runnable binary mode.
 
 **Why Wave 3:** Depends on plans 03-04 and 03-05 — both must exist before scheduler.go can import them. Plans 03-04 and 03-05 are independent of each other (Wave 2 parallel), so the dependency graph is `04 || 05 → 06`. depends_on = [04, 05].
 
-**Why this plan does NOT depend on plan 03-03:** The scheduler subcommand never calls `run.ClaimNext` directly — it only INSERTs queued runs (via fireOneSchedule and handleFired in plans 03-04/03-05). Workers (separate `./platform worker` process) consume the queue. So the priority claim change (plan 03-03) is not a dependency.
+**Why this plan does NOT depend on plan 03-03:** The scheduler subcommand never calls `run.ClaimNext` directly — it only INSERTs queued runs (via FireOneSchedule and handleFired in plans 03-04/03-05). Workers (separate `./platform worker` process) consume the queue. So the priority claim change (plan 03-03) is not a dependency.
 
-**Why a custom tick loop here instead of using schedule.Daemon.Run directly:** The `schedule.Daemon.Run` method (plan 03-04) has its own internal tick loop that fires schedules. To also drive `sensor.Daemon.RunOnce` per tick (D-05), we need to either:
-- (A) Add sensor invocation INSIDE schedule.Daemon.Run via a callback, OR
-- (B) Run a custom outer tick loop here that calls schedule.Daemon.tick(ctx) and then sensor.Daemon.RunOnce(ctx).
+**Why this plan owns its own tick loop (W3 resolution):** Plan 03-04's `schedule.Daemon` has an UNEXPORTED `run` method (used only by package-internal tests). It is NOT consumed by production code. Plan 03-04 exports `FireOneSchedule` from day one — this plan's runScheduler calls that directly. Two reasons for the layering:
 
-Pick (B) — cleaner separation. The internal `schedule.Daemon.tick(ctx)` method is exported (capital T → `Tick`) by plan 03-04 IF this plan needs it; otherwise we use `schedule.Daemon.Run` and add a parallel `sensor.Daemon` tick. **But:** plan 03-04 marked `tick` as private (lowercase). To share the same tick interval naturally, we EXPORT plan 03-04's `tick` method — modify plan 03-04 retroactively? No — instead, this plan's runScheduler manages a single ticker and calls schedule + sensor work directly. It does NOT call `schedule.Daemon.Run`; it owns the ticker.
+1. **Single tick loop drives BOTH schedule firing AND sensor evaluation (D-05):** The user-facing decision says "sensors share the scheduler subcommand goroutine, sharing the tick loop." If we used a hypothetical `schedule.Daemon.Run` for the schedule pass and a parallel `sensor.Daemon` ticker, we'd have two timers competing — bad for D-05's single-loop intent.
+2. **No dead exported surface:** Production code calls `FireOneSchedule` directly. Exporting `Daemon.Run` AND `FireOneSchedule` would leave one of them dead. Plan 03-04 keeps `Daemon.run` lowercase so this plan's `runScheduler` is the single production driver.
 
 Concretely, runScheduler implements its own tick loop:
 ```go
 ticker := time.NewTicker(interval)
 schedule.UpsertSchedules(ctx, store, registry)
 sensor.UpsertSensors(ctx, store, registry)
+sensorDaemon := &sensor.Daemon{...}
 runOneTick := func() {
-    // schedule pass
+    // schedule pass — drain FireOneSchedule
     for {
         if ctx.Err() != nil { return }
-        err := schedule.FireOneScheduleForTest(ctx, store, registry, events, time.Now().UTC())
-        // ^ requires plan 03-04 to export FireOneSchedule — see action below
+        err := schedule.FireOneSchedule(ctx, store, registry, events, time.Now().UTC())
         if errors.Is(err, schedule.ErrNoDueSchedule) { break }
         if err != nil { slog.Error(...); break }
     }
@@ -90,13 +90,11 @@ for {
 }
 ```
 
-**Plan 03-04 export decision:** Plan 03-04 currently has `fireOneSchedule` lowercase (private). To support this plan's tick driver, plan 03-04 must export it — change name to `FireOneSchedule`. This is a cross-plan refinement. The acceptance criteria of plan 03-04 do not specify case (the test `TestSchedulerFiresDueRow` lives in `internal/schedule` package and can call lowercase). When this plan executes, it must FIRST refactor plan 03-04 to expose `FireOneSchedule` as exported. Add the rename as Task 1 of this plan to keep ownership clear.
-
 **Why GracefulShutdownTimeout = 30s:** A schedule fire takes <100ms typically (tx covers two SQL writes). 30s is overkill but matches Phase 2 worker shutdown expectations. Tunable via `PLATFORM_SCHEDULER_SHUTDOWN_TIMEOUT` env var.
 
-**Frozen interfaces consumed:**
-- `internal/schedule.Daemon`, `schedule.UpsertSchedules`, `schedule.FireOneSchedule` (after Task 1 export refactor), `schedule.ErrNoDueSchedule`
-- `internal/sensor.Daemon`, `sensor.UpsertSensors`
+**Frozen interfaces consumed (no rename / refactor needed in this plan — plan 03-04 exports FireOneSchedule from day one):**
+- `internal/schedule.FireOneSchedule`, `schedule.UpsertSchedules`, `schedule.ErrNoDueSchedule` (plan 03-04 exported)
+- `internal/sensor.Daemon`, `sensor.UpsertSensors`, `sensor.AutoDisableThreshold` (plan 03-05)
 - `internal/storage.NewPostgres` (Phase 1)
 - `internal/event.NewWriter` (Phase 1)
 - `internal/asset.Default()` (Phase 2)
@@ -109,7 +107,7 @@ for {
 @cmd/platform/worker.go
 
 <interfaces>
-<!-- From plans 03-04 + 03-05 (after this plan's Task 1 export refactor). -->
+<!-- From plans 03-04 + 03-05. FireOneSchedule is EXPORTED from day one in plan 03-04 — no rename Task in this plan. -->
 
 ```go
 package schedule
@@ -122,9 +120,11 @@ type Daemon struct {
     Events   event.Writer
     Interval time.Duration
 }
-func (d *Daemon) Run(ctx context.Context) error  // standalone — NOT used by scheduler subcommand
+// `run` is UNEXPORTED — used only by package-internal tests in daemon_test.go.
+// This plan does NOT consume it. Production driver is FireOneSchedule below.
+// func (d *Daemon) run(ctx context.Context) error  // not used here
 
-// EXPORTED by Task 1 of this plan (originally lowercase in plan 03-04):
+// EXPORTED — production caller (this plan's runScheduler) uses these:
 var ErrNoDueSchedule = errors.New("schedule: no due schedule")
 func FireOneSchedule(ctx context.Context, store storage.Storage, reg *asset.DefinitionRegistry, events event.Writer, now time.Time) error
 func UpsertSchedules(ctx context.Context, store storage.Storage, reg *asset.DefinitionRegistry) error
@@ -147,38 +147,14 @@ func UpsertSensors(ctx context.Context, store storage.Storage, reg *asset.Defini
 
 <tasks>
 
-<task id="3.6.1" type="auto">
-  <name>Task 1: Export schedule.FireOneSchedule (rename from private fireOneSchedule) so the scheduler subcommand can drive the tick loop</name>
-  <files>internal/schedule/fire.go, internal/schedule/fire_test.go</files>
-  <read_first>
-    - internal/schedule/fire.go (current state from plan 03-04)
-    - internal/schedule/fire_test.go (current state from plan 03-04)
-  </read_first>
-  <action>
-    1. In `internal/schedule/fire.go`, rename `fireOneSchedule` to `FireOneSchedule` (capitalize). Update its docstring to clarify it is now exported as the public driver of a single fire. The function body and signature are otherwise unchanged.
-    2. In `internal/schedule/fire_test.go`, update all references from `fireOneSchedule(` to `FireOneSchedule(` and from `fireOneSchedule)` patterns to the new name.
-    3. In `internal/schedule/daemon.go` (also from plan 03-04), update the `tick` method's call from `fireOneSchedule(...)` to `FireOneSchedule(...)`.
-    4. Run `go build ./...` and `DATABASE_URL=... go test ./internal/schedule/... -count=1 -timeout 60s` to confirm the rename did not break anything.
-  </action>
-  <acceptance_criteria>
-    - `grep -q 'func FireOneSchedule' internal/schedule/fire.go`
-    - `grep -L 'fireOneSchedule(' internal/schedule/fire.go internal/schedule/daemon.go internal/schedule/fire_test.go` (no remaining lowercase callers)
-    - `go build ./...` exits 0
-    - `DATABASE_URL=... go test ./internal/schedule/... -count=1 -timeout 60s` exits 0
-  </acceptance_criteria>
-  <verify>
-    <automated>cd /home/developer/.kanpon/code/go/data-governance && go build ./... && grep -c 'FireOneSchedule' internal/schedule/fire.go</automated>
-  </verify>
-  <done>FireOneSchedule is exported; all internal/schedule callers updated; build + test green.</done>
-</task>
-
-<task id="3.6.2" type="auto" tdd="true">
-  <name>Task 2: Create cmd/platform/scheduler.go runScheduler() — bootstrap + tick loop driving schedule + sensor + graceful shutdown</name>
+<task id="3.6.1" type="auto" tdd="true">
+  <name>Task 1: Create cmd/platform/scheduler.go runScheduler() — bootstrap + single tick loop driving FireOneSchedule + sensor.Daemon.RunOnce + graceful shutdown</name>
   <files>cmd/platform/scheduler.go, cmd/platform/main.go</files>
   <read_first>
     - cmd/platform/main.go (existing switch block + runStart/runMaterialize/runWorker patterns)
     - cmd/platform/worker.go (bootstrap helper pattern + signal.NotifyContext usage)
-    - internal/schedule/daemon.go (Daemon struct + DefaultInterval constant — plan 03-04)
+    - internal/schedule/daemon.go (Daemon struct + DefaultInterval constant — plan 03-04; note: Daemon.run is unexported, not used here)
+    - internal/schedule/fire.go (FireOneSchedule + ErrNoDueSchedule — plan 03-04, EXPORTED)
     - internal/sensor/daemon.go (Daemon struct + RunOnce method — plan 03-05)
     - .planning/phases/03-scheduling-sensors-partitions/03-RESEARCH.md § Pattern 9 — CLI Subcommand Wiring
   </read_first>
@@ -189,6 +165,7 @@ func UpsertSensors(ctx context.Context, store storage.Storage, reg *asset.Defini
     - SIGINT/SIGTERM triggers graceful shutdown: current tick completes, no new ticks, function returns within PLATFORM_SCHEDULER_SHUTDOWN_TIMEOUT (default 30s)
     - Logs "scheduler.started" on entry with config (interval, shutdown_timeout) and "scheduler.shutdown" on exit
     - Reports "scheduler.tick_completed" at debug level after each successful tick
+    - Does NOT construct or call schedule.Daemon — that type's loop driver is unexported (test-only)
   </behavior>
   <action>
     1. Edit `cmd/platform/main.go`:
@@ -232,6 +209,9 @@ func UpsertSensors(ctx context.Context, store storage.Storage, reg *asset.Defini
        //
        // Multi-replica safety: SELECT FOR UPDATE SKIP LOCKED on schedules and sensors tables (D-03).
        // Operators may run any number of scheduler pods.
+       //
+       // Note: this function does NOT construct schedule.Daemon. That type's `run` driver is
+       // unexported and used only by package-internal tests. Production loop lives here.
        func runScheduler() error {
            ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
            defer stop()
@@ -291,7 +271,7 @@ func UpsertSensors(ctx context.Context, store storage.Storage, reg *asset.Defini
 
            runOneTick := func(tickCtx context.Context) {
                start := time.Now()
-               // Schedule pass — drain due rows.
+               // Schedule pass — drain due rows via the EXPORTED FireOneSchedule.
                for {
                    if tickCtx.Err() != nil {
                        return
@@ -340,6 +320,8 @@ func UpsertSensors(ctx context.Context, store storage.Storage, reg *asset.Defini
     - File `cmd/platform/scheduler.go` exists
     - `grep -q 'func runScheduler' cmd/platform/scheduler.go`
     - `grep -q 'schedule.FireOneSchedule' cmd/platform/scheduler.go`
+    - `! grep -q 'schedule.Daemon{' cmd/platform/scheduler.go` (does NOT construct schedule.Daemon — confirms W3 fix; production loop is owned by runScheduler)
+    - `! grep -q 'schedule.Daemon.Run\\|sched.Daemon.Run' cmd/platform/scheduler.go` (no calls to a hypothetical exported Daemon.Run)
     - `grep -q 'sensor.Daemon' cmd/platform/scheduler.go` or `grep -q 'sd.RunOnce' cmd/platform/scheduler.go`
     - `grep -q 'schedule.UpsertSchedules' cmd/platform/scheduler.go`
     - `grep -q 'sensor.UpsertSensors' cmd/platform/scheduler.go`
@@ -352,11 +334,11 @@ func UpsertSensors(ctx context.Context, store storage.Storage, reg *asset.Defini
   <verify>
     <automated>cd /home/developer/.kanpon/code/go/data-governance && go build ./... && grep -c 'runScheduler\|FireOneSchedule\|UpsertSchedules\|UpsertSensors' cmd/platform/scheduler.go</automated>
   </verify>
-  <done>./platform scheduler subcommand wired; main.go switch handles it; scheduler.go bootstraps storage + registry + events; tick loop drives schedule + sensor; graceful shutdown via signal.NotifyContext.</done>
+  <done>./platform scheduler subcommand wired; main.go switch handles it; scheduler.go bootstraps storage + registry + events; tick loop drives schedule.FireOneSchedule (drained) + sensor.Daemon.RunOnce; graceful shutdown via signal.NotifyContext; does NOT depend on a hypothetical schedule.Daemon.Run (W3 fix — that method is unexported in plan 03-04).</done>
 </task>
 
-<task id="3.6.3" type="auto" tdd="true">
-  <name>Task 3: Create TestSchedulerGracefulShutdown integration test using subprocess invocation</name>
+<task id="3.6.2" type="auto" tdd="true">
+  <name>Task 2: Create TestSchedulerGracefulShutdown integration test using subprocess invocation</name>
   <files>cmd/platform/scheduler_test.go</files>
   <read_first>
     - cmd/platform/scheduler.go (just created — confirm exit conditions and log lines)
@@ -487,24 +469,24 @@ func UpsertSensors(ctx context.Context, store storage.Storage, reg *asset.Defini
 - `go build ./...` passes; `./platform scheduler` is a runnable subcommand.
 - `DATABASE_URL=... go test ./cmd/platform/... -count=1 -timeout 60s` passes.
 - All Phase 3 tests still pass when run against the live DB after this plan lands.
-- Plan 03-04 tests still pass with the renamed `FireOneSchedule`.
+- Plan 03-04 tests still pass — `FireOneSchedule` is consumed by this plan from day one (no rename refactor needed).
 </verification>
 
 <success_criteria>
 - ./platform scheduler subcommand wired in cmd/platform/main.go switch.
 - runScheduler bootstraps storage + registry + events, runs UpsertSchedules + UpsertSensors at start.
-- Single tick loop drives schedule.FireOneSchedule (drain) + sensor.Daemon.RunOnce.
+- Single tick loop drives schedule.FireOneSchedule (drain) + sensor.Daemon.RunOnce — D-05 single-loop architecture.
+- runScheduler does NOT construct schedule.Daemon — that type's `run` driver is unexported (test-only) per plan 03-04. Production loop is owned by runScheduler. (W3 resolution.)
 - SIGINT/SIGTERM triggers graceful shutdown within shutdown timeout.
 - TestSchedulerGracefulShutdown passes (validation map: TestSchedulerGracefulShutdown).
-- schedule.FireOneSchedule is exported (renamed from fireOneSchedule by Task 1).
 - Build and full test suite green.
 </success_criteria>
 
 <output>
 After completion, create `.planning/phases/03-scheduling-sensors-partitions/03-06-SUMMARY.md` documenting:
 - Final scheduler subcommand surface (env vars + behavior).
-- Tick loop sequence (schedule drain → sensor RunOnce).
-- Decision-coverage: D-01 (subcommand pattern), D-05 (sensors share scheduler).
-- The cross-plan refactor: schedule.fireOneSchedule → schedule.FireOneSchedule (exported).
+- Tick loop sequence (schedule.FireOneSchedule drain → sensor.Daemon.RunOnce).
+- Decision-coverage: D-01 (subcommand pattern), D-05 (sensors share scheduler — single tick loop driving both passes).
+- Confirmation: this plan does NOT consume schedule.Daemon.Run (W3 fix; that method is unexported in plan 03-04).
 - TestSchedulerGracefulShutdown passes — proves graceful shutdown.
 </output>

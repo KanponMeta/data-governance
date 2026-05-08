@@ -19,19 +19,20 @@ files_modified:
 autonomous: true
 must_haves:
   truths:
-    - "schedule.Daemon.Run(ctx) ticks every configured interval (default 30s); first tick runs immediately on Run() start to handle missed windows"
+    - "schedule.Daemon's tick driver (unexported `run` method, used only by package-internal tests) ticks every configured interval (default 30s); first tick runs immediately on Run() start to handle missed windows"
     - "Each tick selects rows from schedules WHERE next_fire_at<=NOW() AND paused_at IS NULL using SELECT FOR UPDATE SKIP LOCKED, and fires one row at a time in its own transaction"
     - "Fire logic: INSERT into runs (state='queued', trigger='schedule', priority='normal', partition_key=<current partition or NULL>) and UPDATE schedules SET last_fire_at=NOW(), next_fire_at=sched.Next(NOW()) — same transaction"
     - "Missed-window detection emits schedule.missed event with skipped_count when more than one window has elapsed since last_fire_at; only the most recent window is fired (D-04 LatestOnly)"
     - "Schedule registration via UpsertSchedules(ctx, registry) inserts/updates rows for every Asset with a non-nil Schedule; idempotent across restarts"
     - "Partial unique index on runs (asset_name, partition_key) WHERE state IN ('queued','starting','running') rejects duplicate in-flight partition runs — TestPartitionUniqueConstraint proves both rejection and successful re-enqueue after terminal state"
     - "Schedule firing combined with .Partitions(daily) enqueues a partitioned run with partition_key = CurrentDailyKey(now, 24h) (D-12 + Open Question 1 default)"
+    - "schedule.Daemon's tick method is UNEXPORTED — the production scheduler subcommand (plan 03-06) calls `schedule.FireOneSchedule()` directly, not `Daemon.Run`. Daemon's internal `run()` method exists for package-internal tests only and is not consumed by cmd/platform/scheduler.go."
   artifacts:
     - path: "internal/schedule/daemon.go"
-      provides: "Daemon struct, Run(ctx), tick interval handling, graceful shutdown"
+      provides: "Daemon struct + unexported `run(ctx)` tick driver (package-internal test use only) + graceful shutdown"
       contains: "type Daemon struct"
     - path: "internal/schedule/fire.go"
-      provides: "fireOneSchedule(): SELECT FOR UPDATE SKIP LOCKED + insert run + update schedule (single tx)"
+      provides: "FireOneSchedule(): SELECT FOR UPDATE SKIP LOCKED + insert run + update schedule (single tx). EXPORTED so plan 03-06's scheduler subcommand can drive the tick loop."
       contains: "FOR UPDATE SKIP LOCKED"
     - path: "internal/schedule/missed.go"
       provides: "computeNextAndDetectMiss(sched, lastFiredAt, now): (nextFire, missedCount)"
@@ -43,15 +44,15 @@ must_haves:
       provides: "TestPartitionUniqueConstraint integration test"
       contains: "TestPartitionUniqueConstraint"
   key_links:
-    - from: "internal/schedule.Daemon.Run"
+    - from: "internal/schedule.Daemon.run (unexported)"
       to: "PostgreSQL schedules table"
-      via: "tick loop SELECT next_fire_at <= NOW() FOR UPDATE SKIP LOCKED"
+      via: "tick loop SELECT next_fire_at <= NOW() FOR UPDATE SKIP LOCKED — used by package-internal tests only; production scheduler uses FireOneSchedule directly"
       pattern: "next_fire_at <= NOW().*FOR UPDATE SKIP LOCKED"
-    - from: "internal/schedule.fireOneSchedule"
+    - from: "internal/schedule.FireOneSchedule"
       to: "PostgreSQL runs table"
       via: "INSERT INTO runs (id, asset_name, state, trigger, queued_at, priority, partition_key)"
       pattern: "INSERT INTO runs.*priority.*partition_key"
-    - from: "internal/schedule.fireOneSchedule"
+    - from: "internal/schedule.FireOneSchedule"
       to: "internal/event.Writer"
       via: "writer.Append(EventTypeScheduleFired) after successful tx commit"
       pattern: "EventTypeScheduleFired"
@@ -64,9 +65,13 @@ must_haves:
 <objective>
 Land the cron scheduler daemon: a tick-loop goroutine that periodically scans the `schedules` table for due rows, fires the most recent missed window per row (D-04 LatestOnly), and enqueues a `runs` row in the same transaction. The daemon shares the SKIP LOCKED multi-replica safety primitive with the run claim path (D-03) — no leader election needed.
 
-This plan delivers everything *internal* to the scheduler package (daemon, fire logic, missed-window detection, schedule registry sync) but does **not** wire the subcommand. The `./platform scheduler` CLI entry point is in plan 03-06.
+This plan delivers everything *internal* to the scheduler package (tick driver, fire logic, missed-window detection, schedule registry sync) but does **not** wire the subcommand. The `./platform scheduler` CLI entry point is in plan 03-06.
 
 This plan also delivers `TestPartitionUniqueConstraint` — the integration test proving that `runs.partition_key` partial unique index rejects duplicate in-flight partition runs but accepts re-enqueue after terminal state (Pitfall 7).
+
+**Note on `Daemon.run` vs `schedule.FireOneSchedule` (W3 resolution):** Plan 03-06's scheduler subcommand drives its own tick loop and calls `schedule.FireOneSchedule(ctx, ...)` directly (so it can interleave sensor.Daemon.RunOnce after schedule firing per D-05). The package-internal `Daemon.run(ctx)` method is therefore UNEXPORTED — it is used only by tests in `internal/schedule/daemon_test.go` to verify the loop behavior in isolation. This avoids dead exported code in the production binary while keeping a self-contained test surface for the loop.
+
+**Note on Task 1 file density (W2 justification):** Task 1 creates 7 files (daemon.go, daemon_test.go, fire.go, fire_test.go, missed.go, missed_test.go, registry.go) within one `<task>` element. The density is acceptable because the files are tightly cohesive single-package Go (~50–80 lines each, total ~400 lines): missed.go is a single function with a single test; registry.go is a single function with no test; fire.go and daemon.go reference each other and share the same `cronParser` package var. Splitting would require duplicating the file dependency graph across two tasks and would not reduce reviewer load. The plan still sits at 2 tasks (within the 2-3 budget) and leaves Task 2 (the partition unique constraint test) cleanly separated.
 </objective>
 
 <execution_context>
@@ -79,11 +84,15 @@ This plan implements D-01 (scheduler subcommand pattern — daemon internal), D-
 
 **Why Wave 2:** Depends on plan 03-01 (schedules table must exist) and plan 03-02 (asset.Asset.Schedule() accessor + partition.CurrentDailyKey + asset cron parser exists). Cannot run before either. depends_on = [01, 02].
 
-**Why parallel with 03-03 and 03-05 in Wave 2:** This plan touches `internal/schedule/*` and `internal/partition/partition_unique_test.go`. Plan 03-03 touches `internal/run/*`. Plan 03-05 touches `internal/sensor/*`. Zero file overlap on the production-code path.
+**Why parallel with 03-03 and 03-05 in Wave 2:** This plan touches `internal/schedule/*` and `internal/partition/partition_unique_test.go`. Plan 03-03 touches `internal/run/*`, `internal/runtime/*`, and `cmd/platform/{worker.go,materialize.go}`. Plan 03-05 touches `internal/sensor/*`. Zero file overlap on the production-code path.
 
 **Note on `internal/partition/partition_unique_test.go`:** Plan 03-02 created the partition keygen tests; this plan adds an INTEGRATION test (`partition_unique_test.go` is a separate file in the same package, requiring DATABASE_URL). The package builds fine because both files declare `package partition`. The validation map specifies this test belongs in this plan because it directly exercises the partial unique index behavior that plan 03-01 created.
 
-**Why fireOneSchedule per tx, not batch:** Per 03-RESEARCH.md Pattern 3 — "One transaction per schedule row (not a batch transaction) to minimize lock hold time." A long-running tx covering N schedules would block other replicas from claiming any. Per-row tx + SKIP LOCKED gives natural sharding across replicas with zero coordination.
+**Why FireOneSchedule per tx, not batch:** Per 03-RESEARCH.md Pattern 3 — "One transaction per schedule row (not a batch transaction) to minimize lock hold time." A long-running tx covering N schedules would block other replicas from claiming any. Per-row tx + SKIP LOCKED gives natural sharding across replicas with zero coordination.
+
+**Why FireOneSchedule is exported (capital F) from this plan:** Plan 03-06's scheduler subcommand drives its own tick loop (interleaves schedule firing + sensor.Daemon.RunOnce + jitter). To drive the schedule pass, it calls `schedule.FireOneSchedule(ctx, store, registry, events, time.Now().UTC())` directly. So this plan exports the function from day one — there is no rename in plan 03-06.
+
+**Why `Daemon.run` is unexported:** With FireOneSchedule already exported, the only consumer of a wrapping ticker that calls FireOneSchedule in a loop is the package-internal `Daemon.run` (used by `daemon_test.go` to test loop behavior in isolation). Production callers use FireOneSchedule + their own ticker. To prevent dead exported surface — and to make `daemon_test.go` the only place the loop lives — `Daemon.run` is lowercase.
 
 **Why missed-window logic is "find the most recent window <= now":** Per Pattern 1 in research — `sched.Next(lastFiredAt)` returns the immediate next window after lastFiredAt. If multiple windows have elapsed (e.g., daemon was down for hours), iterating `sched.Next` starting from lastFiredAt produces a sequence; we walk it forward until the next candidate would exceed `now`, fire the last one that didn't, and emit `schedule.missed` with `skipped_count = total_iterations - 1`. D-04 LatestOnly means we DON'T enqueue all the windows — only the most recent. Avoids run-avalanche after multi-hour outage (Dagster default behavior).
 
@@ -164,7 +173,14 @@ type Daemon struct {
     Interval time.Duration  // default 30s
     // internal: jitter source
 }
-func (d *Daemon) Run(ctx context.Context) error
+// run is the unexported tick driver — used by package-internal tests only.
+// Production code (cmd/platform/scheduler.go) drives its own tick loop and calls
+// schedule.FireOneSchedule directly (interleaved with sensor evaluation per D-05).
+func (d *Daemon) run(ctx context.Context) error
+
+// EXPORTED — production caller (cmd/platform/scheduler.go) uses this directly.
+var ErrNoDueSchedule = errors.New("schedule: no due schedule")
+func FireOneSchedule(ctx context.Context, store storage.Storage, reg *asset.DefinitionRegistry, events event.Writer, now time.Time) error
 
 func UpsertSchedules(ctx context.Context, store storage.Storage, reg *asset.DefinitionRegistry) error
 
@@ -177,20 +193,20 @@ func computeNextAndDetectMiss(sched cron.Schedule, lastFiredAt, now time.Time) (
 <tasks>
 
 <task id="3.4.1" type="auto" tdd="true">
-  <name>Task 1: Create internal/schedule package — Daemon + fire logic + missed-window LatestOnly + UpsertSchedules registry sync</name>
+  <name>Task 1: Create internal/schedule package — Daemon (unexported `run` driver) + exported FireOneSchedule + missed-window LatestOnly + UpsertSchedules registry sync</name>
   <files>internal/schedule/daemon.go, internal/schedule/daemon_test.go, internal/schedule/fire.go, internal/schedule/fire_test.go, internal/schedule/missed.go, internal/schedule/missed_test.go, internal/schedule/registry.go</files>
   <read_first>
     - internal/asset/asset.go (Asset.Schedule() + Partitions() + Sensors() accessors)
     - internal/asset/registry.go (DefinitionRegistry surface — All() method)
     - internal/event/types.go (EventTypeScheduleFired/Missed constants from plan 03-01)
     - internal/run/claim.go (transaction pattern for runs INSERT)
-    - .planning/phases/03-scheduling-sensors-partitions/03-RESEARCH.md § Pattern 1 (cron parser usage), § Pattern 2 (schedules table), § Pattern 3 (tick loop + fireOneSchedule SQL)
+    - .planning/phases/03-scheduling-sensors-partitions/03-RESEARCH.md § Pattern 1 (cron parser usage), § Pattern 2 (schedules table), § Pattern 3 (tick loop + FireOneSchedule SQL)
     - .planning/phases/03-scheduling-sensors-partitions/03-CONTEXT.md § D-02, D-03, D-04, D-12
   </read_first>
   <behavior>
-    - Daemon.Run runs one tick immediately, then ticks every Interval (default 30s) until ctx canceled
-    - On each tick, the daemon iterates due schedules in a loop, fireOneSchedule per row, until SELECT returns no rows (ErrNoRows)
-    - fireOneSchedule transactionally: SELECT FOR UPDATE SKIP LOCKED LIMIT 1 due row → compute next_fire_at via cron parser → INSERT runs row (with partition_key derived from asset.Partitions()) → UPDATE schedules SET last_fire_at, next_fire_at → commit
+    - Daemon's unexported `run(ctx)` (used by tests only) runs one tick immediately, then ticks every Interval (default 30s) until ctx canceled
+    - On each tick, the loop iterates due schedules calling FireOneSchedule per row, until SELECT returns no rows (ErrNoDueSchedule)
+    - FireOneSchedule (EXPORTED) transactionally: SELECT FOR UPDATE SKIP LOCKED LIMIT 1 due row → compute next_fire_at via cron parser → INSERT runs row (with partition_key derived from asset.Partitions()) → UPDATE schedules SET last_fire_at, next_fire_at → commit
     - After commit, append schedule.fired event (best-effort outside tx). If missed_count > 0 from prior gap, also append schedule.missed event with `skipped_count` payload (D-04)
     - If asset has Partitions, partition_key = current key for that strategy; if no Partitions, partition_key = NULL
     - UpsertSchedules iterates registry.All(), for each asset with Schedule() != nil: INSERT ... ON CONFLICT (asset_name) DO UPDATE SET cron_expr, next_fire_at, updated_at — only when cron_expr actually changed (avoid unnecessary updates)
@@ -276,13 +292,8 @@ func computeNextAndDetectMiss(sched cron.Schedule, lastFiredAt, now time.Time) (
                    return fmt.Errorf("schedule: registry asset %q has invalid cron %q: %w", a.Name(), sp.CronExpr, err)
                }
                nextFire := sched.Next(time.Now().UTC())
-               // UPSERT: INSERT new row or UPDATE existing row when cron_expr differs.
-               // PostgreSQL ON CONFLICT requires a unique constraint on the conflict target.
-               // We add a UNIQUE constraint on schedules.asset_name in plan 03-01? It is NOT yet present
-               // — schedules ent has only an INDEX on asset_name. To make UPSERT work, we either:
-               //   (a) Add a unique constraint on asset_name in plan 03-01 (REQUIRES revision of 03-01), OR
-               //   (b) Use a SELECT-then-INSERT-OR-UPDATE pattern in this function.
-               // Pick (b) to avoid revising plan 03-01 mid-wave: SELECT id FROM schedules WHERE asset_name=$1; if found UPDATE, else INSERT.
+               // SELECT-then-INSERT/UPDATE pattern (no ON CONFLICT) since schedules.asset_name does not have a
+               // unique constraint (only an index). Avoids revising plan 03-01.
                const selectSQL = `SELECT id, cron_expr FROM schedules WHERE asset_name = $1 LIMIT 1`
                var existingID, existingCron string
                err = db.QueryRowContext(ctx, selectSQL, a.Name()).Scan(&existingID, &existingCron)
@@ -326,17 +337,20 @@ func computeNextAndDetectMiss(sched cron.Schedule, lastFiredAt, now time.Time) (
            "github.com/kanpon/data-governance/internal/storage"
        )
 
-       // ErrNoDueSchedule is returned by fireOneSchedule when no due row exists.
+       // ErrNoDueSchedule is returned by FireOneSchedule when no due row exists.
        var ErrNoDueSchedule = errors.New("schedule: no due schedule")
 
-       // fireOneSchedule transactionally claims the next due schedule row, enqueues a run,
+       // FireOneSchedule transactionally claims the next due schedule row, enqueues a run,
        // updates last_fire_at/next_fire_at, and commits. After commit, emits schedule.fired
        // and (if missedCount > 0) schedule.missed events.
        //
        // Returns ErrNoDueSchedule when no rows are due.
        //
+       // EXPORTED so plan 03-06's scheduler subcommand can drive its own tick loop with
+       // interleaved sensor evaluation (D-05 single-loop architecture).
+       //
        // The asset.DefinitionRegistry is consulted to determine partition strategy at fire time.
-       func fireOneSchedule(ctx context.Context, store storage.Storage, reg *asset.DefinitionRegistry, events event.Writer, now time.Time) error {
+       func FireOneSchedule(ctx context.Context, store storage.Storage, reg *asset.DefinitionRegistry, events event.Writer, now time.Time) error {
            db := store.DB()
            tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
            if err != nil {
@@ -467,7 +481,7 @@ func computeNextAndDetectMiss(sched cron.Schedule, lastFiredAt, now time.Time) (
        }
        ```
        (Notes: `reg.Get(assetName)` is the existing Phase 2 method on `asset.DefinitionRegistry` — confirm via `internal/asset/registry.go`.)
-    4. Create `internal/schedule/daemon.go`:
+    4. Create `internal/schedule/daemon.go` with the tick driver as an UNEXPORTED method `run`:
        ```go
        package schedule
 
@@ -492,10 +506,15 @@ func computeNextAndDetectMiss(sched cron.Schedule, lastFiredAt, now time.Time) (
            Interval time.Duration  // default DefaultInterval
        }
 
-       // Run executes the tick loop until ctx is canceled. Calls UpsertSchedules at start
-       // (Open Question 3 default). Each tick fires due schedules until SELECT returns no rows.
-       // Adds 0..5s jitter to the tick interval to avoid thundering-herd across replicas.
-       func (d *Daemon) Run(ctx context.Context) error {
+       // run executes the tick loop until ctx is canceled. UNEXPORTED — production code
+       // (cmd/platform/scheduler.go) drives its own tick loop and calls FireOneSchedule
+       // directly so it can interleave sensor evaluation per D-05. This method exists
+       // for package-internal tests in daemon_test.go that exercise the loop in isolation.
+       //
+       // Calls UpsertSchedules at start (Open Question 3 default). Each tick fires due
+       // schedules until SELECT returns no rows. Adds 0..5s jitter to the tick interval
+       // to avoid thundering-herd across replicas.
+       func (d *Daemon) run(ctx context.Context) error {
            if d.Interval == 0 {
                d.Interval = DefaultInterval
            }
@@ -517,14 +536,15 @@ func computeNextAndDetectMiss(sched cron.Schedule, lastFiredAt, now time.Time) (
            }
        }
 
-       // tick fires due schedules until no more are due (or ctx canceled).
+       // tick fires due schedules until no more are due (or ctx canceled). Unexported —
+       // called only by `run` and by package-internal tests.
        func (d *Daemon) tick(ctx context.Context) {
            now := time.Now().UTC()
            for {
                if ctx.Err() != nil {
                    return
                }
-               err := fireOneSchedule(ctx, d.Store, d.Registry, d.Events, now)
+               err := FireOneSchedule(ctx, d.Store, d.Registry, d.Events, now)
                if errors.Is(err, ErrNoDueSchedule) {
                    return
                }
@@ -537,21 +557,23 @@ func computeNextAndDetectMiss(sched cron.Schedule, lastFiredAt, now time.Time) (
        ```
     5. Create `internal/schedule/fire_test.go`:
        - `TestSchedulerFiresDueRow` (validation map: TestScheduler) — integration test.
-         Set up: insert a schedules row with `next_fire_at = NOW() - 1 minute`, register a matching asset (no partitions). Build a Daemon with mock event writer, run one `fireOneSchedule(ctx, store, reg, events, time.Now())`. Assert: a runs row exists with state='queued', trigger='schedule', priority='normal', partition_key IS NULL; the schedules row has last_fire_at != NULL and next_fire_at > NOW(); event writer captured one schedule.fired event.
+         Set up: insert a schedules row with `next_fire_at = NOW() - 1 minute`, register a matching asset (no partitions). Build a Daemon with mock event writer, run one `FireOneSchedule(ctx, store, reg, events, time.Now())`. Assert: a runs row exists with state='queued', trigger='schedule', priority='normal', partition_key IS NULL; the schedules row has last_fire_at != NULL and next_fire_at > NOW(); event writer captured one schedule.fired event.
        - `TestSchedulerFireWithDailyPartition` — asset has `.Partitions(DailyPartitions{})`. After fire, runs.partition_key matches `partition.CurrentDailyKey(now, 24h)`.
        - `TestSchedulerFireMissedWindow` — schedule with cron "0 * * * *" (hourly). Set last_fire_at = NOW() - 4 hours. Fire. Assert: only ONE runs row inserted (LatestOnly, D-04); event writer captured BOTH schedule.fired and schedule.missed; the schedule.missed payload `skipped_count` is 3 (4 hours elapsed, 3 windows skipped, the most recent fired).
-       - `TestSchedulerNoDueRows` — no schedules table rows OR all are paused; `fireOneSchedule` returns `ErrNoDueSchedule`.
-       - `TestSchedulerSkipLocked` — insert one due schedule, run two `fireOneSchedule` calls in parallel goroutines on separate transactions; assert exactly one fire, one ErrNoDueSchedule (SKIP LOCKED contract).
-    6. Create `internal/schedule/daemon_test.go` (light, since daemon is mostly orchestration):
-       - `TestDaemonRunCancellation` — start a Daemon with Interval=10ms in a goroutine, cancel ctx after 50ms, assert Run returns ctx.Canceled within 100ms.
-       - `TestDaemonUpsertOnStart` — pre-register an asset with .Schedule("@every 1m") in a registry, run Daemon for 100ms then cancel; assert a schedules row was inserted for that asset (UpsertSchedules ran).
+       - `TestSchedulerNoDueRows` — no schedules table rows OR all are paused; `FireOneSchedule` returns `ErrNoDueSchedule`.
+       - `TestSchedulerSkipLocked` — insert one due schedule, run two `FireOneSchedule` calls in parallel goroutines on separate transactions; assert exactly one fire, one ErrNoDueSchedule (SKIP LOCKED contract).
+    6. Create `internal/schedule/daemon_test.go` (light, since the unexported `run` method is mostly orchestration):
+       - `TestDaemonRunCancellation` — start a Daemon with Interval=10ms; call `(&Daemon{...}).run(ctx)` from within the same package (unexported access), cancel ctx after 50ms, assert run returns ctx.Canceled within 100ms. The test is in the same package (`internal/schedule`) so it can call the unexported method.
+       - `TestDaemonUpsertOnStart` — pre-register an asset with .Schedule("@every 1m") in a registry, call `daemon.run(ctx)` for 100ms then cancel; assert a schedules row was inserted for that asset (UpsertSchedules ran). Same-package access required.
     7. Helper test fixtures: a `fakeEventWriter` in `internal/schedule/fire_test.go` that captures events into a slice with a Mutex; an `openTestDB(t)` helper mirroring the claim_test.go pattern.
   </action>
   <acceptance_criteria>
     - `grep -q 'package schedule' internal/schedule/daemon.go`
     - `grep -q 'type Daemon struct' internal/schedule/daemon.go`
-    - `grep -q 'func (d \\*Daemon) Run' internal/schedule/daemon.go`
+    - `grep -q 'func (d \\*Daemon) run(ctx context.Context) error' internal/schedule/daemon.go` (UNEXPORTED `run` method — lowercase r)
+    - `! grep -q 'func (d \\*Daemon) Run(' internal/schedule/daemon.go` (no exported `Run` method exists — production callers use FireOneSchedule directly)
     - `grep -q 'func computeNextAndDetectMiss' internal/schedule/missed.go`
+    - `grep -q 'func FireOneSchedule' internal/schedule/fire.go` (EXPORTED — capital F)
     - `grep -q 'FOR UPDATE SKIP LOCKED' internal/schedule/fire.go`
     - `grep -q 'WHERE next_fire_at <= \\$1' internal/schedule/fire.go`
     - `grep -q 'WHERE next_fire_at <= \\$1' internal/schedule/fire.go && grep -q 'paused_at IS NULL' internal/schedule/fire.go`
@@ -562,6 +584,7 @@ func computeNextAndDetectMiss(sched cron.Schedule, lastFiredAt, now time.Time) (
     - `grep -q 'cronParser = cron.NewParser' internal/schedule/missed.go`
     - `grep -q 'func TestMissedWindowLatestOnly' internal/schedule/missed_test.go`
     - `grep -q 'func TestSchedulerFiresDueRow\\|func TestScheduler' internal/schedule/fire_test.go`
+    - `grep -q 'daemon.run(ctx)\\|d.run(ctx)' internal/schedule/daemon_test.go` (test calls unexported `run` method — same-package access)
     - `go test ./internal/schedule/... -run TestMissedWindowLatestOnly -count=1 -timeout 30s` exits 0
     - `DATABASE_URL=... go test ./internal/schedule/... -run TestScheduler -count=1 -timeout 60s` exits 0
     - `go build ./...` passes
@@ -569,7 +592,7 @@ func computeNextAndDetectMiss(sched cron.Schedule, lastFiredAt, now time.Time) (
   <verify>
     <automated>DATABASE_URL=postgres://platform_app:platform_app@localhost:5432/data_governance?sslmode=disable go test ./internal/schedule/... -count=1 -timeout 120s</automated>
   </verify>
-  <done>internal/schedule package created with Daemon + fire + missed + registry; LatestOnly missed-window logic verified; fireOneSchedule produces correct partition_key for partitioned assets; SKIP LOCKED multi-replica safety verified; event writer receives schedule.fired and (when applicable) schedule.missed events; UpsertSchedules idempotent.</done>
+  <done>internal/schedule package created with Daemon (unexported `run` driver) + EXPORTED FireOneSchedule + missed + registry; LatestOnly missed-window logic verified; FireOneSchedule produces correct partition_key for partitioned assets; SKIP LOCKED multi-replica safety verified; event writer receives schedule.fired and (when applicable) schedule.missed events; UpsertSchedules idempotent; no dead exported `Daemon.Run` since production code calls FireOneSchedule directly (W3 fix).</done>
 </task>
 
 <task id="3.4.2" type="auto" tdd="true">
@@ -691,9 +714,9 @@ func computeNextAndDetectMiss(sched cron.Schedule, lastFiredAt, now time.Time) (
 
 | Threat ID | Category | Component | Disposition | Mitigation Plan |
 |-----------|----------|-----------|-------------|-----------------|
-| T-03-04-01 | Denial of Service | Malformed cron expression in registered schedule causes daemon crash | mitigate | Builder validates at Build()/Register() (plan 03-02). Daemon defense-in-depth: fireOneSchedule re-parses and returns error per-row instead of crashing the loop. UpsertSchedules also validates and returns error before inserting. |
-| T-03-04-02 | Denial of Service | Fire-loop pegs the DB by re-firing the same row infinitely if UPDATE schedules fails | mitigate | fireOneSchedule does both INSERT runs + UPDATE schedules in the SAME transaction. If UPDATE fails, tx rolls back and INSERT runs is also rolled back — the row stays "due" but the overall fire is atomic. SKIP LOCKED + per-row tx prevents starvation across replicas. |
-| T-03-04-03 | Tampering | Daemon inserts a runs row for a partition that already has an in-flight run (race) | mitigate | Partial unique index on (asset_name, partition_key) WHERE state IN ('queued','starting','running') rejects the second INSERT atomically. fireOneSchedule treats unique-constraint-violation as "skip this fire" (returns error from tx, logged as schedule.fire_failed; next tick re-evaluates). TestPartitionUniqueConstraint validates the constraint behavior. |
+| T-03-04-01 | Denial of Service | Malformed cron expression in registered schedule causes daemon crash | mitigate | Builder validates at Build()/Register() (plan 03-02). Daemon defense-in-depth: FireOneSchedule re-parses and returns error per-row instead of crashing the loop. UpsertSchedules also validates and returns error before inserting. |
+| T-03-04-02 | Denial of Service | Fire-loop pegs the DB by re-firing the same row infinitely if UPDATE schedules fails | mitigate | FireOneSchedule does both INSERT runs + UPDATE schedules in the SAME transaction. If UPDATE fails, tx rolls back and INSERT runs is also rolled back — the row stays "due" but the overall fire is atomic. SKIP LOCKED + per-row tx prevents starvation across replicas. |
+| T-03-04-03 | Tampering | Daemon inserts a runs row for a partition that already has an in-flight run (race) | mitigate | Partial unique index on (asset_name, partition_key) WHERE state IN ('queued','starting','running') rejects the second INSERT atomically. FireOneSchedule treats unique-constraint-violation as "skip this fire" (returns error from tx, logged as schedule.fire_failed; next tick re-evaluates). TestPartitionUniqueConstraint validates the constraint behavior. |
 | T-03-04-04 | Information Disclosure | schedule.fired event payload contains asset_name and partition_key | accept | Both are non-sensitive metadata. event_log RLS (Phase 1 D-09) prevents tamper after write. |
 | T-03-04-05 | Spoofing | One Daemon replica claims a schedule another replica is processing | mitigate | SELECT FOR UPDATE SKIP LOCKED guarantees only one replica holds the row lock at any instant; the other sees ErrNoRows / waits its tick. Same primitive as Phase 2 ClaimNext, already proven by 50-goroutine atomicity test. |
 | T-03-04-06 | Denial of Service | Long sched.Next() iteration in computeNextAndDetectMiss after multi-year outage | mitigate | The iteration is bounded by elapsed time / cron period. Worst case: 10 years × 365 days × 24 hours = 87,600 iterations for hourly cron — completes in tens of milliseconds. No bound needed in practice; if a pathological case emerges, add a hard cap (e.g., 10000 iterations → log warning + force-fire most-recent). Documented in missed.go comment. |
@@ -705,25 +728,27 @@ func computeNextAndDetectMiss(sched cron.Schedule, lastFiredAt, now time.Time) (
 - `go test ./internal/schedule/... -count=1 -timeout 120s` passes (integration tests requiring DATABASE_URL).
 - `go test ./internal/partition/... -run TestPartitionUniqueConstraint -count=1 -timeout 60s` passes.
 - `go test ./internal/run/... -run TestClaimAtomicity50Goroutines -count=1 -timeout 60s` still passes (regression — the schedules table additions do not affect run claim).
-- The SKIP LOCKED test (TestSchedulerSkipLocked) confirms two parallel `fireOneSchedule` calls produce one fire and one ErrNoDueSchedule.
+- The SKIP LOCKED test (TestSchedulerSkipLocked) confirms two parallel `FireOneSchedule` calls produce one fire and one ErrNoDueSchedule.
+- No dead exported `Daemon.Run` surface — only `FireOneSchedule` is consumed by plan 03-06.
 </verification>
 
 <success_criteria>
-- internal/schedule package exists with Daemon, fire, missed, registry components.
-- Daemon.Run executes one tick immediately on start, then ticks every Interval (default 30s) with 0..5s jitter.
-- fireOneSchedule transactionally inserts runs row + updates schedules row + emits schedule.fired event; emits schedule.missed when missedCount > 0 (D-04).
+- internal/schedule package exists with Daemon (unexported `run` tick driver), EXPORTED FireOneSchedule, missed, registry components.
+- Daemon.run executes one tick immediately on start, then ticks every Interval (default 30s) with 0..5s jitter — used by package-internal tests only.
+- FireOneSchedule (exported) transactionally inserts runs row + updates schedules row + emits schedule.fired event; emits schedule.missed when missedCount > 0 (D-04).
 - UpsertSchedules idempotently syncs registry → schedules table at daemon start.
 - TestMissedWindowLatestOnly proves LatestOnly recovery with skipped_count semantics.
 - TestSchedulerFiresDueRow integration proves end-to-end firing.
 - TestPartitionUniqueConstraint proves D-10 partial unique index behavior.
 - No leader election, no advisory locks for scheduler — SKIP LOCKED is the only coordination primitive (D-03).
+- W3 resolution: `Daemon.run` is unexported; plan 03-06's scheduler subcommand calls `FireOneSchedule` directly (no dead exported Run method).
 </success_criteria>
 
 <output>
 After completion, create `.planning/phases/03-scheduling-sensors-partitions/03-04-SUMMARY.md` documenting:
-- Final scheduler package surface (Daemon struct, Run signature, public functions).
+- Final scheduler package surface — emphasize that `Daemon.run` is UNEXPORTED (test-only) and `FireOneSchedule` is EXPORTED (production caller).
 - Tick interval default + jitter range.
 - Missed-window LatestOnly behavior — confirm by quoting the schedule.missed payload shape.
 - Decision-coverage: D-01 (subcommand internal), D-02 (lazy schedules table), D-03 (parser-only + SKIP LOCKED), D-04 (LatestOnly), D-10 (partition_key + partial unique), D-12 (Schedule×Partitions composition).
-- Note: scheduler subcommand wiring (`./platform scheduler` entry point) belongs to plan 03-06.
+- Note: scheduler subcommand wiring (`./platform scheduler` entry point) belongs to plan 03-06 and consumes `FireOneSchedule` directly (no `Daemon.Run` dependency).
 </output>

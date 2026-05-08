@@ -2,8 +2,8 @@
 phase: 3
 slug: scheduling-sensors-partitions
 status: draft
-nyquist_compliant: false
-wave_0_complete: false
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-05-08
 ---
 
@@ -71,18 +71,20 @@ created: 2026-05-08
 
 **Wave 0** (must run before any implementation tasks): create test stubs that surface MISSING references so downstream tasks have a place to anchor `<automated>` verifications.
 
-- [ ] `internal/partition/keygen_test.go` — covers ORCH-07 + ISO-week year-boundary edge case
-- [ ] `internal/partition/strategy_test.go` — Daily/Weekly/Monthly/Category strategy contracts
-- [ ] `internal/schedule/fire_test.go` — covers ORCH-05 tick logic + missed-window recovery
-- [ ] `internal/schedule/missed_test.go` — `schedule.missed` event with skip count
-- [ ] `internal/sensor/evaluate_test.go` — covers ORCH-06 dedup + panic recovery + auto-disable
-- [ ] `internal/backfill/submit_test.go` — covers ORCH-07/08 + D-14 spec parsing + max-partitions guard
-- [ ] `internal/backfill/independence_test.go` — category/time partition independence under failure
-- [ ] `internal/run/claim_test.go` — **EXISTS** (Phase 2). Extend with `TestClaimPriorityOrdering` and `TestPriorityClaimLoad`. Existing `TestClaimAtomicity50Goroutines` MUST keep passing.
-- [ ] `internal/event/types_test.go` — Phase 3 EventType enum value coverage
-- [ ] `internal/asset/builder_test.go` — Schedule/Sensor/Partitions chained builder methods (extend existing test file)
-- [ ] `cmd/platform/scheduler_test.go` — graceful shutdown
-- [ ] `migrations/2026MMDDHHMMSS_phase3_*.sql` — schedules, sensors, backfills CREATE TABLE + ALTER TABLE runs (partition_key, priority, backfill_id) + partial unique index + CHECK constraints + role grants
+> **Note (post-planning):** Wave 0 test stubs are **co-located in their respective implementation plans** (e.g., partition keygen tests live alongside production code in 03-02 Task 1; schedule fire tests in 03-04 Task 1; sensor evaluator tests in 03-05 Task 1; etc.) rather than in a separate Wave 0 plan. Each plan creates its `_test.go` file in the same task that creates the production code, with the test scaffold written first per `tdd="true"` and the `<behavior>` block driving expectations. This satisfies the Wave 0 requirement (every `<automated>` reference resolves to a test file that exists at the time it is run) without needing a dedicated Wave 0 plan.
+
+- [x] `internal/partition/keygen_test.go` — covers ORCH-07 + ISO-week year-boundary edge case → created in plan 03-02 Task 1
+- [x] `internal/partition/strategy_test.go` — Daily/Weekly/Monthly/Category strategy contracts → created in plan 03-02 Task 1
+- [x] `internal/schedule/fire_test.go` — covers ORCH-05 tick logic + missed-window recovery → created in plan 03-04 Task 1 (or split per W2)
+- [x] `internal/schedule/missed_test.go` — `schedule.missed` event with skip count → created in plan 03-04 Task 1 (or split per W2)
+- [x] `internal/sensor/evaluate_test.go` — covers ORCH-06 dedup + panic recovery + auto-disable → created in plan 03-05 Task 1
+- [x] `internal/backfill/submit_test.go` — covers ORCH-07/08 + D-14 spec parsing + max-partitions guard → created in plan 03-07 Task 2
+- [x] `internal/backfill/independence_test.go` — category/time partition independence under failure → created in plan 03-07 Task 2
+- [x] `internal/run/claim_test.go` — **EXISTS** (Phase 2). Plan 03-03 Task 2 extends it with `TestClaimPriorityOrdering` and `TestPriorityClaimLoad`. Existing `TestClaimAtomicity50Goroutines` MUST keep passing.
+- [x] `internal/event/types_test.go` — Phase 3 EventType enum value coverage → created in plan 03-01 Task 3
+- [x] `internal/asset/builder_test.go` — Schedule/Sensor/Partitions chained builder methods (extend existing test file) → created in plan 03-02 Task 2
+- [x] `cmd/platform/scheduler_test.go` — graceful shutdown → created in plan 03-06 Task 3
+- [x] `migrations/2026MMDDHHMMSS_phase3_*.sql` — schedules, sensors, backfills CREATE TABLE + ALTER TABLE runs (partition_key, priority, backfill_id) + partial unique index + CHECK constraints + role grants → created in plan 03-01 Tasks 1+2
 
 *Framework install:* none — `testify` already pinned in `go.mod`.
 
@@ -99,11 +101,11 @@ created: 2026-05-08
 
 ## Validation Sign-Off
 
-- [ ] All Phase 3 tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references in the verification map
-- [ ] No watch-mode flags in any test command
-- [ ] Feedback latency < 30s (quick) / < 120s (full suite excluding load test) / < 300s (load test)
-- [ ] `nyquist_compliant: true` set in frontmatter once planner has wired every Wave/Task ID
+- [x] All Phase 3 tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references in the verification map (test stubs co-located with production code in their respective plans — see Wave 0 Requirements note above)
+- [x] No watch-mode flags in any test command
+- [x] Feedback latency < 30s (quick) / < 120s (full suite excluding load test) / < 300s (load test)
+- [x] `nyquist_compliant: true` — all 7 plans wired with Wave/Task IDs and automated verify commands
 
-**Approval:** pending
+**Approval:** approved for execution
