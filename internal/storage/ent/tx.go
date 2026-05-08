@@ -12,6 +12,8 @@ import (
 // Tx is a transactional client that is created by calling Client.Tx().
 type Tx struct {
 	config
+	// ConcurrencyToken is the client for interacting with the ConcurrencyToken builders.
+	ConcurrencyToken *ConcurrencyTokenClient
 	// EventLog is the client for interacting with the EventLog builders.
 	EventLog *EventLogClient
 	// InviteToken is the client for interacting with the InviteToken builders.
@@ -153,6 +155,7 @@ func (tx *Tx) Client() *Client {
 }
 
 func (tx *Tx) init() {
+	tx.ConcurrencyToken = NewConcurrencyTokenClient(tx.config)
 	tx.EventLog = NewEventLogClient(tx.config)
 	tx.InviteToken = NewInviteTokenClient(tx.config)
 	tx.Run = NewRunClient(tx.config)
@@ -167,7 +170,7 @@ func (tx *Tx) init() {
 // of them in order to commit or rollback the transaction.
 //
 // If a closed transaction is embedded in one of the generated entities, and the entity
-// applies a query, for example: EventLog.QueryXXX(), the query will be executed
+// applies a query, for example: ConcurrencyToken.QueryXXX(), the query will be executed
 // through the driver which created this transaction.
 //
 // Note that txDriver is not goroutine safe.

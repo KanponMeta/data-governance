@@ -9,6 +9,18 @@ import (
 	"github.com/kanpon/data-governance/internal/storage/ent"
 )
 
+// The ConcurrencyTokenFunc type is an adapter to allow the use of ordinary
+// function as ConcurrencyToken mutator.
+type ConcurrencyTokenFunc func(context.Context, *ent.ConcurrencyTokenMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ConcurrencyTokenFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ConcurrencyTokenMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ConcurrencyTokenMutation", m)
+}
+
 // The EventLogFunc type is an adapter to allow the use of ordinary
 // function as EventLog mutator.
 type EventLogFunc func(context.Context, *ent.EventLogMutation) (ent.Value, error)

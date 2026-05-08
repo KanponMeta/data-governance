@@ -15,15 +15,16 @@ const (
 	EventTypePlatformStarted          EventType = "platform.started"
 	EventTypePlatformMigrationApplied EventType = "platform.migration_applied"
 
-	// Phase 2 (D-18) — run lifecycle events. retry_scheduled is added in plan 02-03.
-	EventTypeRunQueued        EventType = "run.queued"
-	EventTypeRunStarted       EventType = "run.started"
-	EventTypeRunStepStarted   EventType = "run.step.started"
-	EventTypeRunStepSucceeded EventType = "run.step.succeeded"
-	EventTypeRunStepFailed    EventType = "run.step.failed"
-	EventTypeRunSucceeded     EventType = "run.succeeded"
-	EventTypeRunFailed        EventType = "run.failed"
-	EventTypeRunCanceled      EventType = "run.canceled"
+	// Phase 2 (D-18) — run lifecycle events.
+	EventTypeRunQueued               EventType = "run.queued"
+	EventTypeRunStarted              EventType = "run.started"
+	EventTypeRunStepStarted          EventType = "run.step.started"
+	EventTypeRunStepSucceeded        EventType = "run.step.succeeded"
+	EventTypeRunStepFailed           EventType = "run.step.failed"
+	EventTypeRunStepRetryScheduled   EventType = "run.step.retry_scheduled" // D-18 (plan 02-03)
+	EventTypeRunSucceeded            EventType = "run.succeeded"
+	EventTypeRunFailed               EventType = "run.failed"
+	EventTypeRunCanceled             EventType = "run.canceled"
 )
 
 // AllKnownTypes returns the complete set of valid EventType values including Phase 2 run.* types.
@@ -43,6 +44,7 @@ func AllKnownTypes() []EventType {
 		EventTypeRunStepStarted,
 		EventTypeRunStepSucceeded,
 		EventTypeRunStepFailed,
+		EventTypeRunStepRetryScheduled,
 		EventTypeRunSucceeded,
 		EventTypeRunFailed,
 		EventTypeRunCanceled,
@@ -146,4 +148,15 @@ type RunFailedPayload struct {
 type RunCanceledPayload struct {
 	AssetName string `json:"asset_name"`
 	Reason    string `json:"reason"`
+}
+
+// RunStepRetryScheduledPayload is the payload for EventTypeRunStepRetryScheduled (D-18, plan 02-03).
+// It records each retry attempt for the audit trail — satisfies acceptance criterion 2.
+type RunStepRetryScheduledPayload struct {
+	AssetName   string    `json:"asset_name"`
+	Attempt     int       `json:"attempt"`      // attempt number that just FAILED (1-indexed)
+	NextAttempt int       `json:"next_attempt"`
+	ScheduledAt time.Time `json:"scheduled_at"` // when the retry will run
+	DelayMs     int64     `json:"delay_ms"`
+	Error       string    `json:"error"`
 }

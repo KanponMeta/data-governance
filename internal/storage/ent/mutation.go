@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/google/uuid"
+	"github.com/kanpon/data-governance/internal/storage/ent/concurrencytoken"
 	"github.com/kanpon/data-governance/internal/storage/ent/eventlog"
 	"github.com/kanpon/data-governance/internal/storage/ent/invitetoken"
 	"github.com/kanpon/data-governance/internal/storage/ent/predicate"
@@ -29,12 +30,597 @@ const (
 	OpUpdateOne = ent.OpUpdateOne
 
 	// Node types.
-	TypeEventLog    = "EventLog"
-	TypeInviteToken = "InviteToken"
-	TypeRun         = "Run"
-	TypeRunStep     = "RunStep"
-	TypeUser        = "User"
+	TypeConcurrencyToken = "ConcurrencyToken"
+	TypeEventLog         = "EventLog"
+	TypeInviteToken      = "InviteToken"
+	TypeRun              = "Run"
+	TypeRunStep          = "RunStep"
+	TypeUser             = "User"
 )
+
+// ConcurrencyTokenMutation represents an operation that mutates the ConcurrencyToken nodes in the graph.
+type ConcurrencyTokenMutation struct {
+	config
+	op            Op
+	typ           string
+	id            *uuid.UUID
+	run_id        *uuid.UUID
+	asset_name    *string
+	resource_tag  *string
+	weight        *int
+	addweight     *int
+	acquired_at   *time.Time
+	clearedFields map[string]struct{}
+	done          bool
+	oldValue      func(context.Context) (*ConcurrencyToken, error)
+	predicates    []predicate.ConcurrencyToken
+}
+
+var _ ent.Mutation = (*ConcurrencyTokenMutation)(nil)
+
+// concurrencytokenOption allows management of the mutation configuration using functional options.
+type concurrencytokenOption func(*ConcurrencyTokenMutation)
+
+// newConcurrencyTokenMutation creates new mutation for the ConcurrencyToken entity.
+func newConcurrencyTokenMutation(c config, op Op, opts ...concurrencytokenOption) *ConcurrencyTokenMutation {
+	m := &ConcurrencyTokenMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeConcurrencyToken,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withConcurrencyTokenID sets the ID field of the mutation.
+func withConcurrencyTokenID(id uuid.UUID) concurrencytokenOption {
+	return func(m *ConcurrencyTokenMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *ConcurrencyToken
+		)
+		m.oldValue = func(ctx context.Context) (*ConcurrencyToken, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().ConcurrencyToken.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withConcurrencyToken sets the old ConcurrencyToken of the mutation.
+func withConcurrencyToken(node *ConcurrencyToken) concurrencytokenOption {
+	return func(m *ConcurrencyTokenMutation) {
+		m.oldValue = func(context.Context) (*ConcurrencyToken, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m ConcurrencyTokenMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m ConcurrencyTokenMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of ConcurrencyToken entities.
+func (m *ConcurrencyTokenMutation) SetID(id uuid.UUID) {
+	m.id = &id
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *ConcurrencyTokenMutation) ID() (id uuid.UUID, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *ConcurrencyTokenMutation) IDs(ctx context.Context) ([]uuid.UUID, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []uuid.UUID{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().ConcurrencyToken.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetRunID sets the "run_id" field.
+func (m *ConcurrencyTokenMutation) SetRunID(u uuid.UUID) {
+	m.run_id = &u
+}
+
+// RunID returns the value of the "run_id" field in the mutation.
+func (m *ConcurrencyTokenMutation) RunID() (r uuid.UUID, exists bool) {
+	v := m.run_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRunID returns the old "run_id" field's value of the ConcurrencyToken entity.
+// If the ConcurrencyToken object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ConcurrencyTokenMutation) OldRunID(ctx context.Context) (v uuid.UUID, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRunID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRunID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRunID: %w", err)
+	}
+	return oldValue.RunID, nil
+}
+
+// ResetRunID resets all changes to the "run_id" field.
+func (m *ConcurrencyTokenMutation) ResetRunID() {
+	m.run_id = nil
+}
+
+// SetAssetName sets the "asset_name" field.
+func (m *ConcurrencyTokenMutation) SetAssetName(s string) {
+	m.asset_name = &s
+}
+
+// AssetName returns the value of the "asset_name" field in the mutation.
+func (m *ConcurrencyTokenMutation) AssetName() (r string, exists bool) {
+	v := m.asset_name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAssetName returns the old "asset_name" field's value of the ConcurrencyToken entity.
+// If the ConcurrencyToken object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ConcurrencyTokenMutation) OldAssetName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAssetName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAssetName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAssetName: %w", err)
+	}
+	return oldValue.AssetName, nil
+}
+
+// ResetAssetName resets all changes to the "asset_name" field.
+func (m *ConcurrencyTokenMutation) ResetAssetName() {
+	m.asset_name = nil
+}
+
+// SetResourceTag sets the "resource_tag" field.
+func (m *ConcurrencyTokenMutation) SetResourceTag(s string) {
+	m.resource_tag = &s
+}
+
+// ResourceTag returns the value of the "resource_tag" field in the mutation.
+func (m *ConcurrencyTokenMutation) ResourceTag() (r string, exists bool) {
+	v := m.resource_tag
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldResourceTag returns the old "resource_tag" field's value of the ConcurrencyToken entity.
+// If the ConcurrencyToken object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ConcurrencyTokenMutation) OldResourceTag(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldResourceTag is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldResourceTag requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldResourceTag: %w", err)
+	}
+	return oldValue.ResourceTag, nil
+}
+
+// ResetResourceTag resets all changes to the "resource_tag" field.
+func (m *ConcurrencyTokenMutation) ResetResourceTag() {
+	m.resource_tag = nil
+}
+
+// SetWeight sets the "weight" field.
+func (m *ConcurrencyTokenMutation) SetWeight(i int) {
+	m.weight = &i
+	m.addweight = nil
+}
+
+// Weight returns the value of the "weight" field in the mutation.
+func (m *ConcurrencyTokenMutation) Weight() (r int, exists bool) {
+	v := m.weight
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldWeight returns the old "weight" field's value of the ConcurrencyToken entity.
+// If the ConcurrencyToken object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ConcurrencyTokenMutation) OldWeight(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldWeight is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldWeight requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldWeight: %w", err)
+	}
+	return oldValue.Weight, nil
+}
+
+// AddWeight adds i to the "weight" field.
+func (m *ConcurrencyTokenMutation) AddWeight(i int) {
+	if m.addweight != nil {
+		*m.addweight += i
+	} else {
+		m.addweight = &i
+	}
+}
+
+// AddedWeight returns the value that was added to the "weight" field in this mutation.
+func (m *ConcurrencyTokenMutation) AddedWeight() (r int, exists bool) {
+	v := m.addweight
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetWeight resets all changes to the "weight" field.
+func (m *ConcurrencyTokenMutation) ResetWeight() {
+	m.weight = nil
+	m.addweight = nil
+}
+
+// SetAcquiredAt sets the "acquired_at" field.
+func (m *ConcurrencyTokenMutation) SetAcquiredAt(t time.Time) {
+	m.acquired_at = &t
+}
+
+// AcquiredAt returns the value of the "acquired_at" field in the mutation.
+func (m *ConcurrencyTokenMutation) AcquiredAt() (r time.Time, exists bool) {
+	v := m.acquired_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAcquiredAt returns the old "acquired_at" field's value of the ConcurrencyToken entity.
+// If the ConcurrencyToken object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ConcurrencyTokenMutation) OldAcquiredAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAcquiredAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAcquiredAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAcquiredAt: %w", err)
+	}
+	return oldValue.AcquiredAt, nil
+}
+
+// ResetAcquiredAt resets all changes to the "acquired_at" field.
+func (m *ConcurrencyTokenMutation) ResetAcquiredAt() {
+	m.acquired_at = nil
+}
+
+// Where appends a list predicates to the ConcurrencyTokenMutation builder.
+func (m *ConcurrencyTokenMutation) Where(ps ...predicate.ConcurrencyToken) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the ConcurrencyTokenMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *ConcurrencyTokenMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.ConcurrencyToken, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *ConcurrencyTokenMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *ConcurrencyTokenMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (ConcurrencyToken).
+func (m *ConcurrencyTokenMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *ConcurrencyTokenMutation) Fields() []string {
+	fields := make([]string, 0, 5)
+	if m.run_id != nil {
+		fields = append(fields, concurrencytoken.FieldRunID)
+	}
+	if m.asset_name != nil {
+		fields = append(fields, concurrencytoken.FieldAssetName)
+	}
+	if m.resource_tag != nil {
+		fields = append(fields, concurrencytoken.FieldResourceTag)
+	}
+	if m.weight != nil {
+		fields = append(fields, concurrencytoken.FieldWeight)
+	}
+	if m.acquired_at != nil {
+		fields = append(fields, concurrencytoken.FieldAcquiredAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *ConcurrencyTokenMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case concurrencytoken.FieldRunID:
+		return m.RunID()
+	case concurrencytoken.FieldAssetName:
+		return m.AssetName()
+	case concurrencytoken.FieldResourceTag:
+		return m.ResourceTag()
+	case concurrencytoken.FieldWeight:
+		return m.Weight()
+	case concurrencytoken.FieldAcquiredAt:
+		return m.AcquiredAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *ConcurrencyTokenMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case concurrencytoken.FieldRunID:
+		return m.OldRunID(ctx)
+	case concurrencytoken.FieldAssetName:
+		return m.OldAssetName(ctx)
+	case concurrencytoken.FieldResourceTag:
+		return m.OldResourceTag(ctx)
+	case concurrencytoken.FieldWeight:
+		return m.OldWeight(ctx)
+	case concurrencytoken.FieldAcquiredAt:
+		return m.OldAcquiredAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown ConcurrencyToken field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *ConcurrencyTokenMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case concurrencytoken.FieldRunID:
+		v, ok := value.(uuid.UUID)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRunID(v)
+		return nil
+	case concurrencytoken.FieldAssetName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAssetName(v)
+		return nil
+	case concurrencytoken.FieldResourceTag:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetResourceTag(v)
+		return nil
+	case concurrencytoken.FieldWeight:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetWeight(v)
+		return nil
+	case concurrencytoken.FieldAcquiredAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAcquiredAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown ConcurrencyToken field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *ConcurrencyTokenMutation) AddedFields() []string {
+	var fields []string
+	if m.addweight != nil {
+		fields = append(fields, concurrencytoken.FieldWeight)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *ConcurrencyTokenMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case concurrencytoken.FieldWeight:
+		return m.AddedWeight()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *ConcurrencyTokenMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case concurrencytoken.FieldWeight:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddWeight(v)
+		return nil
+	}
+	return fmt.Errorf("unknown ConcurrencyToken numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *ConcurrencyTokenMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *ConcurrencyTokenMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *ConcurrencyTokenMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown ConcurrencyToken nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *ConcurrencyTokenMutation) ResetField(name string) error {
+	switch name {
+	case concurrencytoken.FieldRunID:
+		m.ResetRunID()
+		return nil
+	case concurrencytoken.FieldAssetName:
+		m.ResetAssetName()
+		return nil
+	case concurrencytoken.FieldResourceTag:
+		m.ResetResourceTag()
+		return nil
+	case concurrencytoken.FieldWeight:
+		m.ResetWeight()
+		return nil
+	case concurrencytoken.FieldAcquiredAt:
+		m.ResetAcquiredAt()
+		return nil
+	}
+	return fmt.Errorf("unknown ConcurrencyToken field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *ConcurrencyTokenMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *ConcurrencyTokenMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *ConcurrencyTokenMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *ConcurrencyTokenMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *ConcurrencyTokenMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *ConcurrencyTokenMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *ConcurrencyTokenMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown ConcurrencyToken unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *ConcurrencyTokenMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown ConcurrencyToken edge %s", name)
+}
 
 // EventLogMutation represents an operation that mutates the EventLog nodes in the graph.
 type EventLogMutation struct {

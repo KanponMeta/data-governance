@@ -6,6 +6,9 @@ import (
 	"entgo.io/ent/dialect/sql"
 )
 
+// ConcurrencyToken is the predicate function for concurrencytoken builders.
+type ConcurrencyToken func(*sql.Selector)
+
 // EventLog is the predicate function for eventlog builders.
 type EventLog func(*sql.Selector)
 

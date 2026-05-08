@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/kanpon/data-governance/internal/storage/ent/concurrencytoken"
 	"github.com/kanpon/data-governance/internal/storage/ent/eventlog"
 	"github.com/kanpon/data-governance/internal/storage/ent/invitetoken"
 	"github.com/kanpon/data-governance/internal/storage/ent/run"
@@ -18,6 +19,56 @@ import (
 // (default values, validators, hooks and policies) and stitches it
 // to their package variables.
 func init() {
+	concurrencytokenFields := schema.ConcurrencyToken{}.Fields()
+	_ = concurrencytokenFields
+	// concurrencytokenDescAssetName is the schema descriptor for asset_name field.
+	concurrencytokenDescAssetName := concurrencytokenFields[2].Descriptor()
+	// concurrencytoken.AssetNameValidator is a validator for the "asset_name" field. It is called by the builders before save.
+	concurrencytoken.AssetNameValidator = func() func(string) error {
+		validators := concurrencytokenDescAssetName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(asset_name string) error {
+			for _, fn := range fns {
+				if err := fn(asset_name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// concurrencytokenDescResourceTag is the schema descriptor for resource_tag field.
+	concurrencytokenDescResourceTag := concurrencytokenFields[3].Descriptor()
+	// concurrencytoken.ResourceTagValidator is a validator for the "resource_tag" field. It is called by the builders before save.
+	concurrencytoken.ResourceTagValidator = func() func(string) error {
+		validators := concurrencytokenDescResourceTag.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(resource_tag string) error {
+			for _, fn := range fns {
+				if err := fn(resource_tag); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// concurrencytokenDescWeight is the schema descriptor for weight field.
+	concurrencytokenDescWeight := concurrencytokenFields[4].Descriptor()
+	// concurrencytoken.DefaultWeight holds the default value on creation for the weight field.
+	concurrencytoken.DefaultWeight = concurrencytokenDescWeight.Default.(int)
+	// concurrencytokenDescAcquiredAt is the schema descriptor for acquired_at field.
+	concurrencytokenDescAcquiredAt := concurrencytokenFields[5].Descriptor()
+	// concurrencytoken.DefaultAcquiredAt holds the default value on creation for the acquired_at field.
+	concurrencytoken.DefaultAcquiredAt = concurrencytokenDescAcquiredAt.Default.(func() time.Time)
+	// concurrencytokenDescID is the schema descriptor for id field.
+	concurrencytokenDescID := concurrencytokenFields[0].Descriptor()
+	// concurrencytoken.DefaultID holds the default value on creation for the id field.
+	concurrencytoken.DefaultID = concurrencytokenDescID.Default.(func() uuid.UUID)
 	eventlogFields := schema.EventLog{}.Fields()
 	_ = eventlogFields
 	// eventlogDescOccurredAt is the schema descriptor for occurred_at field.

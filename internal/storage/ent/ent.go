@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"github.com/kanpon/data-governance/internal/storage/ent/concurrencytoken"
 	"github.com/kanpon/data-governance/internal/storage/ent/eventlog"
 	"github.com/kanpon/data-governance/internal/storage/ent/invitetoken"
 	"github.com/kanpon/data-governance/internal/storage/ent/run"
@@ -77,11 +78,12 @@ var (
 func checkColumn(table, column string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
-			eventlog.Table:    eventlog.ValidColumn,
-			invitetoken.Table: invitetoken.ValidColumn,
-			run.Table:         run.ValidColumn,
-			runstep.Table:     runstep.ValidColumn,
-			user.Table:        user.ValidColumn,
+			concurrencytoken.Table: concurrencytoken.ValidColumn,
+			eventlog.Table:         eventlog.ValidColumn,
+			invitetoken.Table:      invitetoken.ValidColumn,
+			run.Table:              run.ValidColumn,
+			runstep.Table:          runstep.ValidColumn,
+			user.Table:             user.ValidColumn,
 		})
 	})
 	return columnCheck(table, column)

@@ -15,6 +15,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
+	"github.com/kanpon/data-governance/internal/storage/ent/concurrencytoken"
 	"github.com/kanpon/data-governance/internal/storage/ent/eventlog"
 	"github.com/kanpon/data-governance/internal/storage/ent/invitetoken"
 	"github.com/kanpon/data-governance/internal/storage/ent/run"
@@ -27,6 +28,8 @@ type Client struct {
 	config
 	// Schema is the client for creating, migrating and dropping schema.
 	Schema *migrate.Schema
+	// ConcurrencyToken is the client for interacting with the ConcurrencyToken builders.
+	ConcurrencyToken *ConcurrencyTokenClient
 	// EventLog is the client for interacting with the EventLog builders.
 	EventLog *EventLogClient
 	// InviteToken is the client for interacting with the InviteToken builders.
@@ -48,6 +51,7 @@ func NewClient(opts ...Option) *Client {
 
 func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
+	c.ConcurrencyToken = NewConcurrencyTokenClient(c.config)
 	c.EventLog = NewEventLogClient(c.config)
 	c.InviteToken = NewInviteTokenClient(c.config)
 	c.Run = NewRunClient(c.config)
@@ -143,13 +147,14 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	cfg := c.config
 	cfg.driver = tx
 	return &Tx{
-		ctx:         ctx,
-		config:      cfg,
-		EventLog:    NewEventLogClient(cfg),
-		InviteToken: NewInviteTokenClient(cfg),
-		Run:         NewRunClient(cfg),
-		RunStep:     NewRunStepClient(cfg),
-		User:        NewUserClient(cfg),
+		ctx:              ctx,
+		config:           cfg,
+		ConcurrencyToken: NewConcurrencyTokenClient(cfg),
+		EventLog:         NewEventLogClient(cfg),
+		InviteToken:      NewInviteTokenClient(cfg),
+		Run:              NewRunClient(cfg),
+		RunStep:          NewRunStepClient(cfg),
+		User:             NewUserClient(cfg),
 	}, nil
 }
 
@@ -167,20 +172,21 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	cfg := c.config
 	cfg.driver = &txDriver{tx: tx, drv: c.driver}
 	return &Tx{
-		ctx:         ctx,
-		config:      cfg,
-		EventLog:    NewEventLogClient(cfg),
-		InviteToken: NewInviteTokenClient(cfg),
-		Run:         NewRunClient(cfg),
-		RunStep:     NewRunStepClient(cfg),
-		User:        NewUserClient(cfg),
+		ctx:              ctx,
+		config:           cfg,
+		ConcurrencyToken: NewConcurrencyTokenClient(cfg),
+		EventLog:         NewEventLogClient(cfg),
+		InviteToken:      NewInviteTokenClient(cfg),
+		Run:              NewRunClient(cfg),
+		RunStep:          NewRunStepClient(cfg),
+		User:             NewUserClient(cfg),
 	}, nil
 }
 
 // Debug returns a new debug-client. It's used to get verbose logging on specific operations.
 //
 //	client.Debug().
-//		EventLog.
+//		ConcurrencyToken.
 //		Query().
 //		Count(ctx)
 func (c *Client) Debug() *Client {
@@ -202,26 +208,28 @@ func (c *Client) Close() error {
 // Use adds the mutation hooks to all the entity clients.
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
-	c.EventLog.Use(hooks...)
-	c.InviteToken.Use(hooks...)
-	c.Run.Use(hooks...)
-	c.RunStep.Use(hooks...)
-	c.User.Use(hooks...)
+	for _, n := range []interface{ Use(...Hook) }{
+		c.ConcurrencyToken, c.EventLog, c.InviteToken, c.Run, c.RunStep, c.User,
+	} {
+		n.Use(hooks...)
+	}
 }
 
 // Intercept adds the query interceptors to all the entity clients.
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
-	c.EventLog.Intercept(interceptors...)
-	c.InviteToken.Intercept(interceptors...)
-	c.Run.Intercept(interceptors...)
-	c.RunStep.Intercept(interceptors...)
-	c.User.Intercept(interceptors...)
+	for _, n := range []interface{ Intercept(...Interceptor) }{
+		c.ConcurrencyToken, c.EventLog, c.InviteToken, c.Run, c.RunStep, c.User,
+	} {
+		n.Intercept(interceptors...)
+	}
 }
 
 // Mutate implements the ent.Mutator interface.
 func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 	switch m := m.(type) {
+	case *ConcurrencyTokenMutation:
+		return c.ConcurrencyToken.mutate(ctx, m)
 	case *EventLogMutation:
 		return c.EventLog.mutate(ctx, m)
 	case *InviteTokenMutation:
@@ -234,6 +242,139 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.User.mutate(ctx, m)
 	default:
 		return nil, fmt.Errorf("ent: unknown mutation type %T", m)
+	}
+}
+
+// ConcurrencyTokenClient is a client for the ConcurrencyToken schema.
+type ConcurrencyTokenClient struct {
+	config
+}
+
+// NewConcurrencyTokenClient returns a client for the ConcurrencyToken from the given config.
+func NewConcurrencyTokenClient(c config) *ConcurrencyTokenClient {
+	return &ConcurrencyTokenClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `concurrencytoken.Hooks(f(g(h())))`.
+func (c *ConcurrencyTokenClient) Use(hooks ...Hook) {
+	c.hooks.ConcurrencyToken = append(c.hooks.ConcurrencyToken, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `concurrencytoken.Intercept(f(g(h())))`.
+func (c *ConcurrencyTokenClient) Intercept(interceptors ...Interceptor) {
+	c.inters.ConcurrencyToken = append(c.inters.ConcurrencyToken, interceptors...)
+}
+
+// Create returns a builder for creating a ConcurrencyToken entity.
+func (c *ConcurrencyTokenClient) Create() *ConcurrencyTokenCreate {
+	mutation := newConcurrencyTokenMutation(c.config, OpCreate)
+	return &ConcurrencyTokenCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of ConcurrencyToken entities.
+func (c *ConcurrencyTokenClient) CreateBulk(builders ...*ConcurrencyTokenCreate) *ConcurrencyTokenCreateBulk {
+	return &ConcurrencyTokenCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ConcurrencyTokenClient) MapCreateBulk(slice any, setFunc func(*ConcurrencyTokenCreate, int)) *ConcurrencyTokenCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ConcurrencyTokenCreateBulk{err: fmt.Errorf("calling to ConcurrencyTokenClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ConcurrencyTokenCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ConcurrencyTokenCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for ConcurrencyToken.
+func (c *ConcurrencyTokenClient) Update() *ConcurrencyTokenUpdate {
+	mutation := newConcurrencyTokenMutation(c.config, OpUpdate)
+	return &ConcurrencyTokenUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ConcurrencyTokenClient) UpdateOne(ct *ConcurrencyToken) *ConcurrencyTokenUpdateOne {
+	mutation := newConcurrencyTokenMutation(c.config, OpUpdateOne, withConcurrencyToken(ct))
+	return &ConcurrencyTokenUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ConcurrencyTokenClient) UpdateOneID(id uuid.UUID) *ConcurrencyTokenUpdateOne {
+	mutation := newConcurrencyTokenMutation(c.config, OpUpdateOne, withConcurrencyTokenID(id))
+	return &ConcurrencyTokenUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for ConcurrencyToken.
+func (c *ConcurrencyTokenClient) Delete() *ConcurrencyTokenDelete {
+	mutation := newConcurrencyTokenMutation(c.config, OpDelete)
+	return &ConcurrencyTokenDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ConcurrencyTokenClient) DeleteOne(ct *ConcurrencyToken) *ConcurrencyTokenDeleteOne {
+	return c.DeleteOneID(ct.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ConcurrencyTokenClient) DeleteOneID(id uuid.UUID) *ConcurrencyTokenDeleteOne {
+	builder := c.Delete().Where(concurrencytoken.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ConcurrencyTokenDeleteOne{builder}
+}
+
+// Query returns a query builder for ConcurrencyToken.
+func (c *ConcurrencyTokenClient) Query() *ConcurrencyTokenQuery {
+	return &ConcurrencyTokenQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeConcurrencyToken},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a ConcurrencyToken entity by its id.
+func (c *ConcurrencyTokenClient) Get(ctx context.Context, id uuid.UUID) (*ConcurrencyToken, error) {
+	return c.Query().Where(concurrencytoken.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ConcurrencyTokenClient) GetX(ctx context.Context, id uuid.UUID) *ConcurrencyToken {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *ConcurrencyTokenClient) Hooks() []Hook {
+	return c.hooks.ConcurrencyToken
+}
+
+// Interceptors returns the client interceptors.
+func (c *ConcurrencyTokenClient) Interceptors() []Interceptor {
+	return c.inters.ConcurrencyToken
+}
+
+func (c *ConcurrencyTokenClient) mutate(ctx context.Context, m *ConcurrencyTokenMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ConcurrencyTokenCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ConcurrencyTokenUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ConcurrencyTokenUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ConcurrencyTokenDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown ConcurrencyToken mutation op: %q", m.Op())
 	}
 }
 
@@ -905,9 +1046,9 @@ func (c *UserClient) mutate(ctx context.Context, m *UserMutation) (Value, error)
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		EventLog, InviteToken, Run, RunStep, User []ent.Hook
+		ConcurrencyToken, EventLog, InviteToken, Run, RunStep, User []ent.Hook
 	}
 	inters struct {
-		EventLog, InviteToken, Run, RunStep, User []ent.Interceptor
+		ConcurrencyToken, EventLog, InviteToken, Run, RunStep, User []ent.Interceptor
 	}
 )

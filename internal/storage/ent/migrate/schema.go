@@ -9,6 +9,38 @@ import (
 )
 
 var (
+	// ConcurrencyTokensColumns holds the columns for the "concurrency_tokens" table.
+	ConcurrencyTokensColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "run_id", Type: field.TypeUUID},
+		{Name: "asset_name", Type: field.TypeString, Size: 256},
+		{Name: "resource_tag", Type: field.TypeString, Size: 128},
+		{Name: "weight", Type: field.TypeInt, Default: 1},
+		{Name: "acquired_at", Type: field.TypeTime},
+	}
+	// ConcurrencyTokensTable holds the schema information for the "concurrency_tokens" table.
+	ConcurrencyTokensTable = &schema.Table{
+		Name:       "concurrency_tokens",
+		Columns:    ConcurrencyTokensColumns,
+		PrimaryKey: []*schema.Column{ConcurrencyTokensColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "concurrencytoken_resource_tag",
+				Unique:  false,
+				Columns: []*schema.Column{ConcurrencyTokensColumns[3]},
+			},
+			{
+				Name:    "concurrencytoken_run_id",
+				Unique:  false,
+				Columns: []*schema.Column{ConcurrencyTokensColumns[1]},
+			},
+			{
+				Name:    "concurrencytoken_acquired_at",
+				Unique:  false,
+				Columns: []*schema.Column{ConcurrencyTokensColumns[5]},
+			},
+		},
+	}
 	// EventLogColumns holds the columns for the "event_log" table.
 	EventLogColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeUUID},
@@ -176,6 +208,7 @@ var (
 	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
+		ConcurrencyTokensTable,
 		EventLogTable,
 		InviteTokenTable,
 		RunsTable,
@@ -185,6 +218,9 @@ var (
 )
 
 func init() {
+	ConcurrencyTokensTable.Annotation = &entsql.Annotation{
+		Table: "concurrency_tokens",
+	}
 	EventLogTable.Annotation = &entsql.Annotation{
 		Table: "event_log",
 	}
