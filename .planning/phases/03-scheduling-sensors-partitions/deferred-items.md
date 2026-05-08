@@ -1,6 +1,6 @@
 # Phase 03 — Deferred Items (out-of-scope discoveries)
 
-## From plan 03-03 (priority-claim-and-load-test)
+## From plan 03-03 (priority-claim-and-load-test) — also independently confirmed by plan 03-05
 
 ### internal/runtime executor tests fail with "unsupported driver: pgx"
 
@@ -8,7 +8,7 @@
 
 **Symptom:** Six tests fail at the test fixture setup (line 101 of executor_test.go: `stent.Open("pgx", dsn)`) with `open ent: unsupported driver: "pgx"`.
 
-**Pre-existing:** Verified via `git stash` rewind — the failures occur on the parent commit `2f2df38af493af3bbecd1a3f1502c66af9ca1588` BEFORE this plan's signature change. Root cause is the ent storage driver registration: ent's storage layer expects `postgres` as the driver name even when `pgx/v5/stdlib` is registered as `pgx` in `database/sql`. Phase 2's `executor_test.go` was authored when the driver name was either `postgres` or both, and a subsequent driver-registration consolidation (or library upgrade) broke the binding without anyone noticing because the tests are gated behind `DATABASE_URL`.
+**Pre-existing:** Verified via `git stash` rewind — the failures occur on the parent commit `2f2df38af493af3bbecd1a3f1502c66af9ca1588` BEFORE this plan's signature change. Root cause is the ent storage driver registration: ent's storage layer expects `postgres` as the driver name even when `pgx/v5/stdlib` is registered as `pgx` in `database/sql`. Phase 2's `executor_test.go` was authored when the driver name was either `postgres` or both, and a subsequent driver-registration consolidation (or library upgrade) broke the binding without anyone noticing because the tests are gated behind `DATABASE_URL`. Plan 03-05 independently re-confirmed pre-existence on the same base commit.
 
 **Why deferred:** Out of plan 03-03's scope — the symptom predates this plan and would require either re-registering pgx as the `postgres` ent driver name in `internal/storage/storage.go` (touched by other plans) or rewriting the executor test fixtures to use the same `*sql.DB` path as the claim tests (which DO work with the `pgx` name). Plan 03-03's signature change does NOT introduce or worsen the failure — the failure manifests at fixture init, before any signature-change code path runs.
 
@@ -25,3 +25,5 @@
 - `TestExecutor_TopologicalOrder`
 - `TestExecutor_ConcurrencyTokenZeroCapacity`
 - `TestExecutor_HeartbeatTicks`
+
+**Recommended owner:** Phase 2 owner / executor maintainer.
