@@ -63,7 +63,7 @@ func (e Event) validate() error {
 		return fmt.Errorf("%w: type is required", ErrInvalidEvent)
 	}
 	known := false
-	for _, t := range AllPhase1Types() {
+	for _, t := range AllKnownTypes() {
 		if t == e.Type {
 			known = true
 			break

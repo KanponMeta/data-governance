@@ -20,56 +20,56 @@ type InviteTokenDelete struct {
 }
 
 // Where appends a list predicates to the InviteTokenDelete builder.
-func (_d *InviteTokenDelete) Where(ps ...predicate.InviteToken) *InviteTokenDelete {
-	_d.mutation.Where(ps...)
-	return _d
+func (itd *InviteTokenDelete) Where(ps ...predicate.InviteToken) *InviteTokenDelete {
+	itd.mutation.Where(ps...)
+	return itd
 }
 
 // Exec executes the deletion query and returns how many vertices were deleted.
-func (_d *InviteTokenDelete) Exec(ctx context.Context) (int, error) {
-	return withHooks(ctx, _d.sqlExec, _d.mutation, _d.hooks)
+func (itd *InviteTokenDelete) Exec(ctx context.Context) (int, error) {
+	return withHooks(ctx, itd.sqlExec, itd.mutation, itd.hooks)
 }
 
 // ExecX is like Exec, but panics if an error occurs.
-func (_d *InviteTokenDelete) ExecX(ctx context.Context) int {
-	n, err := _d.Exec(ctx)
+func (itd *InviteTokenDelete) ExecX(ctx context.Context) int {
+	n, err := itd.Exec(ctx)
 	if err != nil {
 		panic(err)
 	}
 	return n
 }
 
-func (_d *InviteTokenDelete) sqlExec(ctx context.Context) (int, error) {
+func (itd *InviteTokenDelete) sqlExec(ctx context.Context) (int, error) {
 	_spec := sqlgraph.NewDeleteSpec(invitetoken.Table, sqlgraph.NewFieldSpec(invitetoken.FieldID, field.TypeUUID))
-	if ps := _d.mutation.predicates; len(ps) > 0 {
+	if ps := itd.mutation.predicates; len(ps) > 0 {
 		_spec.Predicate = func(selector *sql.Selector) {
 			for i := range ps {
 				ps[i](selector)
 			}
 		}
 	}
-	affected, err := sqlgraph.DeleteNodes(ctx, _d.driver, _spec)
+	affected, err := sqlgraph.DeleteNodes(ctx, itd.driver, _spec)
 	if err != nil && sqlgraph.IsConstraintError(err) {
 		err = &ConstraintError{msg: err.Error(), wrap: err}
 	}
-	_d.mutation.done = true
+	itd.mutation.done = true
 	return affected, err
 }
 
 // InviteTokenDeleteOne is the builder for deleting a single InviteToken entity.
 type InviteTokenDeleteOne struct {
-	_d *InviteTokenDelete
+	itd *InviteTokenDelete
 }
 
 // Where appends a list predicates to the InviteTokenDelete builder.
-func (_d *InviteTokenDeleteOne) Where(ps ...predicate.InviteToken) *InviteTokenDeleteOne {
-	_d._d.mutation.Where(ps...)
-	return _d
+func (itdo *InviteTokenDeleteOne) Where(ps ...predicate.InviteToken) *InviteTokenDeleteOne {
+	itdo.itd.mutation.Where(ps...)
+	return itdo
 }
 
 // Exec executes the deletion query.
-func (_d *InviteTokenDeleteOne) Exec(ctx context.Context) error {
-	n, err := _d._d.Exec(ctx)
+func (itdo *InviteTokenDeleteOne) Exec(ctx context.Context) error {
+	n, err := itdo.itd.Exec(ctx)
 	switch {
 	case err != nil:
 		return err
@@ -81,8 +81,8 @@ func (_d *InviteTokenDeleteOne) Exec(ctx context.Context) error {
 }
 
 // ExecX is like Exec, but panics if an error occurs.
-func (_d *InviteTokenDeleteOne) ExecX(ctx context.Context) {
-	if err := _d.Exec(ctx); err != nil {
+func (itdo *InviteTokenDeleteOne) ExecX(ctx context.Context) {
+	if err := itdo.Exec(ctx); err != nil {
 		panic(err)
 	}
 }

@@ -22,24 +22,24 @@ type EventLogUpdate struct {
 }
 
 // Where appends a list predicates to the EventLogUpdate builder.
-func (_u *EventLogUpdate) Where(ps ...predicate.EventLog) *EventLogUpdate {
-	_u.mutation.Where(ps...)
-	return _u
+func (elu *EventLogUpdate) Where(ps ...predicate.EventLog) *EventLogUpdate {
+	elu.mutation.Where(ps...)
+	return elu
 }
 
 // Mutation returns the EventLogMutation object of the builder.
-func (_u *EventLogUpdate) Mutation() *EventLogMutation {
-	return _u.mutation
+func (elu *EventLogUpdate) Mutation() *EventLogMutation {
+	return elu.mutation
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
-func (_u *EventLogUpdate) Save(ctx context.Context) (int, error) {
-	return withHooks(ctx, _u.sqlSave, _u.mutation, _u.hooks)
+func (elu *EventLogUpdate) Save(ctx context.Context) (int, error) {
+	return withHooks(ctx, elu.sqlSave, elu.mutation, elu.hooks)
 }
 
 // SaveX is like Save, but panics if an error occurs.
-func (_u *EventLogUpdate) SaveX(ctx context.Context) int {
-	affected, err := _u.Save(ctx)
+func (elu *EventLogUpdate) SaveX(ctx context.Context) int {
+	affected, err := elu.Save(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -47,34 +47,34 @@ func (_u *EventLogUpdate) SaveX(ctx context.Context) int {
 }
 
 // Exec executes the query.
-func (_u *EventLogUpdate) Exec(ctx context.Context) error {
-	_, err := _u.Save(ctx)
+func (elu *EventLogUpdate) Exec(ctx context.Context) error {
+	_, err := elu.Save(ctx)
 	return err
 }
 
 // ExecX is like Exec, but panics if an error occurs.
-func (_u *EventLogUpdate) ExecX(ctx context.Context) {
-	if err := _u.Exec(ctx); err != nil {
+func (elu *EventLogUpdate) ExecX(ctx context.Context) {
+	if err := elu.Exec(ctx); err != nil {
 		panic(err)
 	}
 }
 
-func (_u *EventLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
+func (elu *EventLogUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	_spec := sqlgraph.NewUpdateSpec(eventlog.Table, eventlog.Columns, sqlgraph.NewFieldSpec(eventlog.FieldID, field.TypeUUID))
-	if ps := _u.mutation.predicates; len(ps) > 0 {
+	if ps := elu.mutation.predicates; len(ps) > 0 {
 		_spec.Predicate = func(selector *sql.Selector) {
 			for i := range ps {
 				ps[i](selector)
 			}
 		}
 	}
-	if _u.mutation.ActorIDCleared() {
+	if elu.mutation.ActorIDCleared() {
 		_spec.ClearField(eventlog.FieldActorID, field.TypeUUID)
 	}
-	if _u.mutation.PayloadCleared() {
+	if elu.mutation.PayloadCleared() {
 		_spec.ClearField(eventlog.FieldPayload, field.TypeJSON)
 	}
-	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
+	if n, err = sqlgraph.UpdateNodes(ctx, elu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{eventlog.Label}
 		} else if sqlgraph.IsConstraintError(err) {
@@ -82,8 +82,8 @@ func (_u *EventLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 		}
 		return 0, err
 	}
-	_u.mutation.done = true
-	return _node, nil
+	elu.mutation.done = true
+	return n, nil
 }
 
 // EventLogUpdateOne is the builder for updating a single EventLog entity.
@@ -95,31 +95,31 @@ type EventLogUpdateOne struct {
 }
 
 // Mutation returns the EventLogMutation object of the builder.
-func (_u *EventLogUpdateOne) Mutation() *EventLogMutation {
-	return _u.mutation
+func (eluo *EventLogUpdateOne) Mutation() *EventLogMutation {
+	return eluo.mutation
 }
 
 // Where appends a list predicates to the EventLogUpdate builder.
-func (_u *EventLogUpdateOne) Where(ps ...predicate.EventLog) *EventLogUpdateOne {
-	_u.mutation.Where(ps...)
-	return _u
+func (eluo *EventLogUpdateOne) Where(ps ...predicate.EventLog) *EventLogUpdateOne {
+	eluo.mutation.Where(ps...)
+	return eluo
 }
 
 // Select allows selecting one or more fields (columns) of the returned entity.
 // The default is selecting all fields defined in the entity schema.
-func (_u *EventLogUpdateOne) Select(field string, fields ...string) *EventLogUpdateOne {
-	_u.fields = append([]string{field}, fields...)
-	return _u
+func (eluo *EventLogUpdateOne) Select(field string, fields ...string) *EventLogUpdateOne {
+	eluo.fields = append([]string{field}, fields...)
+	return eluo
 }
 
 // Save executes the query and returns the updated EventLog entity.
-func (_u *EventLogUpdateOne) Save(ctx context.Context) (*EventLog, error) {
-	return withHooks(ctx, _u.sqlSave, _u.mutation, _u.hooks)
+func (eluo *EventLogUpdateOne) Save(ctx context.Context) (*EventLog, error) {
+	return withHooks(ctx, eluo.sqlSave, eluo.mutation, eluo.hooks)
 }
 
 // SaveX is like Save, but panics if an error occurs.
-func (_u *EventLogUpdateOne) SaveX(ctx context.Context) *EventLog {
-	node, err := _u.Save(ctx)
+func (eluo *EventLogUpdateOne) SaveX(ctx context.Context) *EventLog {
+	node, err := eluo.Save(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -127,26 +127,26 @@ func (_u *EventLogUpdateOne) SaveX(ctx context.Context) *EventLog {
 }
 
 // Exec executes the query on the entity.
-func (_u *EventLogUpdateOne) Exec(ctx context.Context) error {
-	_, err := _u.Save(ctx)
+func (eluo *EventLogUpdateOne) Exec(ctx context.Context) error {
+	_, err := eluo.Save(ctx)
 	return err
 }
 
 // ExecX is like Exec, but panics if an error occurs.
-func (_u *EventLogUpdateOne) ExecX(ctx context.Context) {
-	if err := _u.Exec(ctx); err != nil {
+func (eluo *EventLogUpdateOne) ExecX(ctx context.Context) {
+	if err := eluo.Exec(ctx); err != nil {
 		panic(err)
 	}
 }
 
-func (_u *EventLogUpdateOne) sqlSave(ctx context.Context) (_node *EventLog, err error) {
+func (eluo *EventLogUpdateOne) sqlSave(ctx context.Context) (_node *EventLog, err error) {
 	_spec := sqlgraph.NewUpdateSpec(eventlog.Table, eventlog.Columns, sqlgraph.NewFieldSpec(eventlog.FieldID, field.TypeUUID))
-	id, ok := _u.mutation.ID()
+	id, ok := eluo.mutation.ID()
 	if !ok {
 		return nil, &ValidationError{Name: "id", err: errors.New(`ent: missing "EventLog.id" for update`)}
 	}
 	_spec.Node.ID.Value = id
-	if fields := _u.fields; len(fields) > 0 {
+	if fields := eluo.fields; len(fields) > 0 {
 		_spec.Node.Columns = make([]string, 0, len(fields))
 		_spec.Node.Columns = append(_spec.Node.Columns, eventlog.FieldID)
 		for _, f := range fields {
@@ -158,23 +158,23 @@ func (_u *EventLogUpdateOne) sqlSave(ctx context.Context) (_node *EventLog, err 
 			}
 		}
 	}
-	if ps := _u.mutation.predicates; len(ps) > 0 {
+	if ps := eluo.mutation.predicates; len(ps) > 0 {
 		_spec.Predicate = func(selector *sql.Selector) {
 			for i := range ps {
 				ps[i](selector)
 			}
 		}
 	}
-	if _u.mutation.ActorIDCleared() {
+	if eluo.mutation.ActorIDCleared() {
 		_spec.ClearField(eventlog.FieldActorID, field.TypeUUID)
 	}
-	if _u.mutation.PayloadCleared() {
+	if eluo.mutation.PayloadCleared() {
 		_spec.ClearField(eventlog.FieldPayload, field.TypeJSON)
 	}
-	_node = &EventLog{config: _u.config}
+	_node = &EventLog{config: eluo.config}
 	_spec.Assign = _node.assignValues
 	_spec.ScanValues = _node.scanValues
-	if err = sqlgraph.UpdateNode(ctx, _u.driver, _spec); err != nil {
+	if err = sqlgraph.UpdateNode(ctx, eluo.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{eventlog.Label}
 		} else if sqlgraph.IsConstraintError(err) {
@@ -182,6 +182,6 @@ func (_u *EventLogUpdateOne) sqlSave(ctx context.Context) (_node *EventLog, err 
 		}
 		return nil, err
 	}
-	_u.mutation.done = true
+	eluo.mutation.done = true
 	return _node, nil
 }

@@ -58,7 +58,7 @@ func (*EventLog) scanValues(columns []string) ([]any, error) {
 
 // assignValues assigns the values that were returned from sql.Rows (after scanning)
 // to the EventLog fields.
-func (_m *EventLog) assignValues(columns []string, values []any) error {
+func (el *EventLog) assignValues(columns []string, values []any) error {
 	if m, n := len(values), len(columns); m < n {
 		return fmt.Errorf("mismatch number of scan values: %d != %d", m, n)
 	}
@@ -68,49 +68,49 @@ func (_m *EventLog) assignValues(columns []string, values []any) error {
 			if value, ok := values[i].(*uuid.UUID); !ok {
 				return fmt.Errorf("unexpected type %T for field id", values[i])
 			} else if value != nil {
-				_m.ID = *value
+				el.ID = *value
 			}
 		case eventlog.FieldOccurredAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field occurred_at", values[i])
 			} else if value.Valid {
-				_m.OccurredAt = value.Time
+				el.OccurredAt = value.Time
 			}
 		case eventlog.FieldEventType:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field event_type", values[i])
 			} else if value.Valid {
-				_m.EventType = value.String
+				el.EventType = value.String
 			}
 		case eventlog.FieldActorID:
 			if value, ok := values[i].(*sql.NullScanner); !ok {
 				return fmt.Errorf("unexpected type %T for field actor_id", values[i])
 			} else if value.Valid {
-				_m.ActorID = new(uuid.UUID)
-				*_m.ActorID = *value.S.(*uuid.UUID)
+				el.ActorID = new(uuid.UUID)
+				*el.ActorID = *value.S.(*uuid.UUID)
 			}
 		case eventlog.FieldResourceType:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field resource_type", values[i])
 			} else if value.Valid {
-				_m.ResourceType = value.String
+				el.ResourceType = value.String
 			}
 		case eventlog.FieldResourceID:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field resource_id", values[i])
 			} else if value.Valid {
-				_m.ResourceID = value.String
+				el.ResourceID = value.String
 			}
 		case eventlog.FieldPayload:
 			if value, ok := values[i].(*[]byte); !ok {
 				return fmt.Errorf("unexpected type %T for field payload", values[i])
 			} else if value != nil && len(*value) > 0 {
-				if err := json.Unmarshal(*value, &_m.Payload); err != nil {
+				if err := json.Unmarshal(*value, &el.Payload); err != nil {
 					return fmt.Errorf("unmarshal field payload: %w", err)
 				}
 			}
 		default:
-			_m.selectValues.Set(columns[i], values[i])
+			el.selectValues.Set(columns[i], values[i])
 		}
 	}
 	return nil
@@ -118,52 +118,52 @@ func (_m *EventLog) assignValues(columns []string, values []any) error {
 
 // Value returns the ent.Value that was dynamically selected and assigned to the EventLog.
 // This includes values selected through modifiers, order, etc.
-func (_m *EventLog) Value(name string) (ent.Value, error) {
-	return _m.selectValues.Get(name)
+func (el *EventLog) Value(name string) (ent.Value, error) {
+	return el.selectValues.Get(name)
 }
 
 // Update returns a builder for updating this EventLog.
 // Note that you need to call EventLog.Unwrap() before calling this method if this EventLog
 // was returned from a transaction, and the transaction was committed or rolled back.
-func (_m *EventLog) Update() *EventLogUpdateOne {
-	return NewEventLogClient(_m.config).UpdateOne(_m)
+func (el *EventLog) Update() *EventLogUpdateOne {
+	return NewEventLogClient(el.config).UpdateOne(el)
 }
 
 // Unwrap unwraps the EventLog entity that was returned from a transaction after it was closed,
 // so that all future queries will be executed through the driver which created the transaction.
-func (_m *EventLog) Unwrap() *EventLog {
-	_tx, ok := _m.config.driver.(*txDriver)
+func (el *EventLog) Unwrap() *EventLog {
+	_tx, ok := el.config.driver.(*txDriver)
 	if !ok {
 		panic("ent: EventLog is not a transactional entity")
 	}
-	_m.config.driver = _tx.drv
-	return _m
+	el.config.driver = _tx.drv
+	return el
 }
 
 // String implements the fmt.Stringer.
-func (_m *EventLog) String() string {
+func (el *EventLog) String() string {
 	var builder strings.Builder
 	builder.WriteString("EventLog(")
-	builder.WriteString(fmt.Sprintf("id=%v, ", _m.ID))
+	builder.WriteString(fmt.Sprintf("id=%v, ", el.ID))
 	builder.WriteString("occurred_at=")
-	builder.WriteString(_m.OccurredAt.Format(time.ANSIC))
+	builder.WriteString(el.OccurredAt.Format(time.ANSIC))
 	builder.WriteString(", ")
 	builder.WriteString("event_type=")
-	builder.WriteString(_m.EventType)
+	builder.WriteString(el.EventType)
 	builder.WriteString(", ")
-	if v := _m.ActorID; v != nil {
+	if v := el.ActorID; v != nil {
 		builder.WriteString("actor_id=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")
 	builder.WriteString("resource_type=")
-	builder.WriteString(_m.ResourceType)
+	builder.WriteString(el.ResourceType)
 	builder.WriteString(", ")
 	builder.WriteString("resource_id=")
-	builder.WriteString(_m.ResourceID)
+	builder.WriteString(el.ResourceID)
 	builder.WriteString(", ")
 	builder.WriteString("payload=")
-	builder.WriteString(fmt.Sprintf("%v", _m.Payload))
+	builder.WriteString(fmt.Sprintf("%v", el.Payload))
 	builder.WriteByte(')')
 	return builder.String()
 }

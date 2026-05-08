@@ -53,7 +53,7 @@ func (*InviteToken) scanValues(columns []string) ([]any, error) {
 
 // assignValues assigns the values that were returned from sql.Rows (after scanning)
 // to the InviteToken fields.
-func (_m *InviteToken) assignValues(columns []string, values []any) error {
+func (it *InviteToken) assignValues(columns []string, values []any) error {
 	if m, n := len(values), len(columns); m < n {
 		return fmt.Errorf("mismatch number of scan values: %d != %d", m, n)
 	}
@@ -63,47 +63,47 @@ func (_m *InviteToken) assignValues(columns []string, values []any) error {
 			if value, ok := values[i].(*uuid.UUID); !ok {
 				return fmt.Errorf("unexpected type %T for field id", values[i])
 			} else if value != nil {
-				_m.ID = *value
+				it.ID = *value
 			}
 		case invitetoken.FieldTokenHash:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field token_hash", values[i])
 			} else if value.Valid {
-				_m.TokenHash = value.String
+				it.TokenHash = value.String
 			}
 		case invitetoken.FieldEmail:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field email", values[i])
 			} else if value.Valid {
-				_m.Email = value.String
+				it.Email = value.String
 			}
 		case invitetoken.FieldInvitedBy:
 			if value, ok := values[i].(*uuid.UUID); !ok {
 				return fmt.Errorf("unexpected type %T for field invited_by", values[i])
 			} else if value != nil {
-				_m.InvitedBy = *value
+				it.InvitedBy = *value
 			}
 		case invitetoken.FieldExpiresAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field expires_at", values[i])
 			} else if value.Valid {
-				_m.ExpiresAt = value.Time
+				it.ExpiresAt = value.Time
 			}
 		case invitetoken.FieldAcceptedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field accepted_at", values[i])
 			} else if value.Valid {
-				_m.AcceptedAt = new(time.Time)
-				*_m.AcceptedAt = value.Time
+				it.AcceptedAt = new(time.Time)
+				*it.AcceptedAt = value.Time
 			}
 		case invitetoken.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field created_at", values[i])
 			} else if value.Valid {
-				_m.CreatedAt = value.Time
+				it.CreatedAt = value.Time
 			}
 		default:
-			_m.selectValues.Set(columns[i], values[i])
+			it.selectValues.Set(columns[i], values[i])
 		}
 	}
 	return nil
@@ -111,51 +111,51 @@ func (_m *InviteToken) assignValues(columns []string, values []any) error {
 
 // Value returns the ent.Value that was dynamically selected and assigned to the InviteToken.
 // This includes values selected through modifiers, order, etc.
-func (_m *InviteToken) Value(name string) (ent.Value, error) {
-	return _m.selectValues.Get(name)
+func (it *InviteToken) Value(name string) (ent.Value, error) {
+	return it.selectValues.Get(name)
 }
 
 // Update returns a builder for updating this InviteToken.
 // Note that you need to call InviteToken.Unwrap() before calling this method if this InviteToken
 // was returned from a transaction, and the transaction was committed or rolled back.
-func (_m *InviteToken) Update() *InviteTokenUpdateOne {
-	return NewInviteTokenClient(_m.config).UpdateOne(_m)
+func (it *InviteToken) Update() *InviteTokenUpdateOne {
+	return NewInviteTokenClient(it.config).UpdateOne(it)
 }
 
 // Unwrap unwraps the InviteToken entity that was returned from a transaction after it was closed,
 // so that all future queries will be executed through the driver which created the transaction.
-func (_m *InviteToken) Unwrap() *InviteToken {
-	_tx, ok := _m.config.driver.(*txDriver)
+func (it *InviteToken) Unwrap() *InviteToken {
+	_tx, ok := it.config.driver.(*txDriver)
 	if !ok {
 		panic("ent: InviteToken is not a transactional entity")
 	}
-	_m.config.driver = _tx.drv
-	return _m
+	it.config.driver = _tx.drv
+	return it
 }
 
 // String implements the fmt.Stringer.
-func (_m *InviteToken) String() string {
+func (it *InviteToken) String() string {
 	var builder strings.Builder
 	builder.WriteString("InviteToken(")
-	builder.WriteString(fmt.Sprintf("id=%v, ", _m.ID))
+	builder.WriteString(fmt.Sprintf("id=%v, ", it.ID))
 	builder.WriteString("token_hash=<sensitive>")
 	builder.WriteString(", ")
 	builder.WriteString("email=")
-	builder.WriteString(_m.Email)
+	builder.WriteString(it.Email)
 	builder.WriteString(", ")
 	builder.WriteString("invited_by=")
-	builder.WriteString(fmt.Sprintf("%v", _m.InvitedBy))
+	builder.WriteString(fmt.Sprintf("%v", it.InvitedBy))
 	builder.WriteString(", ")
 	builder.WriteString("expires_at=")
-	builder.WriteString(_m.ExpiresAt.Format(time.ANSIC))
+	builder.WriteString(it.ExpiresAt.Format(time.ANSIC))
 	builder.WriteString(", ")
-	if v := _m.AcceptedAt; v != nil {
+	if v := it.AcceptedAt; v != nil {
 		builder.WriteString("accepted_at=")
 		builder.WriteString(v.Format(time.ANSIC))
 	}
 	builder.WriteString(", ")
 	builder.WriteString("created_at=")
-	builder.WriteString(_m.CreatedAt.Format(time.ANSIC))
+	builder.WriteString(it.CreatedAt.Format(time.ANSIC))
 	builder.WriteByte(')')
 	return builder.String()
 }
