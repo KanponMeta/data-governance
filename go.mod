@@ -8,6 +8,7 @@ require (
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
+	github.com/heimdalr/dag v1.5.1
 	github.com/jackc/pgx/v5 v5.9.1
 	github.com/prometheus/client_golang v1.19.1
 	github.com/stretchr/testify v1.11.1
@@ -24,10 +25,8 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/go-openapi/inflect v0.19.0 // indirect
-	github.com/go-test/deep v1.1.0 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/hashicorp/hcl/v2 v2.13.0 // indirect
-	github.com/heimdalr/dag v1.5.1 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
@@ -37,18 +36,8 @@ require (
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.55.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
-	github.com/riverqueue/river v0.35.0 // indirect
-	github.com/riverqueue/river/riverdriver v0.35.0 // indirect
-	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.35.0 // indirect
-	github.com/riverqueue/river/rivershared v0.35.0 // indirect
-	github.com/riverqueue/river/rivertype v0.35.0 // indirect
 	github.com/rogpeppe/go-internal v1.12.0 // indirect
-	github.com/tidwall/gjson v1.18.0 // indirect
-	github.com/tidwall/match v1.2.0 // indirect
-	github.com/tidwall/pretty v1.2.1 // indirect
-	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/zclconf/go-cty v1.8.0 // indirect
-	go.uber.org/goleak v1.3.0 // indirect
 	golang.org/x/mod v0.35.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.28.0 // indirect
