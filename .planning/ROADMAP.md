@@ -62,7 +62,15 @@ Plans:
   2. 带事件传感器的资产在配置的外部条件变为真时于传感器轮询间隔内触发物化
   3. 基于时间的分区资产可对历史日期范围回填，每个分区作为独立运行执行并有各自的事件日志条目
   4. 类别分区资产按类别独立运行，一个类别失败不阻塞其他类别
-**计划**：待定
+**Plans:** 7 plans
+Plans:
+- [ ] 03-01-PLAN.md — Phase 3 schema migration + ent entities + event_type extensions (Wave 1)
+- [ ] 03-02-PLAN.md — Asset DSL extensions (.Schedule/.Sensor/.Partitions) + AssetIO.PartitionKey + partition keygen (Wave 1)
+- [ ] 03-03-PLAN.md — Priority-aware claim ORDER BY + ClaimedRun struct extension + 1000-backfill+50-normal load test (Wave 2)
+- [ ] 03-04-PLAN.md — Scheduler tick loop (schedules table fire + missed-window LatestOnly + partition unique constraint test) (Wave 2)
+- [ ] 03-05-PLAN.md — Sensor evaluator (safe Sense + RunKey/cooldown dedup + auto-disable) (Wave 2)
+- [ ] 03-06-PLAN.md — ./platform scheduler subcommand (wires schedule + sensor daemons + graceful shutdown) (Wave 3)
+- [ ] 03-07-PLAN.md — ./platform backfill CLI (submission + status + max-partitions guard + per-partition independence test) (Wave 4)
 **UI 提示**：否
 
 ### Phase 4: 血缘与 Schema
