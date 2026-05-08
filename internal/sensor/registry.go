@@ -36,34 +36,49 @@ func UpsertSensors(ctx context.Context, store storage.Storage, reg *asset.Defini
 
 // upsertOneSensor SELECTs the existing row (if any), UPDATEs MinInterval when
 // changed, otherwise INSERTs a fresh row with default zero values.
+// Uses a SERIALIZABLE transaction to prevent the TOCTOU race where two
+// replicas both SELECT "not found" and both INSERT — one will abort with a
+// serialisation failure that the caller (UpsertSensors) can retry.
 func upsertOneSensor(ctx context.Context, db *sql.DB, assetName string, spec asset.SensorSpec) error {
 	minIntervalSec := int64(spec.MinInterval.Seconds())
 	if minIntervalSec <= 0 {
 		minIntervalSec = int64(DefaultMinInterval.Seconds())
 	}
 
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return fmt.Errorf("sensor.upsert: begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	const selectSQL = `SELECT id, min_interval_seconds FROM sensors WHERE asset_name=$1 AND sensor_name=$2 LIMIT 1`
 	var (
 		id             string
 		existingMinIvl int64
 	)
-	err := db.QueryRowContext(ctx, selectSQL, assetName, spec.Name).Scan(&id, &existingMinIvl)
+	err = tx.QueryRowContext(ctx, selectSQL, assetName, spec.Name).Scan(&id, &existingMinIvl)
 	if err == nil {
 		if existingMinIvl == minIntervalSec {
-			return nil // unchanged
+			return tx.Commit() // unchanged
 		}
 		const updateSQL = `UPDATE sensors SET min_interval_seconds=$1, updated_at=NOW() WHERE id=$2`
-		_, err = db.ExecContext(ctx, updateSQL, minIntervalSec, id)
-		return err
+		_, err = tx.ExecContext(ctx, updateSQL, minIntervalSec, id)
+		if err != nil {
+			return fmt.Errorf("sensor.upsert: update: %w", err)
+		}
+		return tx.Commit()
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
-		return err
+		return fmt.Errorf("sensor.upsert: select: %w", err)
 	}
 
 	const insertSQL = `
 		INSERT INTO sensors (id, asset_name, sensor_name, min_interval_seconds, consecutive_failures, created_at, updated_at)
 		VALUES (gen_random_uuid(), $1, $2, $3, 0, NOW(), NOW())
 	`
-	_, err = db.ExecContext(ctx, insertSQL, assetName, spec.Name, minIntervalSec)
-	return err
+	_, err = tx.ExecContext(ctx, insertSQL, assetName, spec.Name, minIntervalSec)
+	if err != nil {
+		return fmt.Errorf("sensor.upsert: insert: %w", err)
+	}
+	return tx.Commit()
 }

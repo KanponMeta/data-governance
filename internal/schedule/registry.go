@@ -41,15 +41,24 @@ func UpsertSchedules(ctx context.Context, store storage.Storage, reg *asset.Defi
 		}
 		nextFire := sched.Next(time.Now().UTC())
 
-		// SELECT-then-INSERT/UPDATE pattern (no ON CONFLICT) — schedules.asset_name
-		// has a non-unique index from plan 03-01, not a unique constraint, so
-		// ON CONFLICT (asset_name) cannot be used without a schema change.
+		// SERIALIZABLE isolation prevents the TOCTOU race between two replicas
+		// both SELECTing "not found" and both INSERTing. One transaction will
+		// abort with a serialisation failure (the reviewer can retry).
+		tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+		if err != nil {
+			return fmt.Errorf("schedule.upsert: begin tx for %q: %w", name, err)
+		}
+		defer func() { _ = tx.Rollback() }()
+
 		const selectSQL = `SELECT id, cron_expr FROM schedules WHERE asset_name = $1 LIMIT 1`
 		var existingID, existingCron string
-		err = db.QueryRowContext(ctx, selectSQL, name).Scan(&existingID, &existingCron)
+		err = tx.QueryRowContext(ctx, selectSQL, name).Scan(&existingID, &existingCron)
 		switch {
 		case err == nil:
 			if existingCron == sp.CronExpr {
+				if err := tx.Commit(); err != nil {
+					return fmt.Errorf("schedule.upsert: commit (unchanged) for %q: %w", name, err)
+				}
 				continue // unchanged — no UPDATE needed
 			}
 			const updateSQL = `
@@ -57,7 +66,7 @@ func UpsertSchedules(ctx context.Context, store storage.Storage, reg *asset.Defi
 				   SET cron_expr = $1, next_fire_at = $2, updated_at = NOW()
 				 WHERE id = $3::uuid
 			`
-			if _, err := db.ExecContext(ctx, updateSQL, sp.CronExpr, nextFire, existingID); err != nil {
+			if _, err := tx.ExecContext(ctx, updateSQL, sp.CronExpr, nextFire, existingID); err != nil {
 				return fmt.Errorf("schedule.upsert: update %q: %w", name, err)
 			}
 		case errors.Is(err, sql.ErrNoRows):
@@ -65,11 +74,14 @@ func UpsertSchedules(ctx context.Context, store storage.Storage, reg *asset.Defi
 				INSERT INTO schedules (id, asset_name, cron_expr, next_fire_at, created_at, updated_at)
 				VALUES (gen_random_uuid(), $1, $2, $3, NOW(), NOW())
 			`
-			if _, err := db.ExecContext(ctx, insertSQL, name, sp.CronExpr, nextFire); err != nil {
+			if _, err := tx.ExecContext(ctx, insertSQL, name, sp.CronExpr, nextFire); err != nil {
 				return fmt.Errorf("schedule.upsert: insert %q: %w", name, err)
 			}
 		default:
 			return fmt.Errorf("schedule.upsert: select existing for %q: %w", name, err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("schedule.upsert: commit for %q: %w", name, err)
 		}
 	}
 	return nil
