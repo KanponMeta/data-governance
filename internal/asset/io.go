@@ -10,6 +10,9 @@ import (
 // AssetIO is the user-facing IO contract (D-04). User Materialize functions call
 // io.Read(upstreamName) to read upstream rows and io.Write(rows) to write the
 // asset's own rows — connector resolution and pooling live behind this interface.
+//
+// Phase 3 adds PartitionKey() — populated from runs.partition_key (D-09, D-10).
+// Returns "" for non-partitioned runs.
 type AssetIO interface {
 	// Read reads the rows of the named upstream asset using its bound connector.
 	// Returns ErrUnknownUpstream if the upstream is not declared in the asset's Upstreams().
@@ -18,6 +21,12 @@ type AssetIO interface {
 	// Write writes rows to the asset's own connector target.
 	// Returns the connector-reported RowsWritten count.
 	Write(ctx context.Context, rows []connector.Row) (int64, error)
+
+	// PartitionKey returns the partition key for the currently-executing run (D-09, D-10).
+	// Returns "" for non-partitioned runs (runs.partition_key IS NULL). Future Phase 4
+	// lineage will use this to index per-partition reads/writes; in Phase 3 it is read-only
+	// metadata for user Materialize functions.
+	PartitionKey() string
 }
 
 // ErrUnknownUpstream is returned by AssetIO.Read when the upstream name
@@ -33,13 +42,16 @@ type ConnectorResolver interface {
 
 // NewAssetIO constructs the runtime AssetIO for an asset run. The DAG executor
 // (plan 02-02) builds one AssetIO per step and passes it to MaterializeFunc.
-func NewAssetIO(self *Asset, resolver ConnectorResolver) AssetIO {
-	return &assetIO{self: self, resolver: resolver}
+// partitionKey is the value of runs.partition_key for the current run (D-10);
+// pass "" for non-partitioned assets.
+func NewAssetIO(self *Asset, resolver ConnectorResolver, partitionKey string) AssetIO {
+	return &assetIO{self: self, resolver: resolver, partitionKey: partitionKey}
 }
 
 type assetIO struct {
-	self     *Asset
-	resolver ConnectorResolver
+	self         *Asset
+	resolver     ConnectorResolver
+	partitionKey string
 }
 
 // Read enforces that the user reads only declared upstreams (catches typos at
@@ -78,3 +90,6 @@ func (io *assetIO) Write(ctx context.Context, rows []connector.Row) (int64, erro
 	}
 	return resp.RowsWritten, nil
 }
+
+// PartitionKey returns the partition key for the currently-executing run (D-09, D-10).
+func (io *assetIO) PartitionKey() string { return io.partitionKey }

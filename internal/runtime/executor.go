@@ -236,7 +236,7 @@ func (e *Executor) runStep(ctx context.Context, runID uuid.UUID, a *asset.Asset,
 		// Execute the user function with panic recovery + per-step timeout.
 		stepCtx, cancel := context.WithTimeout(ctx, e.deps.StepTimeout)
 		startedAt := time.Now().UTC()
-		io := asset.NewAssetIO(a, e) // executor implements asset.ConnectorResolver
+		io := asset.NewAssetIO(a, e, "") // executor implements asset.ConnectorResolver; partitionKey wired in plan 03-03+
 		result, runErr := safeMaterialize(stepCtx, a.MaterializeFn(), io)
 		cancel()
 		releaseAcquired()

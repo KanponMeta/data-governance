@@ -141,7 +141,7 @@ func TestAssetIO_Read_UndeclaredUpstream_Rejected(t *testing.T) {
 	resolver := resolverFunc(func(name string) (connector.Connector, connector.AssetRef, error) {
 		return &fakeConnectorForBuilder{}, connector.AssetRef{Identifier: name}, nil
 	})
-	io := NewAssetIO(a, resolver)
+	io := NewAssetIO(a, resolver, "")
 
 	// Declared upstream — should succeed
 	rows, readErr := io.Read(context.Background(), "raw")
@@ -161,7 +161,7 @@ func TestAssetIO_Write_DelegatesToConnector(t *testing.T) {
 	resolver := resolverFunc(func(name string) (connector.Connector, connector.AssetRef, error) {
 		return &fakeConnectorForBuilder{}, connector.AssetRef{Identifier: name}, nil
 	})
-	io := NewAssetIO(a, resolver)
+	io := NewAssetIO(a, resolver, "")
 
 	rows := []connector.Row{{Fields: map[string]any{"x": 1}}, {Fields: map[string]any{"x": 2}}}
 	written, err := io.Write(context.Background(), rows)
