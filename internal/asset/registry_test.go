@@ -74,6 +74,66 @@ func TestRegistry_Register_NilOrEmpty(t *testing.T) {
 	require.Error(t, err)
 }
 
+// ---- TestOnRegisterHook ----
+
+func TestRegistryOnRegisterHookCalled(t *testing.T) {
+	t.Cleanup(resetForTest)
+	r := NewDefinitionRegistry()
+
+	callCount := 0
+	r.OnRegister = func(a *Asset) error {
+		callCount++
+		return nil
+	}
+
+	a := &Asset{
+		name:          "hook_test_asset",
+		connectorName: "test-connector",
+		materializeFn: noopMaterialize,
+	}
+
+	err := r.Register(a)
+	require.NoError(t, err)
+	require.Equal(t, 1, callCount, "OnRegister hook should be called exactly once")
+}
+
+func TestRegistryOnRegisterHookErrorPreservesRegistration(t *testing.T) {
+	t.Cleanup(resetForTest)
+	r := NewDefinitionRegistry()
+
+	wantErr := errors.New("hook error")
+	r.OnRegister = func(a *Asset) error {
+		return wantErr
+	}
+
+	a := &Asset{
+		name:          "hook_error_asset",
+		connectorName: "test-connector",
+		materializeFn: noopMaterialize,
+	}
+
+	err := r.Register(a)
+	require.ErrorIs(t, err, wantErr, "OnRegister error should propagate to caller")
+
+	// Despite the hook error, in-memory registration happened.
+	got, getErr := r.Get("hook_error_asset")
+	require.NoError(t, getErr)
+	require.Equal(t, a, got, "in-memory registration should survive hook error")
+}
+
+func TestRegistryOnRegisterNilHookIsNoOp(t *testing.T) {
+	t.Cleanup(resetForTest)
+	r := NewDefinitionRegistry()
+	// OnRegister is nil by default — existing behaviour must be unchanged.
+
+	a := &Asset{
+		name:          "no_hook_asset",
+		connectorName: "test-connector",
+		materializeFn: noopMaterialize,
+	}
+	require.NoError(t, r.Register(a))
+}
+
 // ---- TestDefault: process-global singleton ----
 
 func TestDefault_ReturnsSameSingleton(t *testing.T) {

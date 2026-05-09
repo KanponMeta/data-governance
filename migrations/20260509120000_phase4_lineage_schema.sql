@@ -224,3 +224,21 @@ ALTER TABLE event_log ADD CONSTRAINT event_log_event_type_check
     'schema.capture_failed', 'schema.break_acknowledged',
     'metadata.updated'
   ));
+
+-- ===== Hand-managed: Active-edge uniqueness for ON CONFLICT upserts (D-15 soft-retire pattern) =====
+-- These UNIQUE partial indices provide the ON CONFLICT target used by
+-- lineage.Writer.SyncStaticEdges and lineage.Writer.CaptureRun in plan 04-04.
+-- They complement the hot-path partial indices added above (asset_edges_active_from, etc.)
+-- by providing a named constraint for the ON CONFLICT clause.
+DROP INDEX IF EXISTS asset_edges_active_unique;
+CREATE UNIQUE INDEX asset_edges_active_unique
+  ON asset_edges (from_asset, to_asset)
+  WHERE superseded_at IS NULL;
+
+-- column_edges uniqueness for the NULL partition_key case (most common).
+-- Partition-aware uniqueness (partition_key IS NOT NULL case) is a deferred concern
+-- (CONTEXT.md §D-13 open question); the NULL-key index covers Phase 4 requirements.
+DROP INDEX IF EXISTS column_edges_active_unique;
+CREATE UNIQUE INDEX column_edges_active_unique
+  ON column_edges (from_asset, from_column, to_asset, to_column)
+  WHERE superseded_at IS NULL AND partition_key IS NULL;

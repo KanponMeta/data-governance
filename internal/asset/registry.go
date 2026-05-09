@@ -24,6 +24,21 @@ var (
 type DefinitionRegistry struct {
 	mu     sync.RWMutex
 	assets map[string]*Asset
+
+	// OnRegister is an optional hook (Phase 4 D-01) invoked after an asset
+	// passes the duplicate check and is committed to the in-memory registry.
+	// The primary use case is wiring lineage.Writer.SyncStaticEdges so every
+	// registered asset has its static edges synced to asset_edges at startup.
+	//
+	// Hook contract:
+	//   - Called with the registry's write lock RELEASED (to avoid deadlock if
+	//     the hook itself calls Registry.Get).
+	//   - Failure returns the error to the caller of Register but does NOT undo
+	//     the in-memory registration (the hook is for DB sync; in-memory must
+	//     succeed so the executor can see the asset).
+	//   - nil means no-op — existing test code that constructs DefinitionRegistry
+	//     without this field is unaffected.
+	OnRegister func(*Asset) error
 }
 
 // NewDefinitionRegistry returns a new, empty DefinitionRegistry.
@@ -34,16 +49,27 @@ func NewDefinitionRegistry() *DefinitionRegistry {
 // Register adds an asset to the registry. Returns ErrAlreadyRegistered if
 // an asset with the same name has already been registered (no silent overwrite,
 // per T-02-01-01 threat mitigation).
+//
+// If OnRegister is set, it is called after the in-memory registration succeeds.
+// A hook failure returns the error to the caller but does NOT undo the in-memory
+// registration (callers such as production startup choose to abort; tests leave
+// OnRegister nil to skip DB writes entirely).
 func (r *DefinitionRegistry) Register(a *Asset) error {
 	if a == nil || a.name == "" {
 		return fmt.Errorf("asset: register requires non-empty Name")
 	}
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if _, exists := r.assets[a.name]; exists {
+		r.mu.Unlock()
 		return fmt.Errorf("%w: %q", ErrAlreadyRegistered, a.name)
 	}
 	r.assets[a.name] = a
+	hook := r.OnRegister // capture under lock; avoid holding lock during hook call
+	r.mu.Unlock()
+
+	if hook != nil {
+		return hook(a)
+	}
 	return nil
 }
 
