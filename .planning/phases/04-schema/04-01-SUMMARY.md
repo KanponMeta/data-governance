@@ -169,6 +169,20 @@ None — no external service configuration required. The `StartPhase4Container` 
 
 **Blocker:** `asset_edges` table does not exist yet (Wave 1 creates it). DAG seeder functions will return an error if called before Plan 04-02 completes; callers should use `t.Skip()` until Wave 1 migration is applied.
 
+## Self-Check: PASSED
+
+| Check | Status |
+|-------|--------|
+| `go build ./internal/lineage/lineagetest/... ./internal/schema/schematest/... ./internal/runtime/executortest/...` | PASS |
+| Smoke tests (`-run Smoke`) | PASS |
+| `StaticEdgeFixtures`, `ColumnLineageFixtures` functions exist | PASS |
+| `SeedDAG`, `SeedBranching`, `SeedCycle` functions exist | PASS |
+| `DiffPairs` function exists with 9 ChangeKind cases | PASS |
+| `StartPhase4Container`, `Reset` functions exist | PASS |
+| `migrations/20260509120000_phase4_lineage_schema.sql` exists | PASS |
+| `migrations/atlas.sum` updated with stub hash | PASS |
+| Commits 735772e and 3f921d1 exist in history | PASS |
+
 ---
 *Phase: 04-schema*
 *Completed: 2026-05-09*
