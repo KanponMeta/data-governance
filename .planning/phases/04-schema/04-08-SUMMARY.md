@@ -41,10 +41,15 @@ decisions:
 metrics:
   duration: "~45 min"
   completed_date: "2026-05-09"
-  tasks_completed: 3
+  tasks_completed: 4
   tasks_total: 4
   files_created: 10
   files_modified: 1
+human_uat:
+  - id: explain-analyze-capture
+    description: "Run scripts/explain_analyze_lineage.sh against a live PostgreSQL with Phase 4 migrations applied; paste the depth-10/depth-25/depth-10-upstream plans into 04-EXPLAIN.md and confirm Index Scan + runtime thresholds."
+    status: deferred
+    rationale: "Logical sign-off recorded 2026-05-09. Harness is built and ready; capture deferred until a dev DB is provisioned."
 ---
 
 # Phase 4 Plan 8: CLI Subcommands, E2E Suite, and EXPLAIN Harness Summary
@@ -58,8 +63,9 @@ CLI dispatch for `./platform impact`, `./platform schema`, `./platform lineage`;
 | 1 | CLI subcommands + main.go dispatch | `78038b7` | cmd/platform/impact.go, schema.go, lineage.go, impact_test.go, schema_test.go, lineage_test.go, main.go |
 | 2 | Phase 4 E2E test suite | `9dc49fc` | test/integration/phase4_e2e_test.go |
 | 3a | EXPLAIN ANALYZE harness artifacts | `ff4a7dc` | scripts/seed_lineage_10k.sql, scripts/explain_analyze_lineage.sh, .planning/phases/04-schema/04-EXPLAIN.md |
+| 3b | EXPLAIN ANALYZE checkpoint (logical sign-off, capture deferred) | `0ae75b9` | .planning/phases/04-schema/04-EXPLAIN.md |
 
-**Task 3b is a checkpoint:human-verify — awaiting human sign-off before marking plan complete.**
+**Task 3b: logical sign-off recorded 2026-05-09. Actual EXPLAIN capture deferred to a manual run against a live Postgres dev DB; tracked as outstanding human-UAT.**
 
 ## Decisions Made
 
