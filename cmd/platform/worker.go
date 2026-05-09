@@ -16,8 +16,10 @@ import (
 	"github.com/kanpon/data-governance/internal/connector"
 	conncfg "github.com/kanpon/data-governance/internal/connector/config"
 	"github.com/kanpon/data-governance/internal/event"
+	"github.com/kanpon/data-governance/internal/lineage"
 	"github.com/kanpon/data-governance/internal/run"
 	"github.com/kanpon/data-governance/internal/runtime"
+	"github.com/kanpon/data-governance/internal/schema"
 	"github.com/kanpon/data-governance/internal/storage"
 )
 
@@ -173,6 +175,15 @@ func bootstrap(ctx context.Context) (*workerDeps, error) {
 
 	workerID := fmt.Sprintf("worker-%s-%d", os.Getenv("HOSTNAME"), os.Getpid())
 
+	// Phase 4 capture writers — wired into the executor's per-step transaction
+	// (executor.commitSuccess) and into asset.Default().OnRegister so static
+	// upstream edges are materialized at registration time.
+	lineageWriter := lineage.NewWriter(store.DB(), writer)
+	schemaWriter := schema.NewWriter(writer)
+	asset.Default().OnRegister = func(a *asset.Asset) error {
+		return lineageWriter.SyncStaticEdges(ctx, a, a.CodeHash())
+	}
+
 	exec := runtime.NewExecutor(runtime.Deps{
 		Store:         store,
 		Events:        writer,
@@ -181,6 +192,8 @@ func bootstrap(ctx context.Context) (*workerDeps, error) {
 		Pool:          pool,
 		DefaultPolicy: defaultPolicy,
 		WorkerID:      workerID,
+		LineageWriter: lineageWriter,
+		SchemaWriter:  schemaWriter,
 		// HeartbeatInterval defaults to 30s in NewExecutor — paired with reaper StaleAfter=5m.
 	})
 
