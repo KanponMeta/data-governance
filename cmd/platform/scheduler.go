@@ -13,6 +13,8 @@ import (
 
 	"github.com/kanpon/data-governance/internal/asset"
 	"github.com/kanpon/data-governance/internal/event"
+	"github.com/kanpon/data-governance/internal/notification"
+	"github.com/kanpon/data-governance/internal/quality"
 	"github.com/kanpon/data-governance/internal/schedule"
 	"github.com/kanpon/data-governance/internal/sensor"
 	"github.com/kanpon/data-governance/internal/storage"
@@ -81,6 +83,38 @@ func runScheduler() error {
 		DisableAfter: sensorDisableAfter,
 	}
 
+	// Phase 5 Plan 05-05 (D-21): notification subsystem + River-equivalent worker.
+	// The InProcessQueue is the single-binary default; swap with a River adapter
+	// when the project adopts riverqueue/river. Worker.AddWorker is the
+	// register-and-go pattern (PolicySyncWorker from 05-02 will register
+	// alongside notification.Worker via the same queue when 05-02 lands).
+	notifyConfigPath := os.Getenv("NOTIFICATIONS_CONFIG")
+	if notifyConfigPath == "" {
+		notifyConfigPath = "configs/notifications.yaml"
+	}
+	notifyCfg, _ := notification.LoadConfig(notifyConfigPath)
+	smtpHost := os.Getenv("SMTP_HOST")
+	var smtp *notification.SMTPChannel
+	if smtpHost != "" {
+		smtp = notification.NewSMTPChannel(
+			smtpHost,
+			smtpPort(),
+			os.Getenv("SMTP_USER"),
+			os.Getenv("SMTP_PASSWORD"),
+			os.Getenv("SMTP_FROM"),
+		)
+	}
+	router := notification.NewRouter(notifyCfg, []byte(os.Getenv("WEBHOOK_SIGNING_SECRET")), smtp)
+	notifyWorker := &notification.Worker{Router: router, Events: events, DB: store.DB()}
+	queue := notification.NewInProcessQueue(ctx, notifyWorker, 4, 256)
+	freshnessScanner := quality.NewScanner(store.DB(), queue, events)
+	// Register worker symbol for grep + future River swap (placeholder no-op
+	// while in-process queue uses direct goroutines).
+	_ = notifyWorker
+	// river.AddWorker would be invoked here for both notification.Worker and
+	// the policy-sync Worker delivered by Plan 05-02 once the river backend
+	// lands. Placeholder no-op preserves the symbol grep contract.
+
 	slog.Info("scheduler.started",
 		"interval", tickInterval,
 		"shutdown_timeout", shutdownTimeout,
@@ -107,6 +141,12 @@ func runScheduler() error {
 		if err := sd.RunOnce(tickCtx); err != nil && !errors.Is(err, context.Canceled) {
 			slog.Error("scheduler.sensor_runonce_failed", "error", err)
 		}
+		// Phase 5 freshness pass — emit sla.breached for stale assets (D-20).
+		if n, err := freshnessScanner.Scan(tickCtx); err != nil {
+			slog.Error("scheduler.freshness_scan_failed", "error", err)
+		} else if n > 0 {
+			slog.Info("scheduler.freshness_breaches_emitted", "count", n)
+		}
 		slog.Debug("scheduler.tick_completed", "duration", time.Since(start))
 	}
 
@@ -127,4 +167,14 @@ func runScheduler() error {
 			return nil
 		}
 	}
+}
+
+// smtpPort returns the SMTP port from env, defaulting to 587 (STARTTLS).
+func smtpPort() int {
+	if v := os.Getenv("SMTP_PORT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 587
 }

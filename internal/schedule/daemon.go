@@ -19,6 +19,13 @@ const DefaultInterval = 30 * time.Second
 // top of Interval. Mitigates thundering-herd across multiple replicas.
 const jitterMaxMs = 5000
 
+// FreshnessScanner is the optional Phase 5 SLA scanner hook (Plan 05-05 D-20).
+// Implementations live in internal/quality.Scanner. Daemon calls Scan on each
+// tick after sensor / schedule evaluation; nil = skip.
+type FreshnessScanner interface {
+	Scan(ctx context.Context) (int, error)
+}
+
 // Daemon wraps the package-internal tick loop driver. The exported fields are
 // the runtime dependencies; Interval defaults to DefaultInterval when zero.
 //
@@ -32,6 +39,16 @@ type Daemon struct {
 	Registry *asset.DefinitionRegistry
 	Events   event.Writer
 	Interval time.Duration
+
+	// Phase 5 Plan 05-05 (D-20) — optional FreshnessSLA scanner. nil = skip.
+	// When non-nil, Scan(ctx) is called on each tick after schedule firing.
+	freshnessScanner FreshnessScanner
+}
+
+// WithFreshnessScanner attaches a FreshnessScanner; idempotent.
+func (d *Daemon) WithFreshnessScanner(s FreshnessScanner) *Daemon {
+	d.freshnessScanner = s
+	return d
 }
 
 // run executes the tick loop until ctx is canceled. UNEXPORTED — production
@@ -75,6 +92,10 @@ func (d *Daemon) run(ctx context.Context) error {
 // On any FireOneSchedule error other than ErrNoDueSchedule, tick logs and
 // returns; the next tick retries. This back-off prevents a flaky schedule row
 // (e.g. partition_key conflict) from busy-looping the daemon.
+//
+// Phase 5 Plan 05-05 (D-20): after schedule firing completes, the freshness
+// scanner runs (if configured) so SLA breaches surface within one tick of
+// becoming stale.
 func (d *Daemon) tick(ctx context.Context) {
 	now := time.Now().UTC()
 	for {
@@ -83,11 +104,19 @@ func (d *Daemon) tick(ctx context.Context) {
 		}
 		err := FireOneSchedule(ctx, d.Store, d.Registry, d.Events, now)
 		if errors.Is(err, ErrNoDueSchedule) {
-			return
+			break
 		}
 		if err != nil {
 			slog.Error("schedule.fire_failed", "error", err)
 			return
+		}
+	}
+	// Phase 5 freshness scan — runs once per tick.
+	if d.freshnessScanner != nil {
+		if n, err := d.freshnessScanner.Scan(ctx); err != nil {
+			slog.Error("freshness scan", "err", err)
+		} else if n > 0 {
+			slog.Info("freshness breaches emitted", "count", n)
 		}
 	}
 }

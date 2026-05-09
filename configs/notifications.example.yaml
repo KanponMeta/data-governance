@@ -1,0 +1,33 @@
+# Phase 5 Plan 05-05 D-21 — example notifications.yaml
+#
+# Each rule has:
+#   match:    glob pattern matched against the dispatched event_type
+#             (e.g., "governance.submitted", "governance.*", "*")
+#   webhook:  optional outbound HTTP target — receives HMAC-signed JSON POST
+#   email_to: optional SMTP recipient template; supports {var} substitution
+#             from the dispatched event payload (e.g., {owner_email})
+#
+# Routing is order-independent — every matching rule fires.
+# Worker reloads the file on SIGHUP (see internal/notification/worker.go).
+rules:
+  - match: "governance.submitted"
+    webhook: "https://internal/governance"
+    email_to: "{reviewer_emails}"
+
+  - match: "governance.approved"
+    email_to: "{submitter_email}"
+
+  - match: "governance.rejected"
+    email_to: "{submitter_email}"
+
+  - match: "quality.rule_failed"
+    webhook: "https://internal/alerts"
+    email_to: "{owner_email}"
+
+  - match: "sla.breached"
+    webhook: "https://pagerduty.example/v2/enqueue"
+    email_to: "{owner_email}"
+
+  - match: "masking.sync_failed"
+    webhook: "https://internal/alerts"
+    email_to: "{security_oncall}"
