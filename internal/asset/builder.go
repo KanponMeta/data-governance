@@ -275,6 +275,10 @@ func (b *Builder) Build() (*Asset, error) {
 			}
 		}
 	}
+	// D-03: compute deterministic code hash at Build() time; stored on Asset.codeHash.
+	// Both Build() (test path) and Register() (production path) get the hash set here.
+	// Invalid assets (returned before this line) never get a hash.
+	b.a.codeHash = ComputeCodeHash(b.a)
 	return b.a, nil
 }
 
