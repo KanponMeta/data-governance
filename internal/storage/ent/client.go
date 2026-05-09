@@ -15,13 +15,19 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
+	"github.com/kanpon/data-governance/internal/storage/ent/assetedge"
+	"github.com/kanpon/data-governance/internal/storage/ent/assetmetadata"
+	"github.com/kanpon/data-governance/internal/storage/ent/assetversion"
 	"github.com/kanpon/data-governance/internal/storage/ent/backfill"
+	"github.com/kanpon/data-governance/internal/storage/ent/columnedge"
 	"github.com/kanpon/data-governance/internal/storage/ent/concurrencytoken"
 	"github.com/kanpon/data-governance/internal/storage/ent/eventlog"
 	"github.com/kanpon/data-governance/internal/storage/ent/invitetoken"
 	"github.com/kanpon/data-governance/internal/storage/ent/run"
 	"github.com/kanpon/data-governance/internal/storage/ent/runstep"
 	"github.com/kanpon/data-governance/internal/storage/ent/schedule"
+	"github.com/kanpon/data-governance/internal/storage/ent/schemachange"
+	"github.com/kanpon/data-governance/internal/storage/ent/schemaversion"
 	"github.com/kanpon/data-governance/internal/storage/ent/sensor"
 	"github.com/kanpon/data-governance/internal/storage/ent/user"
 )
@@ -31,8 +37,16 @@ type Client struct {
 	config
 	// Schema is the client for creating, migrating and dropping schema.
 	Schema *migrate.Schema
+	// AssetEdge is the client for interacting with the AssetEdge builders.
+	AssetEdge *AssetEdgeClient
+	// AssetMetadata is the client for interacting with the AssetMetadata builders.
+	AssetMetadata *AssetMetadataClient
+	// AssetVersion is the client for interacting with the AssetVersion builders.
+	AssetVersion *AssetVersionClient
 	// Backfill is the client for interacting with the Backfill builders.
 	Backfill *BackfillClient
+	// ColumnEdge is the client for interacting with the ColumnEdge builders.
+	ColumnEdge *ColumnEdgeClient
 	// ConcurrencyToken is the client for interacting with the ConcurrencyToken builders.
 	ConcurrencyToken *ConcurrencyTokenClient
 	// EventLog is the client for interacting with the EventLog builders.
@@ -45,6 +59,10 @@ type Client struct {
 	RunStep *RunStepClient
 	// Schedule is the client for interacting with the Schedule builders.
 	Schedule *ScheduleClient
+	// SchemaChange is the client for interacting with the SchemaChange builders.
+	SchemaChange *SchemaChangeClient
+	// SchemaVersion is the client for interacting with the SchemaVersion builders.
+	SchemaVersion *SchemaVersionClient
 	// Sensor is the client for interacting with the Sensor builders.
 	Sensor *SensorClient
 	// User is the client for interacting with the User builders.
@@ -60,13 +78,19 @@ func NewClient(opts ...Option) *Client {
 
 func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
+	c.AssetEdge = NewAssetEdgeClient(c.config)
+	c.AssetMetadata = NewAssetMetadataClient(c.config)
+	c.AssetVersion = NewAssetVersionClient(c.config)
 	c.Backfill = NewBackfillClient(c.config)
+	c.ColumnEdge = NewColumnEdgeClient(c.config)
 	c.ConcurrencyToken = NewConcurrencyTokenClient(c.config)
 	c.EventLog = NewEventLogClient(c.config)
 	c.InviteToken = NewInviteTokenClient(c.config)
 	c.Run = NewRunClient(c.config)
 	c.RunStep = NewRunStepClient(c.config)
 	c.Schedule = NewScheduleClient(c.config)
+	c.SchemaChange = NewSchemaChangeClient(c.config)
+	c.SchemaVersion = NewSchemaVersionClient(c.config)
 	c.Sensor = NewSensorClient(c.config)
 	c.User = NewUserClient(c.config)
 }
@@ -161,13 +185,19 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	return &Tx{
 		ctx:              ctx,
 		config:           cfg,
+		AssetEdge:        NewAssetEdgeClient(cfg),
+		AssetMetadata:    NewAssetMetadataClient(cfg),
+		AssetVersion:     NewAssetVersionClient(cfg),
 		Backfill:         NewBackfillClient(cfg),
+		ColumnEdge:       NewColumnEdgeClient(cfg),
 		ConcurrencyToken: NewConcurrencyTokenClient(cfg),
 		EventLog:         NewEventLogClient(cfg),
 		InviteToken:      NewInviteTokenClient(cfg),
 		Run:              NewRunClient(cfg),
 		RunStep:          NewRunStepClient(cfg),
 		Schedule:         NewScheduleClient(cfg),
+		SchemaChange:     NewSchemaChangeClient(cfg),
+		SchemaVersion:    NewSchemaVersionClient(cfg),
 		Sensor:           NewSensorClient(cfg),
 		User:             NewUserClient(cfg),
 	}, nil
@@ -189,13 +219,19 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	return &Tx{
 		ctx:              ctx,
 		config:           cfg,
+		AssetEdge:        NewAssetEdgeClient(cfg),
+		AssetMetadata:    NewAssetMetadataClient(cfg),
+		AssetVersion:     NewAssetVersionClient(cfg),
 		Backfill:         NewBackfillClient(cfg),
+		ColumnEdge:       NewColumnEdgeClient(cfg),
 		ConcurrencyToken: NewConcurrencyTokenClient(cfg),
 		EventLog:         NewEventLogClient(cfg),
 		InviteToken:      NewInviteTokenClient(cfg),
 		Run:              NewRunClient(cfg),
 		RunStep:          NewRunStepClient(cfg),
 		Schedule:         NewScheduleClient(cfg),
+		SchemaChange:     NewSchemaChangeClient(cfg),
+		SchemaVersion:    NewSchemaVersionClient(cfg),
 		Sensor:           NewSensorClient(cfg),
 		User:             NewUserClient(cfg),
 	}, nil
@@ -204,7 +240,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 // Debug returns a new debug-client. It's used to get verbose logging on specific operations.
 //
 //	client.Debug().
-//		Backfill.
+//		AssetEdge.
 //		Query().
 //		Count(ctx)
 func (c *Client) Debug() *Client {
@@ -227,8 +263,9 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.Backfill, c.ConcurrencyToken, c.EventLog, c.InviteToken, c.Run, c.RunStep,
-		c.Schedule, c.Sensor, c.User,
+		c.AssetEdge, c.AssetMetadata, c.AssetVersion, c.Backfill, c.ColumnEdge,
+		c.ConcurrencyToken, c.EventLog, c.InviteToken, c.Run, c.RunStep, c.Schedule,
+		c.SchemaChange, c.SchemaVersion, c.Sensor, c.User,
 	} {
 		n.Use(hooks...)
 	}
@@ -238,8 +275,9 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.Backfill, c.ConcurrencyToken, c.EventLog, c.InviteToken, c.Run, c.RunStep,
-		c.Schedule, c.Sensor, c.User,
+		c.AssetEdge, c.AssetMetadata, c.AssetVersion, c.Backfill, c.ColumnEdge,
+		c.ConcurrencyToken, c.EventLog, c.InviteToken, c.Run, c.RunStep, c.Schedule,
+		c.SchemaChange, c.SchemaVersion, c.Sensor, c.User,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -248,8 +286,16 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 // Mutate implements the ent.Mutator interface.
 func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 	switch m := m.(type) {
+	case *AssetEdgeMutation:
+		return c.AssetEdge.mutate(ctx, m)
+	case *AssetMetadataMutation:
+		return c.AssetMetadata.mutate(ctx, m)
+	case *AssetVersionMutation:
+		return c.AssetVersion.mutate(ctx, m)
 	case *BackfillMutation:
 		return c.Backfill.mutate(ctx, m)
+	case *ColumnEdgeMutation:
+		return c.ColumnEdge.mutate(ctx, m)
 	case *ConcurrencyTokenMutation:
 		return c.ConcurrencyToken.mutate(ctx, m)
 	case *EventLogMutation:
@@ -262,12 +308,415 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.RunStep.mutate(ctx, m)
 	case *ScheduleMutation:
 		return c.Schedule.mutate(ctx, m)
+	case *SchemaChangeMutation:
+		return c.SchemaChange.mutate(ctx, m)
+	case *SchemaVersionMutation:
+		return c.SchemaVersion.mutate(ctx, m)
 	case *SensorMutation:
 		return c.Sensor.mutate(ctx, m)
 	case *UserMutation:
 		return c.User.mutate(ctx, m)
 	default:
 		return nil, fmt.Errorf("ent: unknown mutation type %T", m)
+	}
+}
+
+// AssetEdgeClient is a client for the AssetEdge schema.
+type AssetEdgeClient struct {
+	config
+}
+
+// NewAssetEdgeClient returns a client for the AssetEdge from the given config.
+func NewAssetEdgeClient(c config) *AssetEdgeClient {
+	return &AssetEdgeClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `assetedge.Hooks(f(g(h())))`.
+func (c *AssetEdgeClient) Use(hooks ...Hook) {
+	c.hooks.AssetEdge = append(c.hooks.AssetEdge, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `assetedge.Intercept(f(g(h())))`.
+func (c *AssetEdgeClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AssetEdge = append(c.inters.AssetEdge, interceptors...)
+}
+
+// Create returns a builder for creating a AssetEdge entity.
+func (c *AssetEdgeClient) Create() *AssetEdgeCreate {
+	mutation := newAssetEdgeMutation(c.config, OpCreate)
+	return &AssetEdgeCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AssetEdge entities.
+func (c *AssetEdgeClient) CreateBulk(builders ...*AssetEdgeCreate) *AssetEdgeCreateBulk {
+	return &AssetEdgeCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AssetEdgeClient) MapCreateBulk(slice any, setFunc func(*AssetEdgeCreate, int)) *AssetEdgeCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AssetEdgeCreateBulk{err: fmt.Errorf("calling to AssetEdgeClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AssetEdgeCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AssetEdgeCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AssetEdge.
+func (c *AssetEdgeClient) Update() *AssetEdgeUpdate {
+	mutation := newAssetEdgeMutation(c.config, OpUpdate)
+	return &AssetEdgeUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AssetEdgeClient) UpdateOne(ae *AssetEdge) *AssetEdgeUpdateOne {
+	mutation := newAssetEdgeMutation(c.config, OpUpdateOne, withAssetEdge(ae))
+	return &AssetEdgeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AssetEdgeClient) UpdateOneID(id uuid.UUID) *AssetEdgeUpdateOne {
+	mutation := newAssetEdgeMutation(c.config, OpUpdateOne, withAssetEdgeID(id))
+	return &AssetEdgeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AssetEdge.
+func (c *AssetEdgeClient) Delete() *AssetEdgeDelete {
+	mutation := newAssetEdgeMutation(c.config, OpDelete)
+	return &AssetEdgeDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AssetEdgeClient) DeleteOne(ae *AssetEdge) *AssetEdgeDeleteOne {
+	return c.DeleteOneID(ae.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AssetEdgeClient) DeleteOneID(id uuid.UUID) *AssetEdgeDeleteOne {
+	builder := c.Delete().Where(assetedge.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AssetEdgeDeleteOne{builder}
+}
+
+// Query returns a query builder for AssetEdge.
+func (c *AssetEdgeClient) Query() *AssetEdgeQuery {
+	return &AssetEdgeQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAssetEdge},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AssetEdge entity by its id.
+func (c *AssetEdgeClient) Get(ctx context.Context, id uuid.UUID) (*AssetEdge, error) {
+	return c.Query().Where(assetedge.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AssetEdgeClient) GetX(ctx context.Context, id uuid.UUID) *AssetEdge {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *AssetEdgeClient) Hooks() []Hook {
+	return c.hooks.AssetEdge
+}
+
+// Interceptors returns the client interceptors.
+func (c *AssetEdgeClient) Interceptors() []Interceptor {
+	return c.inters.AssetEdge
+}
+
+func (c *AssetEdgeClient) mutate(ctx context.Context, m *AssetEdgeMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AssetEdgeCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AssetEdgeUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AssetEdgeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AssetEdgeDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AssetEdge mutation op: %q", m.Op())
+	}
+}
+
+// AssetMetadataClient is a client for the AssetMetadata schema.
+type AssetMetadataClient struct {
+	config
+}
+
+// NewAssetMetadataClient returns a client for the AssetMetadata from the given config.
+func NewAssetMetadataClient(c config) *AssetMetadataClient {
+	return &AssetMetadataClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `assetmetadata.Hooks(f(g(h())))`.
+func (c *AssetMetadataClient) Use(hooks ...Hook) {
+	c.hooks.AssetMetadata = append(c.hooks.AssetMetadata, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `assetmetadata.Intercept(f(g(h())))`.
+func (c *AssetMetadataClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AssetMetadata = append(c.inters.AssetMetadata, interceptors...)
+}
+
+// Create returns a builder for creating a AssetMetadata entity.
+func (c *AssetMetadataClient) Create() *AssetMetadataCreate {
+	mutation := newAssetMetadataMutation(c.config, OpCreate)
+	return &AssetMetadataCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AssetMetadata entities.
+func (c *AssetMetadataClient) CreateBulk(builders ...*AssetMetadataCreate) *AssetMetadataCreateBulk {
+	return &AssetMetadataCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AssetMetadataClient) MapCreateBulk(slice any, setFunc func(*AssetMetadataCreate, int)) *AssetMetadataCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AssetMetadataCreateBulk{err: fmt.Errorf("calling to AssetMetadataClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AssetMetadataCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AssetMetadataCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AssetMetadata.
+func (c *AssetMetadataClient) Update() *AssetMetadataUpdate {
+	mutation := newAssetMetadataMutation(c.config, OpUpdate)
+	return &AssetMetadataUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AssetMetadataClient) UpdateOne(am *AssetMetadata) *AssetMetadataUpdateOne {
+	mutation := newAssetMetadataMutation(c.config, OpUpdateOne, withAssetMetadata(am))
+	return &AssetMetadataUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AssetMetadataClient) UpdateOneID(id uuid.UUID) *AssetMetadataUpdateOne {
+	mutation := newAssetMetadataMutation(c.config, OpUpdateOne, withAssetMetadataID(id))
+	return &AssetMetadataUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AssetMetadata.
+func (c *AssetMetadataClient) Delete() *AssetMetadataDelete {
+	mutation := newAssetMetadataMutation(c.config, OpDelete)
+	return &AssetMetadataDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AssetMetadataClient) DeleteOne(am *AssetMetadata) *AssetMetadataDeleteOne {
+	return c.DeleteOneID(am.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AssetMetadataClient) DeleteOneID(id uuid.UUID) *AssetMetadataDeleteOne {
+	builder := c.Delete().Where(assetmetadata.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AssetMetadataDeleteOne{builder}
+}
+
+// Query returns a query builder for AssetMetadata.
+func (c *AssetMetadataClient) Query() *AssetMetadataQuery {
+	return &AssetMetadataQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAssetMetadata},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AssetMetadata entity by its id.
+func (c *AssetMetadataClient) Get(ctx context.Context, id uuid.UUID) (*AssetMetadata, error) {
+	return c.Query().Where(assetmetadata.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AssetMetadataClient) GetX(ctx context.Context, id uuid.UUID) *AssetMetadata {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *AssetMetadataClient) Hooks() []Hook {
+	return c.hooks.AssetMetadata
+}
+
+// Interceptors returns the client interceptors.
+func (c *AssetMetadataClient) Interceptors() []Interceptor {
+	return c.inters.AssetMetadata
+}
+
+func (c *AssetMetadataClient) mutate(ctx context.Context, m *AssetMetadataMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AssetMetadataCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AssetMetadataUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AssetMetadataUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AssetMetadataDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AssetMetadata mutation op: %q", m.Op())
+	}
+}
+
+// AssetVersionClient is a client for the AssetVersion schema.
+type AssetVersionClient struct {
+	config
+}
+
+// NewAssetVersionClient returns a client for the AssetVersion from the given config.
+func NewAssetVersionClient(c config) *AssetVersionClient {
+	return &AssetVersionClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `assetversion.Hooks(f(g(h())))`.
+func (c *AssetVersionClient) Use(hooks ...Hook) {
+	c.hooks.AssetVersion = append(c.hooks.AssetVersion, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `assetversion.Intercept(f(g(h())))`.
+func (c *AssetVersionClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AssetVersion = append(c.inters.AssetVersion, interceptors...)
+}
+
+// Create returns a builder for creating a AssetVersion entity.
+func (c *AssetVersionClient) Create() *AssetVersionCreate {
+	mutation := newAssetVersionMutation(c.config, OpCreate)
+	return &AssetVersionCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AssetVersion entities.
+func (c *AssetVersionClient) CreateBulk(builders ...*AssetVersionCreate) *AssetVersionCreateBulk {
+	return &AssetVersionCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AssetVersionClient) MapCreateBulk(slice any, setFunc func(*AssetVersionCreate, int)) *AssetVersionCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AssetVersionCreateBulk{err: fmt.Errorf("calling to AssetVersionClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AssetVersionCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AssetVersionCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AssetVersion.
+func (c *AssetVersionClient) Update() *AssetVersionUpdate {
+	mutation := newAssetVersionMutation(c.config, OpUpdate)
+	return &AssetVersionUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AssetVersionClient) UpdateOne(av *AssetVersion) *AssetVersionUpdateOne {
+	mutation := newAssetVersionMutation(c.config, OpUpdateOne, withAssetVersion(av))
+	return &AssetVersionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AssetVersionClient) UpdateOneID(id uuid.UUID) *AssetVersionUpdateOne {
+	mutation := newAssetVersionMutation(c.config, OpUpdateOne, withAssetVersionID(id))
+	return &AssetVersionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AssetVersion.
+func (c *AssetVersionClient) Delete() *AssetVersionDelete {
+	mutation := newAssetVersionMutation(c.config, OpDelete)
+	return &AssetVersionDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AssetVersionClient) DeleteOne(av *AssetVersion) *AssetVersionDeleteOne {
+	return c.DeleteOneID(av.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AssetVersionClient) DeleteOneID(id uuid.UUID) *AssetVersionDeleteOne {
+	builder := c.Delete().Where(assetversion.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AssetVersionDeleteOne{builder}
+}
+
+// Query returns a query builder for AssetVersion.
+func (c *AssetVersionClient) Query() *AssetVersionQuery {
+	return &AssetVersionQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAssetVersion},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AssetVersion entity by its id.
+func (c *AssetVersionClient) Get(ctx context.Context, id uuid.UUID) (*AssetVersion, error) {
+	return c.Query().Where(assetversion.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AssetVersionClient) GetX(ctx context.Context, id uuid.UUID) *AssetVersion {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *AssetVersionClient) Hooks() []Hook {
+	return c.hooks.AssetVersion
+}
+
+// Interceptors returns the client interceptors.
+func (c *AssetVersionClient) Interceptors() []Interceptor {
+	return c.inters.AssetVersion
+}
+
+func (c *AssetVersionClient) mutate(ctx context.Context, m *AssetVersionMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AssetVersionCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AssetVersionUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AssetVersionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AssetVersionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AssetVersion mutation op: %q", m.Op())
 	}
 }
 
@@ -401,6 +850,139 @@ func (c *BackfillClient) mutate(ctx context.Context, m *BackfillMutation) (Value
 		return (&BackfillDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown Backfill mutation op: %q", m.Op())
+	}
+}
+
+// ColumnEdgeClient is a client for the ColumnEdge schema.
+type ColumnEdgeClient struct {
+	config
+}
+
+// NewColumnEdgeClient returns a client for the ColumnEdge from the given config.
+func NewColumnEdgeClient(c config) *ColumnEdgeClient {
+	return &ColumnEdgeClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `columnedge.Hooks(f(g(h())))`.
+func (c *ColumnEdgeClient) Use(hooks ...Hook) {
+	c.hooks.ColumnEdge = append(c.hooks.ColumnEdge, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `columnedge.Intercept(f(g(h())))`.
+func (c *ColumnEdgeClient) Intercept(interceptors ...Interceptor) {
+	c.inters.ColumnEdge = append(c.inters.ColumnEdge, interceptors...)
+}
+
+// Create returns a builder for creating a ColumnEdge entity.
+func (c *ColumnEdgeClient) Create() *ColumnEdgeCreate {
+	mutation := newColumnEdgeMutation(c.config, OpCreate)
+	return &ColumnEdgeCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of ColumnEdge entities.
+func (c *ColumnEdgeClient) CreateBulk(builders ...*ColumnEdgeCreate) *ColumnEdgeCreateBulk {
+	return &ColumnEdgeCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ColumnEdgeClient) MapCreateBulk(slice any, setFunc func(*ColumnEdgeCreate, int)) *ColumnEdgeCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ColumnEdgeCreateBulk{err: fmt.Errorf("calling to ColumnEdgeClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ColumnEdgeCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ColumnEdgeCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for ColumnEdge.
+func (c *ColumnEdgeClient) Update() *ColumnEdgeUpdate {
+	mutation := newColumnEdgeMutation(c.config, OpUpdate)
+	return &ColumnEdgeUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ColumnEdgeClient) UpdateOne(ce *ColumnEdge) *ColumnEdgeUpdateOne {
+	mutation := newColumnEdgeMutation(c.config, OpUpdateOne, withColumnEdge(ce))
+	return &ColumnEdgeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ColumnEdgeClient) UpdateOneID(id uuid.UUID) *ColumnEdgeUpdateOne {
+	mutation := newColumnEdgeMutation(c.config, OpUpdateOne, withColumnEdgeID(id))
+	return &ColumnEdgeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for ColumnEdge.
+func (c *ColumnEdgeClient) Delete() *ColumnEdgeDelete {
+	mutation := newColumnEdgeMutation(c.config, OpDelete)
+	return &ColumnEdgeDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ColumnEdgeClient) DeleteOne(ce *ColumnEdge) *ColumnEdgeDeleteOne {
+	return c.DeleteOneID(ce.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ColumnEdgeClient) DeleteOneID(id uuid.UUID) *ColumnEdgeDeleteOne {
+	builder := c.Delete().Where(columnedge.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ColumnEdgeDeleteOne{builder}
+}
+
+// Query returns a query builder for ColumnEdge.
+func (c *ColumnEdgeClient) Query() *ColumnEdgeQuery {
+	return &ColumnEdgeQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeColumnEdge},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a ColumnEdge entity by its id.
+func (c *ColumnEdgeClient) Get(ctx context.Context, id uuid.UUID) (*ColumnEdge, error) {
+	return c.Query().Where(columnedge.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ColumnEdgeClient) GetX(ctx context.Context, id uuid.UUID) *ColumnEdge {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *ColumnEdgeClient) Hooks() []Hook {
+	return c.hooks.ColumnEdge
+}
+
+// Interceptors returns the client interceptors.
+func (c *ColumnEdgeClient) Interceptors() []Interceptor {
+	return c.inters.ColumnEdge
+}
+
+func (c *ColumnEdgeClient) mutate(ctx context.Context, m *ColumnEdgeMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ColumnEdgeCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ColumnEdgeUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ColumnEdgeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ColumnEdgeDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown ColumnEdge mutation op: %q", m.Op())
 	}
 }
 
@@ -1202,6 +1784,272 @@ func (c *ScheduleClient) mutate(ctx context.Context, m *ScheduleMutation) (Value
 	}
 }
 
+// SchemaChangeClient is a client for the SchemaChange schema.
+type SchemaChangeClient struct {
+	config
+}
+
+// NewSchemaChangeClient returns a client for the SchemaChange from the given config.
+func NewSchemaChangeClient(c config) *SchemaChangeClient {
+	return &SchemaChangeClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `schemachange.Hooks(f(g(h())))`.
+func (c *SchemaChangeClient) Use(hooks ...Hook) {
+	c.hooks.SchemaChange = append(c.hooks.SchemaChange, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `schemachange.Intercept(f(g(h())))`.
+func (c *SchemaChangeClient) Intercept(interceptors ...Interceptor) {
+	c.inters.SchemaChange = append(c.inters.SchemaChange, interceptors...)
+}
+
+// Create returns a builder for creating a SchemaChange entity.
+func (c *SchemaChangeClient) Create() *SchemaChangeCreate {
+	mutation := newSchemaChangeMutation(c.config, OpCreate)
+	return &SchemaChangeCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of SchemaChange entities.
+func (c *SchemaChangeClient) CreateBulk(builders ...*SchemaChangeCreate) *SchemaChangeCreateBulk {
+	return &SchemaChangeCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *SchemaChangeClient) MapCreateBulk(slice any, setFunc func(*SchemaChangeCreate, int)) *SchemaChangeCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &SchemaChangeCreateBulk{err: fmt.Errorf("calling to SchemaChangeClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*SchemaChangeCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &SchemaChangeCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for SchemaChange.
+func (c *SchemaChangeClient) Update() *SchemaChangeUpdate {
+	mutation := newSchemaChangeMutation(c.config, OpUpdate)
+	return &SchemaChangeUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *SchemaChangeClient) UpdateOne(sc *SchemaChange) *SchemaChangeUpdateOne {
+	mutation := newSchemaChangeMutation(c.config, OpUpdateOne, withSchemaChange(sc))
+	return &SchemaChangeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *SchemaChangeClient) UpdateOneID(id uuid.UUID) *SchemaChangeUpdateOne {
+	mutation := newSchemaChangeMutation(c.config, OpUpdateOne, withSchemaChangeID(id))
+	return &SchemaChangeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for SchemaChange.
+func (c *SchemaChangeClient) Delete() *SchemaChangeDelete {
+	mutation := newSchemaChangeMutation(c.config, OpDelete)
+	return &SchemaChangeDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *SchemaChangeClient) DeleteOne(sc *SchemaChange) *SchemaChangeDeleteOne {
+	return c.DeleteOneID(sc.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *SchemaChangeClient) DeleteOneID(id uuid.UUID) *SchemaChangeDeleteOne {
+	builder := c.Delete().Where(schemachange.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &SchemaChangeDeleteOne{builder}
+}
+
+// Query returns a query builder for SchemaChange.
+func (c *SchemaChangeClient) Query() *SchemaChangeQuery {
+	return &SchemaChangeQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeSchemaChange},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a SchemaChange entity by its id.
+func (c *SchemaChangeClient) Get(ctx context.Context, id uuid.UUID) (*SchemaChange, error) {
+	return c.Query().Where(schemachange.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *SchemaChangeClient) GetX(ctx context.Context, id uuid.UUID) *SchemaChange {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *SchemaChangeClient) Hooks() []Hook {
+	return c.hooks.SchemaChange
+}
+
+// Interceptors returns the client interceptors.
+func (c *SchemaChangeClient) Interceptors() []Interceptor {
+	return c.inters.SchemaChange
+}
+
+func (c *SchemaChangeClient) mutate(ctx context.Context, m *SchemaChangeMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&SchemaChangeCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&SchemaChangeUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&SchemaChangeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&SchemaChangeDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown SchemaChange mutation op: %q", m.Op())
+	}
+}
+
+// SchemaVersionClient is a client for the SchemaVersion schema.
+type SchemaVersionClient struct {
+	config
+}
+
+// NewSchemaVersionClient returns a client for the SchemaVersion from the given config.
+func NewSchemaVersionClient(c config) *SchemaVersionClient {
+	return &SchemaVersionClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `schemaversion.Hooks(f(g(h())))`.
+func (c *SchemaVersionClient) Use(hooks ...Hook) {
+	c.hooks.SchemaVersion = append(c.hooks.SchemaVersion, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `schemaversion.Intercept(f(g(h())))`.
+func (c *SchemaVersionClient) Intercept(interceptors ...Interceptor) {
+	c.inters.SchemaVersion = append(c.inters.SchemaVersion, interceptors...)
+}
+
+// Create returns a builder for creating a SchemaVersion entity.
+func (c *SchemaVersionClient) Create() *SchemaVersionCreate {
+	mutation := newSchemaVersionMutation(c.config, OpCreate)
+	return &SchemaVersionCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of SchemaVersion entities.
+func (c *SchemaVersionClient) CreateBulk(builders ...*SchemaVersionCreate) *SchemaVersionCreateBulk {
+	return &SchemaVersionCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *SchemaVersionClient) MapCreateBulk(slice any, setFunc func(*SchemaVersionCreate, int)) *SchemaVersionCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &SchemaVersionCreateBulk{err: fmt.Errorf("calling to SchemaVersionClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*SchemaVersionCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &SchemaVersionCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for SchemaVersion.
+func (c *SchemaVersionClient) Update() *SchemaVersionUpdate {
+	mutation := newSchemaVersionMutation(c.config, OpUpdate)
+	return &SchemaVersionUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *SchemaVersionClient) UpdateOne(sv *SchemaVersion) *SchemaVersionUpdateOne {
+	mutation := newSchemaVersionMutation(c.config, OpUpdateOne, withSchemaVersion(sv))
+	return &SchemaVersionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *SchemaVersionClient) UpdateOneID(id uuid.UUID) *SchemaVersionUpdateOne {
+	mutation := newSchemaVersionMutation(c.config, OpUpdateOne, withSchemaVersionID(id))
+	return &SchemaVersionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for SchemaVersion.
+func (c *SchemaVersionClient) Delete() *SchemaVersionDelete {
+	mutation := newSchemaVersionMutation(c.config, OpDelete)
+	return &SchemaVersionDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *SchemaVersionClient) DeleteOne(sv *SchemaVersion) *SchemaVersionDeleteOne {
+	return c.DeleteOneID(sv.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *SchemaVersionClient) DeleteOneID(id uuid.UUID) *SchemaVersionDeleteOne {
+	builder := c.Delete().Where(schemaversion.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &SchemaVersionDeleteOne{builder}
+}
+
+// Query returns a query builder for SchemaVersion.
+func (c *SchemaVersionClient) Query() *SchemaVersionQuery {
+	return &SchemaVersionQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeSchemaVersion},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a SchemaVersion entity by its id.
+func (c *SchemaVersionClient) Get(ctx context.Context, id uuid.UUID) (*SchemaVersion, error) {
+	return c.Query().Where(schemaversion.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *SchemaVersionClient) GetX(ctx context.Context, id uuid.UUID) *SchemaVersion {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *SchemaVersionClient) Hooks() []Hook {
+	return c.hooks.SchemaVersion
+}
+
+// Interceptors returns the client interceptors.
+func (c *SchemaVersionClient) Interceptors() []Interceptor {
+	return c.inters.SchemaVersion
+}
+
+func (c *SchemaVersionClient) mutate(ctx context.Context, m *SchemaVersionMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&SchemaVersionCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&SchemaVersionUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&SchemaVersionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&SchemaVersionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown SchemaVersion mutation op: %q", m.Op())
+	}
+}
+
 // SensorClient is a client for the Sensor schema.
 type SensorClient struct {
 	config
@@ -1471,11 +2319,13 @@ func (c *UserClient) mutate(ctx context.Context, m *UserMutation) (Value, error)
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		Backfill, ConcurrencyToken, EventLog, InviteToken, Run, RunStep, Schedule,
+		AssetEdge, AssetMetadata, AssetVersion, Backfill, ColumnEdge, ConcurrencyToken,
+		EventLog, InviteToken, Run, RunStep, Schedule, SchemaChange, SchemaVersion,
 		Sensor, User []ent.Hook
 	}
 	inters struct {
-		Backfill, ConcurrencyToken, EventLog, InviteToken, Run, RunStep, Schedule,
+		AssetEdge, AssetMetadata, AssetVersion, Backfill, ColumnEdge, ConcurrencyToken,
+		EventLog, InviteToken, Run, RunStep, Schedule, SchemaChange, SchemaVersion,
 		Sensor, User []ent.Interceptor
 	}
 )

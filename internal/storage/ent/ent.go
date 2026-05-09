@@ -12,13 +12,19 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"github.com/kanpon/data-governance/internal/storage/ent/assetedge"
+	"github.com/kanpon/data-governance/internal/storage/ent/assetmetadata"
+	"github.com/kanpon/data-governance/internal/storage/ent/assetversion"
 	"github.com/kanpon/data-governance/internal/storage/ent/backfill"
+	"github.com/kanpon/data-governance/internal/storage/ent/columnedge"
 	"github.com/kanpon/data-governance/internal/storage/ent/concurrencytoken"
 	"github.com/kanpon/data-governance/internal/storage/ent/eventlog"
 	"github.com/kanpon/data-governance/internal/storage/ent/invitetoken"
 	"github.com/kanpon/data-governance/internal/storage/ent/run"
 	"github.com/kanpon/data-governance/internal/storage/ent/runstep"
 	"github.com/kanpon/data-governance/internal/storage/ent/schedule"
+	"github.com/kanpon/data-governance/internal/storage/ent/schemachange"
+	"github.com/kanpon/data-governance/internal/storage/ent/schemaversion"
 	"github.com/kanpon/data-governance/internal/storage/ent/sensor"
 	"github.com/kanpon/data-governance/internal/storage/ent/user"
 )
@@ -81,13 +87,19 @@ var (
 func checkColumn(table, column string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
+			assetedge.Table:        assetedge.ValidColumn,
+			assetmetadata.Table:    assetmetadata.ValidColumn,
+			assetversion.Table:     assetversion.ValidColumn,
 			backfill.Table:         backfill.ValidColumn,
+			columnedge.Table:       columnedge.ValidColumn,
 			concurrencytoken.Table: concurrencytoken.ValidColumn,
 			eventlog.Table:         eventlog.ValidColumn,
 			invitetoken.Table:      invitetoken.ValidColumn,
 			run.Table:              run.ValidColumn,
 			runstep.Table:          runstep.ValidColumn,
 			schedule.Table:         schedule.ValidColumn,
+			schemachange.Table:     schemachange.ValidColumn,
+			schemaversion.Table:    schemaversion.ValidColumn,
 			sensor.Table:           sensor.ValidColumn,
 			user.Table:             user.ValidColumn,
 		})

@@ -6,7 +6,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/kanpon/data-governance/internal/storage/ent/assetedge"
+	"github.com/kanpon/data-governance/internal/storage/ent/assetmetadata"
+	"github.com/kanpon/data-governance/internal/storage/ent/assetversion"
 	"github.com/kanpon/data-governance/internal/storage/ent/backfill"
+	"github.com/kanpon/data-governance/internal/storage/ent/columnedge"
 	"github.com/kanpon/data-governance/internal/storage/ent/concurrencytoken"
 	"github.com/kanpon/data-governance/internal/storage/ent/eventlog"
 	"github.com/kanpon/data-governance/internal/storage/ent/invitetoken"
@@ -14,6 +18,8 @@ import (
 	"github.com/kanpon/data-governance/internal/storage/ent/runstep"
 	"github.com/kanpon/data-governance/internal/storage/ent/schedule"
 	"github.com/kanpon/data-governance/internal/storage/ent/schema"
+	"github.com/kanpon/data-governance/internal/storage/ent/schemachange"
+	"github.com/kanpon/data-governance/internal/storage/ent/schemaversion"
 	"github.com/kanpon/data-governance/internal/storage/ent/sensor"
 	"github.com/kanpon/data-governance/internal/storage/ent/user"
 )
@@ -22,6 +28,198 @@ import (
 // (default values, validators, hooks and policies) and stitches it
 // to their package variables.
 func init() {
+	assetedgeFields := schema.AssetEdge{}.Fields()
+	_ = assetedgeFields
+	// assetedgeDescFromAsset is the schema descriptor for from_asset field.
+	assetedgeDescFromAsset := assetedgeFields[1].Descriptor()
+	// assetedge.FromAssetValidator is a validator for the "from_asset" field. It is called by the builders before save.
+	assetedge.FromAssetValidator = func() func(string) error {
+		validators := assetedgeDescFromAsset.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(from_asset string) error {
+			for _, fn := range fns {
+				if err := fn(from_asset); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// assetedgeDescToAsset is the schema descriptor for to_asset field.
+	assetedgeDescToAsset := assetedgeFields[2].Descriptor()
+	// assetedge.ToAssetValidator is a validator for the "to_asset" field. It is called by the builders before save.
+	assetedge.ToAssetValidator = func() func(string) error {
+		validators := assetedgeDescToAsset.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(to_asset string) error {
+			for _, fn := range fns {
+				if err := fn(to_asset); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// assetedgeDescCodeHashFirst is the schema descriptor for code_hash_first field.
+	assetedgeDescCodeHashFirst := assetedgeFields[3].Descriptor()
+	// assetedge.CodeHashFirstValidator is a validator for the "code_hash_first" field. It is called by the builders before save.
+	assetedge.CodeHashFirstValidator = func() func(string) error {
+		validators := assetedgeDescCodeHashFirst.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(code_hash_first string) error {
+			for _, fn := range fns {
+				if err := fn(code_hash_first); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// assetedgeDescCodeHashLatest is the schema descriptor for code_hash_latest field.
+	assetedgeDescCodeHashLatest := assetedgeFields[4].Descriptor()
+	// assetedge.CodeHashLatestValidator is a validator for the "code_hash_latest" field. It is called by the builders before save.
+	assetedge.CodeHashLatestValidator = func() func(string) error {
+		validators := assetedgeDescCodeHashLatest.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(code_hash_latest string) error {
+			for _, fn := range fns {
+				if err := fn(code_hash_latest); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// assetedgeDescFirstSeenAt is the schema descriptor for first_seen_at field.
+	assetedgeDescFirstSeenAt := assetedgeFields[6].Descriptor()
+	// assetedge.DefaultFirstSeenAt holds the default value on creation for the first_seen_at field.
+	assetedge.DefaultFirstSeenAt = assetedgeDescFirstSeenAt.Default.(func() time.Time)
+	// assetedgeDescLastSeenAt is the schema descriptor for last_seen_at field.
+	assetedgeDescLastSeenAt := assetedgeFields[8].Descriptor()
+	// assetedge.DefaultLastSeenAt holds the default value on creation for the last_seen_at field.
+	assetedge.DefaultLastSeenAt = assetedgeDescLastSeenAt.Default.(func() time.Time)
+	// assetedgeDescID is the schema descriptor for id field.
+	assetedgeDescID := assetedgeFields[0].Descriptor()
+	// assetedge.DefaultID holds the default value on creation for the id field.
+	assetedge.DefaultID = assetedgeDescID.Default.(func() uuid.UUID)
+	assetmetadataFields := schema.AssetMetadata{}.Fields()
+	_ = assetmetadataFields
+	// assetmetadataDescAsset is the schema descriptor for asset field.
+	assetmetadataDescAsset := assetmetadataFields[1].Descriptor()
+	// assetmetadata.AssetValidator is a validator for the "asset" field. It is called by the builders before save.
+	assetmetadata.AssetValidator = func() func(string) error {
+		validators := assetmetadataDescAsset.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(asset string) error {
+			for _, fn := range fns {
+				if err := fn(asset); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// assetmetadataDescColumnName is the schema descriptor for column_name field.
+	assetmetadataDescColumnName := assetmetadataFields[2].Descriptor()
+	// assetmetadata.ColumnNameValidator is a validator for the "column_name" field. It is called by the builders before save.
+	assetmetadata.ColumnNameValidator = assetmetadataDescColumnName.Validators[0].(func(string) error)
+	// assetmetadataDescOwner is the schema descriptor for owner field.
+	assetmetadataDescOwner := assetmetadataFields[4].Descriptor()
+	// assetmetadata.OwnerValidator is a validator for the "owner" field. It is called by the builders before save.
+	assetmetadata.OwnerValidator = assetmetadataDescOwner.Validators[0].(func(string) error)
+	// assetmetadataDescSetAt is the schema descriptor for set_at field.
+	assetmetadataDescSetAt := assetmetadataFields[7].Descriptor()
+	// assetmetadata.DefaultSetAt holds the default value on creation for the set_at field.
+	assetmetadata.DefaultSetAt = assetmetadataDescSetAt.Default.(func() time.Time)
+	// assetmetadataDescID is the schema descriptor for id field.
+	assetmetadataDescID := assetmetadataFields[0].Descriptor()
+	// assetmetadata.DefaultID holds the default value on creation for the id field.
+	assetmetadata.DefaultID = assetmetadataDescID.Default.(func() uuid.UUID)
+	assetversionFields := schema.AssetVersion{}.Fields()
+	_ = assetversionFields
+	// assetversionDescAsset is the schema descriptor for asset field.
+	assetversionDescAsset := assetversionFields[1].Descriptor()
+	// assetversion.AssetValidator is a validator for the "asset" field. It is called by the builders before save.
+	assetversion.AssetValidator = func() func(string) error {
+		validators := assetversionDescAsset.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(asset string) error {
+			for _, fn := range fns {
+				if err := fn(asset); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// assetversionDescCodeHash is the schema descriptor for code_hash field.
+	assetversionDescCodeHash := assetversionFields[2].Descriptor()
+	// assetversion.CodeHashValidator is a validator for the "code_hash" field. It is called by the builders before save.
+	assetversion.CodeHashValidator = func() func(string) error {
+		validators := assetversionDescCodeHash.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(code_hash string) error {
+			for _, fn := range fns {
+				if err := fn(code_hash); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// assetversionDescOwner is the schema descriptor for owner field.
+	assetversionDescOwner := assetversionFields[4].Descriptor()
+	// assetversion.OwnerValidator is a validator for the "owner" field. It is called by the builders before save.
+	assetversion.OwnerValidator = assetversionDescOwner.Validators[0].(func(string) error)
+	// assetversionDescDriftStatus is the schema descriptor for drift_status field.
+	assetversionDescDriftStatus := assetversionFields[7].Descriptor()
+	// assetversion.DefaultDriftStatus holds the default value on creation for the drift_status field.
+	assetversion.DefaultDriftStatus = assetversionDescDriftStatus.Default.(string)
+	// assetversion.DriftStatusValidator is a validator for the "drift_status" field. It is called by the builders before save.
+	assetversion.DriftStatusValidator = func() func(string) error {
+		validators := assetversionDescDriftStatus.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(drift_status string) error {
+			for _, fn := range fns {
+				if err := fn(drift_status); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// assetversionDescCreatedAt is the schema descriptor for created_at field.
+	assetversionDescCreatedAt := assetversionFields[8].Descriptor()
+	// assetversion.DefaultCreatedAt holds the default value on creation for the created_at field.
+	assetversion.DefaultCreatedAt = assetversionDescCreatedAt.Default.(func() time.Time)
+	// assetversionDescID is the schema descriptor for id field.
+	assetversionDescID := assetversionFields[0].Descriptor()
+	// assetversion.DefaultID holds the default value on creation for the id field.
+	assetversion.DefaultID = assetversionDescID.Default.(func() uuid.UUID)
 	backfillFields := schema.Backfill{}.Fields()
 	_ = backfillFields
 	// backfillDescAssetName is the schema descriptor for asset_name field.
@@ -78,6 +276,132 @@ func init() {
 	backfillDescID := backfillFields[0].Descriptor()
 	// backfill.DefaultID holds the default value on creation for the id field.
 	backfill.DefaultID = backfillDescID.Default.(func() uuid.UUID)
+	columnedgeFields := schema.ColumnEdge{}.Fields()
+	_ = columnedgeFields
+	// columnedgeDescFromAsset is the schema descriptor for from_asset field.
+	columnedgeDescFromAsset := columnedgeFields[1].Descriptor()
+	// columnedge.FromAssetValidator is a validator for the "from_asset" field. It is called by the builders before save.
+	columnedge.FromAssetValidator = func() func(string) error {
+		validators := columnedgeDescFromAsset.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(from_asset string) error {
+			for _, fn := range fns {
+				if err := fn(from_asset); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// columnedgeDescFromColumn is the schema descriptor for from_column field.
+	columnedgeDescFromColumn := columnedgeFields[2].Descriptor()
+	// columnedge.FromColumnValidator is a validator for the "from_column" field. It is called by the builders before save.
+	columnedge.FromColumnValidator = func() func(string) error {
+		validators := columnedgeDescFromColumn.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(from_column string) error {
+			for _, fn := range fns {
+				if err := fn(from_column); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// columnedgeDescToAsset is the schema descriptor for to_asset field.
+	columnedgeDescToAsset := columnedgeFields[3].Descriptor()
+	// columnedge.ToAssetValidator is a validator for the "to_asset" field. It is called by the builders before save.
+	columnedge.ToAssetValidator = func() func(string) error {
+		validators := columnedgeDescToAsset.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(to_asset string) error {
+			for _, fn := range fns {
+				if err := fn(to_asset); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// columnedgeDescToColumn is the schema descriptor for to_column field.
+	columnedgeDescToColumn := columnedgeFields[4].Descriptor()
+	// columnedge.ToColumnValidator is a validator for the "to_column" field. It is called by the builders before save.
+	columnedge.ToColumnValidator = func() func(string) error {
+		validators := columnedgeDescToColumn.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(to_column string) error {
+			for _, fn := range fns {
+				if err := fn(to_column); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// columnedgeDescCodeHashFirst is the schema descriptor for code_hash_first field.
+	columnedgeDescCodeHashFirst := columnedgeFields[5].Descriptor()
+	// columnedge.CodeHashFirstValidator is a validator for the "code_hash_first" field. It is called by the builders before save.
+	columnedge.CodeHashFirstValidator = func() func(string) error {
+		validators := columnedgeDescCodeHashFirst.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(code_hash_first string) error {
+			for _, fn := range fns {
+				if err := fn(code_hash_first); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// columnedgeDescCodeHashLatest is the schema descriptor for code_hash_latest field.
+	columnedgeDescCodeHashLatest := columnedgeFields[6].Descriptor()
+	// columnedge.CodeHashLatestValidator is a validator for the "code_hash_latest" field. It is called by the builders before save.
+	columnedge.CodeHashLatestValidator = func() func(string) error {
+		validators := columnedgeDescCodeHashLatest.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(code_hash_latest string) error {
+			for _, fn := range fns {
+				if err := fn(code_hash_latest); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// columnedgeDescFirstSeenAt is the schema descriptor for first_seen_at field.
+	columnedgeDescFirstSeenAt := columnedgeFields[8].Descriptor()
+	// columnedge.DefaultFirstSeenAt holds the default value on creation for the first_seen_at field.
+	columnedge.DefaultFirstSeenAt = columnedgeDescFirstSeenAt.Default.(func() time.Time)
+	// columnedgeDescLastSeenAt is the schema descriptor for last_seen_at field.
+	columnedgeDescLastSeenAt := columnedgeFields[10].Descriptor()
+	// columnedge.DefaultLastSeenAt holds the default value on creation for the last_seen_at field.
+	columnedge.DefaultLastSeenAt = columnedgeDescLastSeenAt.Default.(func() time.Time)
+	// columnedgeDescPartitionKey is the schema descriptor for partition_key field.
+	columnedgeDescPartitionKey := columnedgeFields[12].Descriptor()
+	// columnedge.PartitionKeyValidator is a validator for the "partition_key" field. It is called by the builders before save.
+	columnedge.PartitionKeyValidator = columnedgeDescPartitionKey.Validators[0].(func(string) error)
+	// columnedgeDescID is the schema descriptor for id field.
+	columnedgeDescID := columnedgeFields[0].Descriptor()
+	// columnedge.DefaultID holds the default value on creation for the id field.
+	columnedge.DefaultID = columnedgeDescID.Default.(func() uuid.UUID)
 	concurrencytokenFields := schema.ConcurrencyToken{}.Fields()
 	_ = concurrencytokenFields
 	// concurrencytokenDescAssetName is the schema descriptor for asset_name field.
@@ -442,6 +766,154 @@ func init() {
 	scheduleDescID := scheduleFields[0].Descriptor()
 	// schedule.DefaultID holds the default value on creation for the id field.
 	schedule.DefaultID = scheduleDescID.Default.(func() uuid.UUID)
+	schemachangeFields := schema.SchemaChange{}.Fields()
+	_ = schemachangeFields
+	// schemachangeDescAsset is the schema descriptor for asset field.
+	schemachangeDescAsset := schemachangeFields[1].Descriptor()
+	// schemachange.AssetValidator is a validator for the "asset" field. It is called by the builders before save.
+	schemachange.AssetValidator = func() func(string) error {
+		validators := schemachangeDescAsset.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(asset string) error {
+			for _, fn := range fns {
+				if err := fn(asset); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// schemachangeDescCodeHash is the schema descriptor for code_hash field.
+	schemachangeDescCodeHash := schemachangeFields[3].Descriptor()
+	// schemachange.CodeHashValidator is a validator for the "code_hash" field. It is called by the builders before save.
+	schemachange.CodeHashValidator = func() func(string) error {
+		validators := schemachangeDescCodeHash.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(code_hash string) error {
+			for _, fn := range fns {
+				if err := fn(code_hash); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// schemachangeDescChangeType is the schema descriptor for change_type field.
+	schemachangeDescChangeType := schemachangeFields[6].Descriptor()
+	// schemachange.ChangeTypeValidator is a validator for the "change_type" field. It is called by the builders before save.
+	schemachange.ChangeTypeValidator = func() func(string) error {
+		validators := schemachangeDescChangeType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(change_type string) error {
+			for _, fn := range fns {
+				if err := fn(change_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// schemachangeDescColumnName is the schema descriptor for column_name field.
+	schemachangeDescColumnName := schemachangeFields[7].Descriptor()
+	// schemachange.ColumnNameValidator is a validator for the "column_name" field. It is called by the builders before save.
+	schemachange.ColumnNameValidator = schemachangeDescColumnName.Validators[0].(func(string) error)
+	// schemachangeDescPrevType is the schema descriptor for prev_type field.
+	schemachangeDescPrevType := schemachangeFields[8].Descriptor()
+	// schemachange.PrevTypeValidator is a validator for the "prev_type" field. It is called by the builders before save.
+	schemachange.PrevTypeValidator = schemachangeDescPrevType.Validators[0].(func(string) error)
+	// schemachangeDescNewType is the schema descriptor for new_type field.
+	schemachangeDescNewType := schemachangeFields[9].Descriptor()
+	// schemachange.NewTypeValidator is a validator for the "new_type" field. It is called by the builders before save.
+	schemachange.NewTypeValidator = schemachangeDescNewType.Validators[0].(func(string) error)
+	// schemachangeDescIsBreaking is the schema descriptor for is_breaking field.
+	schemachangeDescIsBreaking := schemachangeFields[12].Descriptor()
+	// schemachange.DefaultIsBreaking holds the default value on creation for the is_breaking field.
+	schemachange.DefaultIsBreaking = schemachangeDescIsBreaking.Default.(bool)
+	// schemachangeDescObservedAt is the schema descriptor for observed_at field.
+	schemachangeDescObservedAt := schemachangeFields[13].Descriptor()
+	// schemachange.DefaultObservedAt holds the default value on creation for the observed_at field.
+	schemachange.DefaultObservedAt = schemachangeDescObservedAt.Default.(func() time.Time)
+	// schemachangeDescID is the schema descriptor for id field.
+	schemachangeDescID := schemachangeFields[0].Descriptor()
+	// schemachange.DefaultID holds the default value on creation for the id field.
+	schemachange.DefaultID = schemachangeDescID.Default.(func() uuid.UUID)
+	schemaversionFields := schema.SchemaVersion{}.Fields()
+	_ = schemaversionFields
+	// schemaversionDescAsset is the schema descriptor for asset field.
+	schemaversionDescAsset := schemaversionFields[1].Descriptor()
+	// schemaversion.AssetValidator is a validator for the "asset" field. It is called by the builders before save.
+	schemaversion.AssetValidator = func() func(string) error {
+		validators := schemaversionDescAsset.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(asset string) error {
+			for _, fn := range fns {
+				if err := fn(asset); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// schemaversionDescCodeHash is the schema descriptor for code_hash field.
+	schemaversionDescCodeHash := schemaversionFields[2].Descriptor()
+	// schemaversion.CodeHashValidator is a validator for the "code_hash" field. It is called by the builders before save.
+	schemaversion.CodeHashValidator = func() func(string) error {
+		validators := schemaversionDescCodeHash.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(code_hash string) error {
+			for _, fn := range fns {
+				if err := fn(code_hash); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// schemaversionDescSchemaHash is the schema descriptor for schema_hash field.
+	schemaversionDescSchemaHash := schemaversionFields[3].Descriptor()
+	// schemaversion.SchemaHashValidator is a validator for the "schema_hash" field. It is called by the builders before save.
+	schemaversion.SchemaHashValidator = func() func(string) error {
+		validators := schemaversionDescSchemaHash.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(schema_hash string) error {
+			for _, fn := range fns {
+				if err := fn(schema_hash); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// schemaversionDescCapturedAt is the schema descriptor for captured_at field.
+	schemaversionDescCapturedAt := schemaversionFields[5].Descriptor()
+	// schemaversion.DefaultCapturedAt holds the default value on creation for the captured_at field.
+	schemaversion.DefaultCapturedAt = schemaversionDescCapturedAt.Default.(func() time.Time)
+	// schemaversionDescLastSeenAt is the schema descriptor for last_seen_at field.
+	schemaversionDescLastSeenAt := schemaversionFields[6].Descriptor()
+	// schemaversion.DefaultLastSeenAt holds the default value on creation for the last_seen_at field.
+	schemaversion.DefaultLastSeenAt = schemaversionDescLastSeenAt.Default.(func() time.Time)
+	// schemaversionDescID is the schema descriptor for id field.
+	schemaversionDescID := schemaversionFields[0].Descriptor()
+	// schemaversion.DefaultID holds the default value on creation for the id field.
+	schemaversion.DefaultID = schemaversionDescID.Default.(func() uuid.UUID)
 	sensorFields := schema.Sensor{}.Fields()
 	_ = sensorFields
 	// sensorDescAssetName is the schema descriptor for asset_name field.

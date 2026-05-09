@@ -9,6 +9,42 @@ import (
 	"github.com/kanpon/data-governance/internal/storage/ent"
 )
 
+// The AssetEdgeFunc type is an adapter to allow the use of ordinary
+// function as AssetEdge mutator.
+type AssetEdgeFunc func(context.Context, *ent.AssetEdgeMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AssetEdgeFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AssetEdgeMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AssetEdgeMutation", m)
+}
+
+// The AssetMetadataFunc type is an adapter to allow the use of ordinary
+// function as AssetMetadata mutator.
+type AssetMetadataFunc func(context.Context, *ent.AssetMetadataMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AssetMetadataFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AssetMetadataMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AssetMetadataMutation", m)
+}
+
+// The AssetVersionFunc type is an adapter to allow the use of ordinary
+// function as AssetVersion mutator.
+type AssetVersionFunc func(context.Context, *ent.AssetVersionMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AssetVersionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AssetVersionMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AssetVersionMutation", m)
+}
+
 // The BackfillFunc type is an adapter to allow the use of ordinary
 // function as Backfill mutator.
 type BackfillFunc func(context.Context, *ent.BackfillMutation) (ent.Value, error)
@@ -19,6 +55,18 @@ func (f BackfillFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, er
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.BackfillMutation", m)
+}
+
+// The ColumnEdgeFunc type is an adapter to allow the use of ordinary
+// function as ColumnEdge mutator.
+type ColumnEdgeFunc func(context.Context, *ent.ColumnEdgeMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ColumnEdgeFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ColumnEdgeMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ColumnEdgeMutation", m)
 }
 
 // The ConcurrencyTokenFunc type is an adapter to allow the use of ordinary
@@ -91,6 +139,30 @@ func (f ScheduleFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, er
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ScheduleMutation", m)
+}
+
+// The SchemaChangeFunc type is an adapter to allow the use of ordinary
+// function as SchemaChange mutator.
+type SchemaChangeFunc func(context.Context, *ent.SchemaChangeMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f SchemaChangeFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.SchemaChangeMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SchemaChangeMutation", m)
+}
+
+// The SchemaVersionFunc type is an adapter to allow the use of ordinary
+// function as SchemaVersion mutator.
+type SchemaVersionFunc func(context.Context, *ent.SchemaVersionMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f SchemaVersionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.SchemaVersionMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SchemaVersionMutation", m)
 }
 
 // The SensorFunc type is an adapter to allow the use of ordinary

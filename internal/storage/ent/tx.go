@@ -12,8 +12,16 @@ import (
 // Tx is a transactional client that is created by calling Client.Tx().
 type Tx struct {
 	config
+	// AssetEdge is the client for interacting with the AssetEdge builders.
+	AssetEdge *AssetEdgeClient
+	// AssetMetadata is the client for interacting with the AssetMetadata builders.
+	AssetMetadata *AssetMetadataClient
+	// AssetVersion is the client for interacting with the AssetVersion builders.
+	AssetVersion *AssetVersionClient
 	// Backfill is the client for interacting with the Backfill builders.
 	Backfill *BackfillClient
+	// ColumnEdge is the client for interacting with the ColumnEdge builders.
+	ColumnEdge *ColumnEdgeClient
 	// ConcurrencyToken is the client for interacting with the ConcurrencyToken builders.
 	ConcurrencyToken *ConcurrencyTokenClient
 	// EventLog is the client for interacting with the EventLog builders.
@@ -26,6 +34,10 @@ type Tx struct {
 	RunStep *RunStepClient
 	// Schedule is the client for interacting with the Schedule builders.
 	Schedule *ScheduleClient
+	// SchemaChange is the client for interacting with the SchemaChange builders.
+	SchemaChange *SchemaChangeClient
+	// SchemaVersion is the client for interacting with the SchemaVersion builders.
+	SchemaVersion *SchemaVersionClient
 	// Sensor is the client for interacting with the Sensor builders.
 	Sensor *SensorClient
 	// User is the client for interacting with the User builders.
@@ -161,13 +173,19 @@ func (tx *Tx) Client() *Client {
 }
 
 func (tx *Tx) init() {
+	tx.AssetEdge = NewAssetEdgeClient(tx.config)
+	tx.AssetMetadata = NewAssetMetadataClient(tx.config)
+	tx.AssetVersion = NewAssetVersionClient(tx.config)
 	tx.Backfill = NewBackfillClient(tx.config)
+	tx.ColumnEdge = NewColumnEdgeClient(tx.config)
 	tx.ConcurrencyToken = NewConcurrencyTokenClient(tx.config)
 	tx.EventLog = NewEventLogClient(tx.config)
 	tx.InviteToken = NewInviteTokenClient(tx.config)
 	tx.Run = NewRunClient(tx.config)
 	tx.RunStep = NewRunStepClient(tx.config)
 	tx.Schedule = NewScheduleClient(tx.config)
+	tx.SchemaChange = NewSchemaChangeClient(tx.config)
+	tx.SchemaVersion = NewSchemaVersionClient(tx.config)
 	tx.Sensor = NewSensorClient(tx.config)
 	tx.User = NewUserClient(tx.config)
 }
@@ -179,7 +197,7 @@ func (tx *Tx) init() {
 // of them in order to commit or rollback the transaction.
 //
 // If a closed transaction is embedded in one of the generated entities, and the entity
-// applies a query, for example: Backfill.QueryXXX(), the query will be executed
+// applies a query, for example: AssetEdge.QueryXXX(), the query will be executed
 // through the driver which created this transaction.
 //
 // Note that txDriver is not goroutine safe.

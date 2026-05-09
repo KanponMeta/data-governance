@@ -9,6 +9,91 @@ import (
 )
 
 var (
+	// AssetEdgesColumns holds the columns for the "asset_edges" table.
+	AssetEdgesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "from_asset", Type: field.TypeString, Size: 256},
+		{Name: "to_asset", Type: field.TypeString, Size: 256},
+		{Name: "code_hash_first", Type: field.TypeString, Size: 64},
+		{Name: "code_hash_latest", Type: field.TypeString, Size: 64},
+		{Name: "first_seen_run_id", Type: field.TypeUUID},
+		{Name: "first_seen_at", Type: field.TypeTime},
+		{Name: "last_seen_run_id", Type: field.TypeUUID},
+		{Name: "last_seen_at", Type: field.TypeTime},
+		{Name: "superseded_at", Type: field.TypeTime, Nullable: true},
+	}
+	// AssetEdgesTable holds the schema information for the "asset_edges" table.
+	AssetEdgesTable = &schema.Table{
+		Name:       "asset_edges",
+		Columns:    AssetEdgesColumns,
+		PrimaryKey: []*schema.Column{AssetEdgesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "assetedge_from_asset",
+				Unique:  false,
+				Columns: []*schema.Column{AssetEdgesColumns[1]},
+			},
+			{
+				Name:    "assetedge_to_asset",
+				Unique:  false,
+				Columns: []*schema.Column{AssetEdgesColumns[2]},
+			},
+		},
+	}
+	// AssetMetadataColumns holds the columns for the "asset_metadata" table.
+	AssetMetadataColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "asset", Type: field.TypeString, Size: 256},
+		{Name: "column_name", Type: field.TypeString, Nullable: true, Size: 256},
+		{Name: "description", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "owner", Type: field.TypeString, Nullable: true, Size: 256},
+		{Name: "tags", Type: field.TypeJSON, Nullable: true},
+		{Name: "set_by", Type: field.TypeUUID},
+		{Name: "set_at", Type: field.TypeTime},
+	}
+	// AssetMetadataTable holds the schema information for the "asset_metadata" table.
+	AssetMetadataTable = &schema.Table{
+		Name:       "asset_metadata",
+		Columns:    AssetMetadataColumns,
+		PrimaryKey: []*schema.Column{AssetMetadataColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "assetmetadata_asset_column_name_set_at",
+				Unique:  false,
+				Columns: []*schema.Column{AssetMetadataColumns[1], AssetMetadataColumns[2], AssetMetadataColumns[7]},
+			},
+		},
+	}
+	// AssetVersionsColumns holds the columns for the "asset_versions" table.
+	AssetVersionsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "asset", Type: field.TypeString, Size: 256},
+		{Name: "code_hash", Type: field.TypeString, Size: 64},
+		{Name: "description", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "owner", Type: field.TypeString, Nullable: true, Size: 256},
+		{Name: "tags", Type: field.TypeJSON, Nullable: true},
+		{Name: "column_lineage", Type: field.TypeJSON, Nullable: true},
+		{Name: "drift_status", Type: field.TypeString, Size: 16, Default: "clean"},
+		{Name: "created_at", Type: field.TypeTime},
+	}
+	// AssetVersionsTable holds the schema information for the "asset_versions" table.
+	AssetVersionsTable = &schema.Table{
+		Name:       "asset_versions",
+		Columns:    AssetVersionsColumns,
+		PrimaryKey: []*schema.Column{AssetVersionsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "assetversion_asset_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{AssetVersionsColumns[1], AssetVersionsColumns[8]},
+			},
+			{
+				Name:    "assetversion_asset_code_hash",
+				Unique:  true,
+				Columns: []*schema.Column{AssetVersionsColumns[1], AssetVersionsColumns[2]},
+			},
+		},
+	}
 	// BackfillsColumns holds the columns for the "backfills" table.
 	BackfillsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeUUID},
@@ -34,6 +119,40 @@ var (
 				Name:    "backfill_status_submitted_at",
 				Unique:  false,
 				Columns: []*schema.Column{BackfillsColumns[3], BackfillsColumns[5]},
+			},
+		},
+	}
+	// ColumnEdgesColumns holds the columns for the "column_edges" table.
+	ColumnEdgesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "from_asset", Type: field.TypeString, Size: 256},
+		{Name: "from_column", Type: field.TypeString, Size: 256},
+		{Name: "to_asset", Type: field.TypeString, Size: 256},
+		{Name: "to_column", Type: field.TypeString, Size: 256},
+		{Name: "code_hash_first", Type: field.TypeString, Size: 64},
+		{Name: "code_hash_latest", Type: field.TypeString, Size: 64},
+		{Name: "first_seen_run_id", Type: field.TypeUUID},
+		{Name: "first_seen_at", Type: field.TypeTime},
+		{Name: "last_seen_run_id", Type: field.TypeUUID},
+		{Name: "last_seen_at", Type: field.TypeTime},
+		{Name: "superseded_at", Type: field.TypeTime, Nullable: true},
+		{Name: "partition_key", Type: field.TypeString, Nullable: true, Size: 128},
+	}
+	// ColumnEdgesTable holds the schema information for the "column_edges" table.
+	ColumnEdgesTable = &schema.Table{
+		Name:       "column_edges",
+		Columns:    ColumnEdgesColumns,
+		PrimaryKey: []*schema.Column{ColumnEdgesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "columnedge_from_asset_from_column",
+				Unique:  false,
+				Columns: []*schema.Column{ColumnEdgesColumns[1], ColumnEdgesColumns[2]},
+			},
+			{
+				Name:    "columnedge_to_asset_to_column",
+				Unique:  false,
+				Columns: []*schema.Column{ColumnEdgesColumns[3], ColumnEdgesColumns[4]},
 			},
 		},
 	}
@@ -248,6 +367,78 @@ var (
 			},
 		},
 	}
+	// SchemaChangesColumns holds the columns for the "schema_changes" table.
+	SchemaChangesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "asset", Type: field.TypeString, Size: 256},
+		{Name: "run_id", Type: field.TypeUUID},
+		{Name: "code_hash", Type: field.TypeString, Size: 64},
+		{Name: "prev_version_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "new_version_id", Type: field.TypeUUID},
+		{Name: "change_type", Type: field.TypeString, Size: 32},
+		{Name: "column_name", Type: field.TypeString, Nullable: true, Size: 256},
+		{Name: "prev_type", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "new_type", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "prev_nullable", Type: field.TypeBool, Nullable: true},
+		{Name: "new_nullable", Type: field.TypeBool, Nullable: true},
+		{Name: "is_breaking", Type: field.TypeBool, Default: false},
+		{Name: "observed_at", Type: field.TypeTime},
+		{Name: "acknowledged_at", Type: field.TypeTime, Nullable: true},
+		{Name: "acknowledged_by", Type: field.TypeUUID, Nullable: true},
+		{Name: "acknowledgement_reason", Type: field.TypeString, Nullable: true, Size: 2147483647},
+	}
+	// SchemaChangesTable holds the schema information for the "schema_changes" table.
+	SchemaChangesTable = &schema.Table{
+		Name:       "schema_changes",
+		Columns:    SchemaChangesColumns,
+		PrimaryKey: []*schema.Column{SchemaChangesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "schemachange_asset_observed_at",
+				Unique:  false,
+				Columns: []*schema.Column{SchemaChangesColumns[1], SchemaChangesColumns[13]},
+			},
+			{
+				Name:    "schemachange_asset_column_name_observed_at",
+				Unique:  false,
+				Columns: []*schema.Column{SchemaChangesColumns[1], SchemaChangesColumns[7], SchemaChangesColumns[13]},
+			},
+			{
+				Name:    "schemachange_acknowledged_at",
+				Unique:  false,
+				Columns: []*schema.Column{SchemaChangesColumns[14]},
+			},
+		},
+	}
+	// SchemaVersionsColumns holds the columns for the "schema_versions" table.
+	SchemaVersionsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "asset", Type: field.TypeString, Size: 256},
+		{Name: "code_hash", Type: field.TypeString, Size: 64},
+		{Name: "schema_hash", Type: field.TypeString, Size: 64},
+		{Name: "schema_data", Type: field.TypeJSON},
+		{Name: "captured_at", Type: field.TypeTime},
+		{Name: "last_seen_at", Type: field.TypeTime},
+		{Name: "last_seen_run_id", Type: field.TypeUUID},
+	}
+	// SchemaVersionsTable holds the schema information for the "schema_versions" table.
+	SchemaVersionsTable = &schema.Table{
+		Name:       "schema_versions",
+		Columns:    SchemaVersionsColumns,
+		PrimaryKey: []*schema.Column{SchemaVersionsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "schemaversion_asset_captured_at",
+				Unique:  false,
+				Columns: []*schema.Column{SchemaVersionsColumns[1], SchemaVersionsColumns[5]},
+			},
+			{
+				Name:    "schemaversion_schema_hash",
+				Unique:  false,
+				Columns: []*schema.Column{SchemaVersionsColumns[3]},
+			},
+		},
+	}
 	// SensorsColumns holds the columns for the "sensors" table.
 	SensorsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeUUID},
@@ -306,21 +497,39 @@ var (
 	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
+		AssetEdgesTable,
+		AssetMetadataTable,
+		AssetVersionsTable,
 		BackfillsTable,
+		ColumnEdgesTable,
 		ConcurrencyTokensTable,
 		EventLogTable,
 		InviteTokenTable,
 		RunsTable,
 		RunStepsTable,
 		SchedulesTable,
+		SchemaChangesTable,
+		SchemaVersionsTable,
 		SensorsTable,
 		UserTable,
 	}
 )
 
 func init() {
+	AssetEdgesTable.Annotation = &entsql.Annotation{
+		Table: "asset_edges",
+	}
+	AssetMetadataTable.Annotation = &entsql.Annotation{
+		Table: "asset_metadata",
+	}
+	AssetVersionsTable.Annotation = &entsql.Annotation{
+		Table: "asset_versions",
+	}
 	BackfillsTable.Annotation = &entsql.Annotation{
 		Table: "backfills",
+	}
+	ColumnEdgesTable.Annotation = &entsql.Annotation{
+		Table: "column_edges",
 	}
 	ConcurrencyTokensTable.Annotation = &entsql.Annotation{
 		Table: "concurrency_tokens",
@@ -339,6 +548,12 @@ func init() {
 	}
 	SchedulesTable.Annotation = &entsql.Annotation{
 		Table: "schedules",
+	}
+	SchemaChangesTable.Annotation = &entsql.Annotation{
+		Table: "schema_changes",
+	}
+	SchemaVersionsTable.Annotation = &entsql.Annotation{
+		Table: "schema_versions",
 	}
 	SensorsTable.Annotation = &entsql.Annotation{
 		Table: "sensors",

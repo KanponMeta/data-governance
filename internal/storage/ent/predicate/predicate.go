@@ -6,8 +6,20 @@ import (
 	"entgo.io/ent/dialect/sql"
 )
 
+// AssetEdge is the predicate function for assetedge builders.
+type AssetEdge func(*sql.Selector)
+
+// AssetMetadata is the predicate function for assetmetadata builders.
+type AssetMetadata func(*sql.Selector)
+
+// AssetVersion is the predicate function for assetversion builders.
+type AssetVersion func(*sql.Selector)
+
 // Backfill is the predicate function for backfill builders.
 type Backfill func(*sql.Selector)
+
+// ColumnEdge is the predicate function for columnedge builders.
+type ColumnEdge func(*sql.Selector)
 
 // ConcurrencyToken is the predicate function for concurrencytoken builders.
 type ConcurrencyToken func(*sql.Selector)
@@ -26,6 +38,12 @@ type RunStep func(*sql.Selector)
 
 // Schedule is the predicate function for schedule builders.
 type Schedule func(*sql.Selector)
+
+// SchemaChange is the predicate function for schemachange builders.
+type SchemaChange func(*sql.Selector)
+
+// SchemaVersion is the predicate function for schemaversion builders.
+type SchemaVersion func(*sql.Selector)
 
 // Sensor is the predicate function for sensor builders.
 type Sensor func(*sql.Selector)
