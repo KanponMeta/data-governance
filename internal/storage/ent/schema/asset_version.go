@@ -37,6 +37,8 @@ func (AssetVersion) Fields() []ent.Field {
 		// drift_status: clean|pending|acknowledged (D-04). Mutable.
 		// CHECK constraint (drift_status IN ('clean','pending','acknowledged')) in SQL appendix.
 		field.String("drift_status").NotEmpty().MaxLen(16).Default("clean"),
+		// governance_state: draft|in_review|active|rejected (D-08). Mutable via governance workflow.
+		field.Enum("governance_state").Values("draft", "in_review", "active", "rejected").Default("draft"),
 		field.Time("created_at").Default(time.Now).Immutable(),
 	}
 }
