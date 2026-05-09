@@ -229,3 +229,120 @@ func TestAPIVersion(t *testing.T) {
 	p := &Postgres{}
 	require.Equal(t, connector.APIVersion, p.APIVersion())
 }
+
+// ---- Phase 4 SchemaDescriber capability tests ----
+
+// TestSchemaDescriberCapability verifies the compile-time assertion holds:
+// Postgres implements connector.SchemaDescriber.
+func TestSchemaDescriberCapability(t *testing.T) {
+	if testDSN == "" {
+		t.Skip("no test DSN")
+	}
+	ctx := context.Background()
+	p, err := New(ctx, testDSN)
+	require.NoError(t, err)
+	defer func() { _ = p.Close() }()
+
+	// Runtime type assertion must succeed
+	var conn connector.Connector = p
+	d, ok := conn.(connector.SchemaDescriber)
+	require.True(t, ok, "Postgres must implement connector.SchemaDescriber")
+	require.NotNil(t, d)
+}
+
+// stubNoSchemaDescriber implements connector.Connector but NOT connector.SchemaDescriber.
+// Used to verify the fallback type assertion in Wave 4's schema writer.
+type stubNoSchemaDescriber struct{}
+
+func (s *stubNoSchemaDescriber) APIVersion() string { return connector.APIVersion }
+func (s *stubNoSchemaDescriber) Ping(_ context.Context, _ connector.PingRequest) (connector.PingResponse, error) {
+	return connector.PingResponse{}, nil
+}
+func (s *stubNoSchemaDescriber) Schema(_ context.Context, _ connector.SchemaRequest) (connector.SchemaResponse, error) {
+	return connector.SchemaResponse{}, nil
+}
+func (s *stubNoSchemaDescriber) Read(_ context.Context, _ connector.ReadRequest) (connector.ReadResponse, error) {
+	return connector.ReadResponse{}, nil
+}
+func (s *stubNoSchemaDescriber) Write(_ context.Context, _ connector.WriteRequest) (connector.WriteResponse, error) {
+	return connector.WriteResponse{}, nil
+}
+
+// TestSchemaDescriberFallback verifies that a connector that does NOT implement
+// SchemaDescriber returns ok=false from the type assertion.
+func TestSchemaDescriberFallback(t *testing.T) {
+	var conn connector.Connector = &stubNoSchemaDescriber{}
+	_, ok := conn.(connector.SchemaDescriber)
+	require.False(t, ok, "stub connector must NOT satisfy connector.SchemaDescriber")
+}
+
+// TestDescribeSchemaIntegration creates a table with various types, calls
+// DescribeSchema, and asserts the returned Schema matches the declared table.
+// Build tag "integration" required; run with: go test -tags=integration
+func TestDescribeSchemaIntegration(t *testing.T) {
+	if testDSN == "" {
+		t.Skip("no test DSN (docker unavailable)")
+	}
+	ctx := context.Background()
+	p, err := New(ctx, testDSN)
+	require.NoError(t, err)
+	defer func() { _ = p.Close() }()
+
+	_, err = p.pool.Exec(ctx, `DROP TABLE IF EXISTS describe_test`)
+	require.NoError(t, err)
+	_, err = p.pool.Exec(ctx, `
+		CREATE TABLE describe_test (
+			id         BIGSERIAL PRIMARY KEY,
+			name       VARCHAR(255)     NOT NULL,
+			amount     NUMERIC(10,2),
+			created_at TIMESTAMPTZ      DEFAULT NOW(),
+			notes      TEXT
+		)
+	`)
+	require.NoError(t, err)
+	defer func() { _, _ = p.pool.Exec(ctx, `DROP TABLE IF EXISTS describe_test`) }()
+
+	_, err = p.pool.Exec(ctx, `COMMENT ON COLUMN describe_test.name IS 'user-visible label'`)
+	require.NoError(t, err)
+
+	schema, err := p.DescribeSchema(ctx, connector.AssetRef{Identifier: "public.describe_test"})
+	require.NoError(t, err)
+
+	// Expect 5 columns in ordinal_position order
+	require.Len(t, schema.Columns, 5)
+
+	// id: bigserial → bigint → int64, primary key, not nullable
+	id := schema.Columns[0]
+	require.Equal(t, "id", id.Name)
+	require.Equal(t, "int64", id.Type)
+	require.True(t, id.IsPrimaryKey, "id must be primary key")
+	require.False(t, id.Nullable, "id must not be nullable")
+
+	// name: varchar(255), not nullable, comment set
+	name := schema.Columns[1]
+	require.Equal(t, "name", name.Name)
+	require.Equal(t, "varchar(255)", name.Type)
+	require.False(t, name.Nullable)
+	require.Equal(t, "user-visible label", name.Comment)
+
+	// amount: numeric(10,2), nullable
+	amount := schema.Columns[2]
+	require.Equal(t, "amount", amount.Name)
+	require.Equal(t, "decimal(10,2)", amount.Type)
+	require.True(t, amount.Nullable)
+
+	// created_at: timestamptz, nullable (DEFAULT doesn't affect nullability), has default
+	createdAt := schema.Columns[3]
+	require.Equal(t, "created_at", createdAt.Name)
+	require.Equal(t, "timestamptz", createdAt.Type)
+	require.NotNil(t, createdAt.Default, "created_at should have a default")
+
+	// Primary key list
+	require.Equal(t, []string{"id"}, schema.PrimaryKey)
+
+	// RowCountEstim is -1 (Phase 4 does not query pg_class.reltuples)
+	require.Equal(t, int64(-1), schema.RowCountEstim)
+
+	// CapturedAt is non-zero
+	require.False(t, schema.CapturedAt.IsZero(), "CapturedAt must be set")
+}

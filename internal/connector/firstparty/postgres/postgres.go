@@ -254,6 +254,124 @@ func splitIdentifier(id string) (string, string, error) {
 	return parts[0], parts[1], nil
 }
 
+// Compile-time assertion: Postgres satisfies the optional connector.SchemaDescriber capability (Phase 4 D-05/D-06).
+var _ connector.SchemaDescriber = (*Postgres)(nil)
+
+// DescribeSchema implements connector.SchemaDescriber (Phase 4 D-05). Returns
+// the rich D-07 connector.Schema by querying information_schema.columns and
+// pg_constraint for the primary key.
+//
+// Non-fatal errors per D-08: callers are expected to log + emit
+// schema.capture_failed event and continue with the run.
+//
+// The returned Schema.Columns slice is in ordinal_position order; Wave 4's
+// hashSchema() sorts alphabetically before hashing for stable dedup
+// (Pitfall 5 mitigation).
+func (p *Postgres) DescribeSchema(ctx context.Context, ref connector.AssetRef) (connector.Schema, error) {
+	if err := p.checkClosed(); err != nil {
+		return connector.Schema{}, err
+	}
+	schemaName, tableName, err := splitIdentifier(ref.Identifier)
+	if err != nil {
+		return connector.Schema{}, err
+	}
+
+	const colQuery = `
+		SELECT c.column_name,
+		       c.data_type,
+		       c.character_maximum_length,
+		       c.numeric_precision,
+		       c.numeric_scale,
+		       c.is_nullable,
+		       c.column_default,
+		       c.ordinal_position,
+		       col_description(
+		           format('%s.%s', c.table_schema, c.table_name)::regclass::oid,
+		           c.ordinal_position::int
+		       ) AS comment
+		  FROM information_schema.columns c
+		 WHERE c.table_schema = $1 AND c.table_name = $2
+		 ORDER BY c.ordinal_position
+	`
+	rows, err := p.pool.Query(ctx, colQuery, schemaName, tableName)
+	if err != nil {
+		return connector.Schema{}, fmt.Errorf("postgres: describe schema query: %w", err)
+	}
+	defer rows.Close()
+
+	var cols []connector.SchemaColumn
+	for rows.Next() {
+		var (
+			name, rawType, isNullable string
+			charMaxLen, numPrecision, numScale *int
+			colDefault, comment *string
+			ordinalPosition int
+		)
+		if err := rows.Scan(&name, &rawType, &charMaxLen, &numPrecision, &numScale,
+			&isNullable, &colDefault, &ordinalPosition, &comment); err != nil {
+			return connector.Schema{}, fmt.Errorf("postgres: describe schema scan: %w", err)
+		}
+		c := connector.SchemaColumn{
+			Name:     name,
+			Type:     normalizePostgresType(rawType, charMaxLen, numPrecision, numScale),
+			Nullable: isNullable == "YES",
+			Default:  colDefault,
+		}
+		if comment != nil {
+			c.Comment = *comment
+		}
+		cols = append(cols, c)
+	}
+	if err := rows.Err(); err != nil {
+		return connector.Schema{}, fmt.Errorf("postgres: describe schema iter: %w", err)
+	}
+
+	const pkQuery = `
+		SELECT kcu.column_name
+		  FROM information_schema.table_constraints tc
+		  JOIN information_schema.key_column_usage kcu
+		    ON tc.constraint_name = kcu.constraint_name
+		   AND tc.table_schema = kcu.table_schema
+		 WHERE tc.constraint_type = 'PRIMARY KEY'
+		   AND tc.table_schema = $1
+		   AND tc.table_name   = $2
+		 ORDER BY kcu.ordinal_position
+	`
+	pkRows, err := p.pool.Query(ctx, pkQuery, schemaName, tableName)
+	if err != nil {
+		return connector.Schema{}, fmt.Errorf("postgres: describe schema pk query: %w", err)
+	}
+	defer pkRows.Close()
+
+	pkSet := make(map[string]bool)
+	var pk []string
+	for pkRows.Next() {
+		var col string
+		if err := pkRows.Scan(&col); err != nil {
+			return connector.Schema{}, fmt.Errorf("postgres: describe schema pk scan: %w", err)
+		}
+		pk = append(pk, col)
+		pkSet[col] = true
+	}
+	if err := pkRows.Err(); err != nil {
+		return connector.Schema{}, fmt.Errorf("postgres: describe schema pk iter: %w", err)
+	}
+
+	// Mark IsPrimaryKey on each column.
+	for i := range cols {
+		if pkSet[cols[i].Name] {
+			cols[i].IsPrimaryKey = true
+		}
+	}
+
+	return connector.Schema{
+		Columns:       cols,
+		PrimaryKey:    pk,
+		RowCountEstim: -1, // Phase 4 does not capture row count; Phase 5 quality work adds this
+		CapturedAt:    time.Now().UTC(),
+	}, nil
+}
+
 // quoteIdentifier returns "schema"."table" with safe identifier quoting.
 // For single-token names (e.g., column names) returns "name".
 // Rejects identifiers with embedded double quotes (defense against SQL injection
