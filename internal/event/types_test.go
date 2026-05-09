@@ -69,3 +69,65 @@ func TestAllPhase3EventTypes(t *testing.T) {
 	assert.True(t, knownSet[EventTypeRunQueued],
 		"AllKnownTypes() must still include Phase 2 run.queued after Phase 3 additions")
 }
+
+// TestAllPhase4EventTypes asserts the 8 Phase 4 (D-21) EventType constants
+// hold the verbatim string values defined in 04-CONTEXT.md, and that
+// AllKnownTypes() includes every one of them. Existing Phase 1+2+3 types must
+// also remain present (regression guard).
+func TestAllPhase4EventTypes(t *testing.T) {
+	t.Parallel()
+
+	// 1. Verify each Phase 4 constant has the exact string value from D-21.
+	cases := []struct {
+		name string
+		got  EventType
+		want string
+	}{
+		// Lineage (2)
+		{"EventTypeLineageCaptured", EventTypeLineageCaptured, "lineage.captured"},
+		{"EventTypeLineageDriftDetected", EventTypeLineageDriftDetected, "lineage.drift_detected"},
+		// Schema (5)
+		{"EventTypeSchemaCaptured", EventTypeSchemaCaptured, "schema.captured"},
+		{"EventTypeSchemaUnchanged", EventTypeSchemaUnchanged, "schema.unchanged"},
+		{"EventTypeSchemaChangeDetected", EventTypeSchemaChangeDetected, "schema.change_detected"},
+		{"EventTypeSchemaCaptureFailed", EventTypeSchemaCaptureFailed, "schema.capture_failed"},
+		{"EventTypeSchemaBreakAcknowledged", EventTypeSchemaBreakAcknowledged, "schema.break_acknowledged"},
+		// Metadata (1)
+		{"EventTypeMetadataUpdated", EventTypeMetadataUpdated, "metadata.updated"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tc.want, string(tc.got),
+				"Phase 4 D-21 string for %s must be %q (got %q)",
+				tc.name, tc.want, string(tc.got))
+		})
+	}
+
+	// 2. Verify AllKnownTypes() includes every Phase 4 type (membership check).
+	known := AllKnownTypes()
+	knownSet := make(map[EventType]bool, len(known))
+	for _, et := range known {
+		knownSet[et] = true
+	}
+	for _, tc := range cases {
+		assert.True(t, knownSet[tc.got],
+			"AllKnownTypes() must include Phase 4 type %s (%q)", tc.name, tc.want)
+	}
+
+	// 3. Phase 1 (7) + Phase 2 (9) + Phase 3 (13) + Phase 4 (8) = 37 minimum.
+	// Use >= so adding more types later does not break this guard.
+	assert.GreaterOrEqual(t, len(known), 37,
+		"AllKnownTypes() must contain at least 7 Phase1 + 9 Phase2 + 13 Phase3 + 8 Phase4 = 37 entries")
+
+	// 4. Regression: representative types from earlier phases must still be present.
+	assert.True(t, knownSet[EventTypeUserRegistered],
+		"AllKnownTypes() must still include Phase 1 user.registered after Phase 4 additions")
+	assert.True(t, knownSet[EventTypeRunQueued],
+		"AllKnownTypes() must still include Phase 2 run.queued after Phase 4 additions")
+	assert.True(t, knownSet[EventTypeScheduleFired],
+		"AllKnownTypes() must still include Phase 3 schedule.fired after Phase 4 additions")
+	assert.True(t, knownSet[EventTypeBackfillCompleted],
+		"AllKnownTypes() must still include Phase 3 backfill.completed after Phase 4 additions")
+}

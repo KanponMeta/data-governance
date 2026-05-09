@@ -44,6 +44,20 @@ const (
 	EventTypeBackfillSubmitted   EventType = "backfill.submitted"
 	EventTypeBackfillRunEnqueued EventType = "backfill.run_enqueued"
 	EventTypeBackfillCompleted   EventType = "backfill.completed"
+
+	// Phase 4 (D-21) — lineage capture events.
+	EventTypeLineageCaptured      EventType = "lineage.captured"
+	EventTypeLineageDriftDetected EventType = "lineage.drift_detected"
+
+	// Phase 4 (D-21) — schema capture events.
+	EventTypeSchemaCaptured          EventType = "schema.captured"
+	EventTypeSchemaUnchanged         EventType = "schema.unchanged"
+	EventTypeSchemaChangeDetected    EventType = "schema.change_detected"
+	EventTypeSchemaCaptureFailed     EventType = "schema.capture_failed"
+	EventTypeSchemaBreakAcknowledged EventType = "schema.break_acknowledged"
+
+	// Phase 4 (D-21) — metadata mutation event (assets and columns share the type).
+	EventTypeMetadataUpdated EventType = "metadata.updated"
 )
 
 // AllKnownTypes returns the complete set of valid EventType values including Phase 2 run.* types.
@@ -83,6 +97,17 @@ func AllKnownTypes() []EventType {
 		EventTypeBackfillSubmitted,
 		EventTypeBackfillRunEnqueued,
 		EventTypeBackfillCompleted,
+		// Phase 4 lineage events (D-21)
+		EventTypeLineageCaptured,
+		EventTypeLineageDriftDetected,
+		// Phase 4 schema events (D-21)
+		EventTypeSchemaCaptured,
+		EventTypeSchemaUnchanged,
+		EventTypeSchemaChangeDetected,
+		EventTypeSchemaCaptureFailed,
+		EventTypeSchemaBreakAcknowledged,
+		// Phase 4 metadata event (D-21)
+		EventTypeMetadataUpdated,
 	}
 }
 
