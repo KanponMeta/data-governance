@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	cloud.google.com/go/bigquery v1.77.0
+	cloud.google.com/go/datacatalog v1.31.0
 	cloud.google.com/go/storage v1.62.1
 	connectrpc.com/connect v1.16.2
 	entgo.io/ent v0.14.0
@@ -12,6 +13,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.17
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.16
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.101.0
+	github.com/casbin/casbin/v2 v2.135.0
 	github.com/colinmarc/hdfs/v2 v2.4.0
 	github.com/fsouza/fake-gcs-server v1.54.0
 	github.com/go-chi/chi/v5 v5.2.5
@@ -21,7 +23,9 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/heimdalr/dag v1.5.1
 	github.com/jackc/pgx/v5 v5.9.1
+	github.com/mattn/go-sqlite3 v1.14.16
 	github.com/parquet-go/parquet-go v0.29.0
+	github.com/pckhoi/casbin-pgx-adapter/v3 v3.2.0
 	github.com/prometheus/client_golang v1.19.1
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/snowflakedb/gosnowflake v1.19.1
@@ -44,6 +48,7 @@ require (
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	cloud.google.com/go/iam v1.7.0 // indirect
+	cloud.google.com/go/longrunning v0.9.0 // indirect
 	cloud.google.com/go/monitoring v1.24.3 // indirect
 	cloud.google.com/go/pubsub/v2 v2.4.0 // indirect
 	dario.cat/mergo v1.0.2 // indirect
@@ -83,6 +88,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.42.1 // indirect
 	github.com/aws/smithy-go v1.25.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/bmatcuk/doublestar/v4 v4.6.1 // indirect
+	github.com/casbin/govaluate v1.3.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cncf/xds/go v0.0.0-20251210132809-ee656c7534f5 // indirect
@@ -148,10 +155,10 @@ require (
 	github.com/linkedin/goavro/v2 v2.12.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20240226150601-1dcf7310316a // indirect
 	github.com/magiconair/properties v1.8.10 // indirect
-	github.com/mattn/go-sqlite3 v1.14.16 // indirect
 	github.com/minio/asm2plan9s v0.0.0-20200509001527-cdd76441f9d8 // indirect
 	github.com/minio/c2goasm v0.0.0-20190812172519-36a3d3bbc4f3 // indirect
 	github.com/mitchellh/go-wordwrap v0.0.0-20150314170334-ad45545899c7 // indirect
+	github.com/mmcloughlin/meow v0.0.0-20200201185800-3501c7c05d21 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/go-archive v0.2.0 // indirect
 	github.com/moby/moby/api v1.54.1 // indirect
