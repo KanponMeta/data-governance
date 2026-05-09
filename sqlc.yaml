@@ -1,0 +1,14 @@
+version: "2"
+sql:
+  - engine: postgresql
+    queries: internal/lineage/queries/lineage.sql
+    schema: migrations/
+    gen:
+      go:
+        package: lineageq
+        out: internal/lineage/queries
+        sql_package: pgx/v5
+        emit_methods_with_db_argument: true
+        emit_interface: true
+        emit_pointers_for_null_types: true
+        emit_exact_table_names: false

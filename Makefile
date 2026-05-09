@@ -4,7 +4,7 @@ BINARY := bin/platform
 PKG := ./...
 ATLAS := atlas
 
-.PHONY: build test lint generate migrate migrate-diff migrate-lint migrate-status run docker-build clean tidy proto-lint proto-generate proto-breaking integration
+.PHONY: build test lint generate migrate migrate-diff migrate-lint migrate-status run docker-build clean tidy proto-lint proto-generate proto-breaking integration sqlc sqlc-verify
 
 build:
 	$(GO) build -o $(BINARY) ./cmd/platform
@@ -50,6 +50,12 @@ proto-generate:
 
 proto-breaking:
 	cd internal/connector/proto && buf breaking --against ".git#branch=master,subdir=internal/connector/proto"
+
+sqlc:
+	PATH="$(HOME)/go/bin:$(PATH)" sqlc generate
+
+sqlc-verify:
+	@./scripts/sqlc-verify.sh
 
 integration:
 	docker compose up -d postgres
