@@ -58,6 +58,20 @@ const (
 
 	// Phase 4 (D-21) — metadata mutation event (assets and columns share the type).
 	EventTypeMetadataUpdated EventType = "metadata.updated"
+
+	// Phase 5 (Plan 05-05) — quality rule lifecycle events.
+	EventTypeQualityRulePassed    EventType = "quality.rule_passed"
+	EventTypeQualityRuleFailed    EventType = "quality.rule_failed"
+	EventTypeQualityRuleError     EventType = "quality.rule_error"
+	EventTypeQualityRunEvaluated  EventType = "quality.run_evaluated"
+
+	// Phase 5 (Plan 05-05) — SLA / freshness events.
+	EventTypeSLABreached EventType = "sla.breached"
+	EventTypeSLARecovered EventType = "sla.recovered"
+
+	// Phase 5 (Plan 05-05) — notification dispatch events.
+	EventTypeNotificationDispatched     EventType = "notification.dispatched"
+	EventTypeNotificationDispatchFailed EventType = "notification.dispatch_failed"
 )
 
 // AllKnownTypes returns the complete set of valid EventType values including Phase 2 run.* types.
@@ -108,6 +122,15 @@ func AllKnownTypes() []EventType {
 		EventTypeSchemaBreakAcknowledged,
 		// Phase 4 metadata event (D-21)
 		EventTypeMetadataUpdated,
+		// Phase 5 quality + SLA + notification events (Plan 05-05)
+		EventTypeQualityRulePassed,
+		EventTypeQualityRuleFailed,
+		EventTypeQualityRuleError,
+		EventTypeQualityRunEvaluated,
+		EventTypeSLABreached,
+		EventTypeSLARecovered,
+		EventTypeNotificationDispatched,
+		EventTypeNotificationDispatchFailed,
 	}
 }
 
@@ -236,4 +259,52 @@ type MetadataUpdatedPayload struct {
 	AfterOwner  string   `json:"after_owner,omitempty"`
 	AfterTags   []string `json:"after_tags,omitempty"`
 	Merge       bool     `json:"merge"`
+}
+
+// ===== Phase 5 Typed payloads (Plan 05-05) =====
+
+// QualityRulePayload is emitted for every quality.rule_passed | rule_failed | rule_error event.
+type QualityRulePayload struct {
+	Asset         string   `json:"asset"`
+	Rule          string   `json:"rule"`
+	Type          string   `json:"type"`
+	Status        string   `json:"status"`
+	MeasuredValue *float64 `json:"measured_value,omitempty"`
+	Threshold     *float64 `json:"threshold,omitempty"`
+	Error         string   `json:"error,omitempty"`
+}
+
+// QualityRunEvaluatedPayload is emitted once per evaluated run after all rules ran.
+type QualityRunEvaluatedPayload struct {
+	Asset     string `json:"asset"`
+	Worst     string `json:"worst"` // passed | failed | error | skipped
+	RuleCount int    `json:"rule_count"`
+}
+
+// SLABreachedPayload reports an asset whose last_succeeded_at exceeded its freshness budget.
+type SLABreachedPayload struct {
+	Asset            string  `json:"asset"`
+	MaxLagSeconds    int     `json:"max_lag_seconds"`
+	LastSucceededAt  *string `json:"last_succeeded_at,omitempty"`
+	BreachWindowStart string `json:"breach_window_start"`
+}
+
+// SLARecoveredPayload reports the first successful materialize after a breach.
+type SLARecoveredPayload struct {
+	Asset string `json:"asset"`
+}
+
+// NotificationDispatchedPayload reports a successful channel send.
+type NotificationDispatchedPayload struct {
+	Channel   string `json:"channel"`
+	EventType string `json:"event_type"`
+	Asset     string `json:"asset,omitempty"`
+}
+
+// NotificationDispatchFailedPayload reports a permanent failure for a channel send.
+type NotificationDispatchFailedPayload struct {
+	Channel   string `json:"channel,omitempty"`
+	EventType string `json:"event_type"`
+	Asset     string `json:"asset,omitempty"`
+	Error     string `json:"error"`
 }

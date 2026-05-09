@@ -100,6 +100,9 @@ type Asset struct {
 	codeHash      string // computed at Build()/Register() via fingerprint.go (D-03)
 	// Phase 5 additions (D-02 / D-04 / RBAC-03):
 	columnPolicies []ColumnPolicy // builder-default column-level masking declarations
+	// Phase 5 additions (Plan 05-05):
+	qualityRules []QualityRule
+	freshnessSLA *FreshnessSLA
 }
 
 // Name returns the unique asset identifier.
@@ -192,4 +195,24 @@ func (a *Asset) ColumnPolicies() []ColumnPolicy {
 		out[i] = cp
 	}
 	return out
+}
+
+// QualityRules returns a defensive copy of the declared quality rules (Plan 05-05).
+// Order matches declaration order on the Builder. Rule definitions ARE part of
+// code_hash via fingerprint.go.
+func (a *Asset) QualityRules() []QualityRule {
+	if a.qualityRules == nil {
+		return nil
+	}
+	return append([]QualityRule(nil), a.qualityRules...)
+}
+
+// FreshnessSLA returns the asset's freshness SLA, or nil if none declared.
+// FreshnessSLA is operational config only — NOT in code_hash.
+func (a *Asset) FreshnessSLA() *FreshnessSLA {
+	if a.freshnessSLA == nil {
+		return nil
+	}
+	cp := *a.freshnessSLA
+	return &cp
 }

@@ -66,3 +66,35 @@ type MaskingProvisioner interface {
 	// expected and actual warehouse state.
 	ListMaskingPolicies(ctx context.Context, ref AssetRef) ([]ColumnPolicy, error)
 }
+
+// QueryAggregate is an optional capability (Phase 5 D-19). Connectors that
+// support aggregate SQL queries implement this for quality rule evaluation.
+// Connectors without it (e.g., file-only S3/GCS/HDFS) cause quality rules to
+// be marked status='error' with reason 'connector does not support aggregate queries'.
+//
+// Callers MUST always wrap the call with a strict context.WithTimeout
+// (default 30s for NullCheck/RangeCheck, 60s for SQLAssertion — Pitfall #10
+// from RESEARCH §651-653) so a long warehouse query never blocks the
+// per-step executor transaction forever.
+type QueryAggregate interface {
+	QueryAggregate(ctx context.Context, ref AssetRef, sql string) (AggregateRow, error)
+}
+
+// AggregateRow is a single-row result from QueryAggregate. Values are positional
+// and aligned with Columns. Returns at most one row (the connector is responsible
+// for issuing aggregate SQL that yields a single tuple).
+type AggregateRow struct {
+	Columns []string
+	Values  []any
+}
+
+// QualifiedTable returns the fully-qualified table reference for use in
+// quality rule SQL substitution (${asset}). The default implementation
+// uses the AssetRef.Identifier as-is; connectors that need extra qualification
+// (database/schema) should override the substitution at the call site.
+func QualifiedTable(ref AssetRef) string {
+	if ref.Identifier == "" {
+		return ""
+	}
+	return ref.Identifier
+}

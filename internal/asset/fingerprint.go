@@ -18,6 +18,11 @@ import (
 //     not invalidate downstream lineage/schema rows)
 //   - RetryPolicy (orchestration concern; same data shape regardless of retry settings)
 //   - Schedule / Sensors / Partitions (orchestration concerns, not data-shape concerns)
+//   - FreshnessSLA (operational config — D-20 explicitly excluded; changing the SLA
+//     does not change the data shape).
+//
+// Phase 5 Plan 05-05 additions: QualityRules ARE part of the fingerprint (D-08
+// governance reset semantics — changing a rule reseats the asset version).
 type assetFingerprint struct {
 	Name          string                 `json:"name"`
 	Upstreams     []string               `json:"upstreams"`
@@ -29,7 +34,17 @@ type assetFingerprint struct {
 	// Phase 5 (D-02): builder-default column policies, sorted by Column name.
 	// Mask + AllowRoles changes invalidate the code_hash (forcing a new
 	// asset_versions row) so column_policies row provenance is preserved.
-	ColumnPolicies []ColumnPolicy `json:"column_policies,omitempty"`
+	ColumnPolicies []ColumnPolicy               `json:"column_policies,omitempty"`
+	QualityRules   []qualityRuleFingerprintItem `json:"quality_rules,omitempty"`
+}
+
+// qualityRuleFingerprintItem is the canonical encoding of a QualityRule in the
+// fingerprint. We use Name + Type + ConfigJSON (raw bytes) so two assertions
+// with the same SQL but different predicates produce different fingerprints.
+type qualityRuleFingerprintItem struct {
+	Name   string          `json:"name"`
+	Type   string          `json:"type"`
+	Config json.RawMessage `json:"config"`
 }
 
 // ComputeCodeHash returns the SHA-256 hex of the canonical JSON fingerprint of
@@ -37,7 +52,8 @@ type assetFingerprint struct {
 //   - encoding/json marshals struct fields in declaration order.
 //   - encoding/json marshals map[string]T keys in sorted order (Go 1.12+).
 //   - This function pre-sorts Upstreams, Tags, Columns (by Name), each Column's Tags,
-//     and each ColumnLineage value's []ColumnRef (by Asset+Column).
+//     each ColumnLineage value's []ColumnRef (by Asset+Column), and QualityRules
+//     (by Name).
 //
 // Returns empty string for a nil asset (defensive).
 func ComputeCodeHash(a *Asset) string {
@@ -100,6 +116,24 @@ func ComputeCodeHash(a *Asset) string {
 		sort.Slice(cps, func(i, j int) bool { return cps[i].Column < cps[j].Column })
 	}
 
+	// Phase 5 Plan 05-05: include QualityRules sorted by Name.
+	var qr []qualityRuleFingerprintItem
+	if len(a.qualityRules) > 0 {
+		qr = make([]qualityRuleFingerprintItem, 0, len(a.qualityRules))
+		for _, r := range a.qualityRules {
+			cfg, err := r.ConfigJSON()
+			if err != nil {
+				panic(fmt.Sprintf("asset: QualityRule %q ConfigJSON: %v", r.Name(), err))
+			}
+			qr = append(qr, qualityRuleFingerprintItem{
+				Name:   r.Name(),
+				Type:   r.Type(),
+				Config: json.RawMessage(cfg),
+			})
+		}
+		sort.Slice(qr, func(i, j int) bool { return qr[i].Name < qr[j].Name })
+	}
+
 	fp := assetFingerprint{
 		Name:           a.name,
 		Upstreams:      ups,
@@ -109,6 +143,7 @@ func ComputeCodeHash(a *Asset) string {
 		Columns:        cols,
 		ColumnLineage:  cl,
 		ColumnPolicies: cps,
+		QualityRules:   qr,
 	}
 
 	b, err := json.Marshal(fp)
