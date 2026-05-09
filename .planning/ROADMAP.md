@@ -105,7 +105,13 @@ Plans:
   3. 每个治理操作（策略变更、审批决策、用户分配）产生一个通过哈希与上一条目链接的审计日志条目；应用数据库用户无法修改或删除任何现有条目
   4. 管理员可将完整审计日志导出为 JSON 或 CSV，导出内容包含每条记录（含审核者身份和时间戳）
   5. 数据工程师在资产上定义空值率质量规则；物化后平台评估该规则，若超过阈值则将运行标记为质量失败并发送 webhook 或邮件告警
-**计划**：待定
+**Plans:** 5 plans
+Plans:
+- [ ] 05-01-PLAN.md — RBAC foundation: Casbin enforcer + roles/role_assignments + hash-chain audit log + Wave 0 testharness (Wave 1)
+- [ ] 05-02-PLAN.md — Column policies + Snowflake DDM / BigQuery CLS sync + River sync worker + Reconciler (Wave 2)
+- [ ] 05-03-PLAN.md — Synchronous PII propagation through lineage + TagOverride DSL + in-pipeline MaskingIO for non-warehouse connectors (Wave 3)
+- [ ] 05-04-PLAN.md — Governance workflow: state machine + 3-source reviewer pool + 5-check auto-approval + REST/CLI + executor gate + SLA scanner (Wave 2)
+- [ ] 05-05-PLAN.md — Quality rules (NullCheck/RangeCheck/SQLAssertion) + executor hook + FreshnessSLA + notification subsystem (webhook+SMTP+River) (Wave 2)
 **UI 提示**：否
 
 ### Phase 6: Web UI 与 API
