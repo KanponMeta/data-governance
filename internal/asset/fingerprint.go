@@ -19,13 +19,17 @@ import (
 //   - RetryPolicy (orchestration concern; same data shape regardless of retry settings)
 //   - Schedule / Sensors / Partitions (orchestration concerns, not data-shape concerns)
 type assetFingerprint struct {
-	Name          string               `json:"name"`
-	Upstreams     []string             `json:"upstreams"`
-	Description   string               `json:"description,omitempty"`
-	Owner         string               `json:"owner,omitempty"`
-	Tags          []string             `json:"tags,omitempty"`
-	Columns       []ColumnMeta         `json:"columns,omitempty"`
+	Name          string                 `json:"name"`
+	Upstreams     []string               `json:"upstreams"`
+	Description   string                 `json:"description,omitempty"`
+	Owner         string                 `json:"owner,omitempty"`
+	Tags          []string               `json:"tags,omitempty"`
+	Columns       []ColumnMeta           `json:"columns,omitempty"`
 	ColumnLineage map[string][]ColumnRef `json:"column_lineage,omitempty"`
+	// Phase 5 (D-02): builder-default column policies, sorted by Column name.
+	// Mask + AllowRoles changes invalidate the code_hash (forcing a new
+	// asset_versions row) so column_policies row provenance is preserved.
+	ColumnPolicies []ColumnPolicy `json:"column_policies,omitempty"`
 }
 
 // ComputeCodeHash returns the SHA-256 hex of the canonical JSON fingerprint of
@@ -74,14 +78,37 @@ func ComputeCodeHash(a *Asset) string {
 		}
 	}
 
+	// Canonicalize ColumnPolicies (Phase 5 D-02): sort by Column; sort each
+	// policy's AllowRoles. Reason is excluded from the hash because it carries
+	// runtime context that should not invalidate the asset version.
+	var cps []ColumnPolicy
+	if len(a.columnPolicies) > 0 {
+		cps = make([]ColumnPolicy, len(a.columnPolicies))
+		for i, p := range a.columnPolicies {
+			cp := ColumnPolicy{
+				Column:        p.Column,
+				Mask:          p.Mask,
+				PartialReveal: p.PartialReveal,
+			}
+			if p.AllowRoles != nil {
+				roles := append([]string(nil), p.AllowRoles...)
+				sort.Strings(roles)
+				cp.AllowRoles = roles
+			}
+			cps[i] = cp
+		}
+		sort.Slice(cps, func(i, j int) bool { return cps[i].Column < cps[j].Column })
+	}
+
 	fp := assetFingerprint{
-		Name:          a.name,
-		Upstreams:     ups,
-		Description:   a.description,
-		Owner:         a.owner,
-		Tags:          tags,
-		Columns:       cols,
-		ColumnLineage: cl,
+		Name:           a.name,
+		Upstreams:      ups,
+		Description:    a.description,
+		Owner:          a.owner,
+		Tags:           tags,
+		Columns:        cols,
+		ColumnLineage:  cl,
+		ColumnPolicies: cps,
 	}
 
 	b, err := json.Marshal(fp)

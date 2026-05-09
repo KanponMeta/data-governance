@@ -19,6 +19,7 @@ import (
 	"github.com/kanpon/data-governance/internal/config"
 	"github.com/kanpon/data-governance/internal/event"
 	"github.com/kanpon/data-governance/internal/lineage/openlineage"
+	"github.com/kanpon/data-governance/internal/platform"
 	"github.com/kanpon/data-governance/internal/storage"
 )
 
@@ -97,9 +98,16 @@ func main() {
 			slog.Error("platform.lineage_failed", "error", err)
 			os.Exit(1)
 		}
+	case "policy":
+		// Phase 5 plan 05-02 — column policy CLI (show / list / patch / yaml-reload).
+		// Dispatched through the platform registry so init()-time
+		// self-registration in cmd/platform/policy.go is the single source of truth.
+		os.Exit(platform.DispatchCommand("policy", os.Args[2:]))
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
-		os.Exit(2)
+		// Fall through to platform.DispatchCommand so init()-registered
+		// subcommands (audit, role, policy, future plans) work without
+		// editing main.go (B-03 fix). Unknown commands return 2.
+		os.Exit(platform.DispatchCommand(cmd, os.Args[2:]))
 	}
 }
 

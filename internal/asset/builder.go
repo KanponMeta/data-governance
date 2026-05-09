@@ -43,6 +43,18 @@ var (
 	// ErrPartitionInvalidKey is returned when a CategoryPartitions key fails
 	// the validation rules in partition.ValidateCategoryKey (Pitfall 4).
 	ErrPartitionInvalidKey = errors.New("asset: CategoryPartitions key invalid")
+
+	// ErrColumnPolicyInvalidMask is returned when ColumnPolicy is called with
+	// a Mask that is not one of MaskHash / MaskRedact / MaskPartial (Phase 5 D-04).
+	ErrColumnPolicyInvalidMask = errors.New("asset: ColumnPolicy.Mask invalid")
+
+	// ErrColumnPolicyMissingColumn is returned when ColumnPolicy is called with
+	// an empty Column name (Phase 5 D-04).
+	ErrColumnPolicyMissingColumn = errors.New("asset: ColumnPolicy.Column required")
+
+	// ErrColumnPolicyDuplicateColumn is returned by Build()/Register() when
+	// the same Column appears in two ColumnPolicy declarations on one asset.
+	ErrColumnPolicyDuplicateColumn = errors.New("asset: ColumnPolicy duplicate column")
 )
 
 // cronParser is initialised once and reused. Parser-only usage per D-03 — the
@@ -57,7 +69,8 @@ var cronParser = cron.NewParser(
 // registry. Construct only via New(name). All methods return *Builder for
 // chaining (D-01). Method order is irrelevant — only Build()/Register() validate.
 type Builder struct {
-	a *Asset
+	a    *Asset
+	errs []error // deferred errors collected by chainable setters; surface at Build().
 }
 
 // New starts a new Asset definition. Name must be non-empty and unique within
@@ -154,6 +167,36 @@ func (b *Builder) Tags(tags ...string) *Builder {
 		return b
 	}
 	b.a.tags = append([]string(nil), tags...)
+	return b
+}
+
+// ColumnPolicy declares a column-level masking policy (Phase 5 D-02 / D-04 / RBAC-03).
+// Multiple ColumnPolicy calls accumulate; declaring the same Column twice is a
+// Build()/Register() error (ErrColumnPolicyDuplicateColumn). Per Phase 5 D-02
+// the (sorted) ColumnPolicies slice is part of the asset's code_hash, so a
+// builder mask change forces a new asset_versions row.
+//
+// Validation of Mask + Column non-emptiness is fail-fast per chained call
+// (collected on the builder and surfaced at Build()) rather than panicking,
+// matching the deferred-error model used by Schedule/Sensor.
+func (b *Builder) ColumnPolicy(p ColumnPolicy) *Builder {
+	if !p.Mask.IsValid() {
+		b.errs = append(b.errs, fmt.Errorf("%w: %q (asset %q column %q)",
+			ErrColumnPolicyInvalidMask, p.Mask, b.a.name, p.Column))
+		return b
+	}
+	if p.Column == "" {
+		b.errs = append(b.errs, fmt.Errorf("%w (asset %q)",
+			ErrColumnPolicyMissingColumn, b.a.name))
+		return b
+	}
+	// Defensive copy of AllowRoles so caller mutation post-call cannot
+	// silently change the fingerprint input.
+	cp := p
+	if p.AllowRoles != nil {
+		cp.AllowRoles = append([]string(nil), p.AllowRoles...)
+	}
+	b.a.columnPolicies = append(b.a.columnPolicies, cp)
 	return b
 }
 
@@ -273,6 +316,23 @@ func (b *Builder) Build() (*Asset, error) {
 				return nil, fmt.Errorf("%w: output column %q has ref with empty Asset or Column (asset %q)",
 					ErrInvalidColumnRef, outCol, b.a.name)
 			}
+		}
+	}
+	// Phase 5 validation (D-04): surface any deferred ColumnPolicy errors and
+	// reject duplicate Column declarations.
+	if len(b.errs) > 0 {
+		// Surface the first deferred error — typical Go pattern (the
+		// chained call sites are reported via the wrapped error context).
+		return nil, b.errs[0]
+	}
+	if len(b.a.columnPolicies) > 0 {
+		seen := make(map[string]struct{}, len(b.a.columnPolicies))
+		for _, p := range b.a.columnPolicies {
+			if _, dup := seen[p.Column]; dup {
+				return nil, fmt.Errorf("%w: column %q (asset %q)",
+					ErrColumnPolicyDuplicateColumn, p.Column, b.a.name)
+			}
+			seen[p.Column] = struct{}{}
 		}
 	}
 	// D-03: compute deterministic code hash at Build() time; stored on Asset.codeHash.

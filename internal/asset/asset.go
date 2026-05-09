@@ -98,6 +98,8 @@ type Asset struct {
 	columns       []ColumnMeta
 	columnLineage ColumnLineageMap
 	codeHash      string // computed at Build()/Register() via fingerprint.go (D-03)
+	// Phase 5 additions (D-02 / D-04 / RBAC-03):
+	columnPolicies []ColumnPolicy // builder-default column-level masking declarations
 }
 
 // Name returns the unique asset identifier.
@@ -171,3 +173,23 @@ func (a *Asset) ColumnLineage() ColumnLineageMap {
 // CodeHash returns the deterministic SHA-256 fingerprint of this asset's declaration (D-03).
 // Populated by Build()/Register(); empty string if asset was constructed directly (test usage without Build).
 func (a *Asset) CodeHash() string { return a.codeHash }
+
+// ColumnPolicies returns a defensive deep copy of the builder-default column
+// masking declarations (Phase 5 D-02 / RBAC-03). Phase 5 plan 05-02's
+// internal/policy.Store.Apply consumes this at registration / capture time
+// to write a column_policies row with source='builder'. Runtime PATCH
+// overrides via internal/policy.Store.Patch take precedence on read.
+func (a *Asset) ColumnPolicies() []ColumnPolicy {
+	if a.columnPolicies == nil {
+		return nil
+	}
+	out := make([]ColumnPolicy, len(a.columnPolicies))
+	for i, p := range a.columnPolicies {
+		cp := p
+		if p.AllowRoles != nil {
+			cp.AllowRoles = append([]string(nil), p.AllowRoles...)
+		}
+		out[i] = cp
+	}
+	return out
+}

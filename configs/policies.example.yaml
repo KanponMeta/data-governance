@@ -1,0 +1,28 @@
+# Phase 5 — example policies.yaml
+#
+# This file is the lowest-precedence policy layer. It maps an asset / column tag
+# to a default mask plus the reviewer pool that plan 05-04's governance approval
+# workflow will consult.
+#
+# Precedence at runtime: runtime PATCH > builder ColumnPolicy > tag-default YAML.
+#
+# Reload via REST: POST /policies/yaml-reload  (RequirePermission /policies/yaml write)
+# Reload via CLI : ./platform policy yaml-reload --config=configs/policies.yaml
+#
+# Mask values: hash | redact | partial.
+
+tag_mask_defaults:
+  pii: hash
+  internal_only: redact
+  partial_email: partial
+
+# tag_reviewer_roles is consumed by plan 05-04 (D-09) — the reviewer pool used
+# by the governance approval workflow. List the role names a reviewer must have
+# to approve assets carrying that tag.
+tag_reviewer_roles:
+  pii:
+    - privacy-team
+    - governance
+  financial:
+    - finance-leads
+    - governance

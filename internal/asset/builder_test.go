@@ -538,3 +538,98 @@ func TestBuilderColumnLineageMapDefensiveCopy(t *testing.T) {
 	require.Equal(t, "src", stored["out_col"][0].Asset)
 	require.Equal(t, "in_col", stored["out_col"][0].Column)
 }
+
+// ---- Phase 5 (D-02 / D-04 / RBAC-03) — ColumnPolicy builder tests ----
+
+// TestBuilder_ColumnPolicy_Chainable verifies multiple ColumnPolicy calls
+// accumulate onto Asset.ColumnPolicies and survive Build().
+func TestBuilder_ColumnPolicy_Chainable(t *testing.T) {
+	a, err := New("orders_chain").
+		Connector("snowflake").
+		Materialize(noopMaterialize).
+		ColumnPolicy(ColumnPolicy{Column: "ssn", Mask: MaskHash, AllowRoles: []string{"pii-analyst"}}).
+		ColumnPolicy(ColumnPolicy{Column: "email", Mask: MaskPartial, PartialReveal: 3}).
+		Build()
+	require.NoError(t, err)
+	cps := a.ColumnPolicies()
+	require.Len(t, cps, 2)
+	require.Equal(t, "ssn", cps[0].Column)
+	require.Equal(t, MaskHash, cps[0].Mask)
+	require.Equal(t, []string{"pii-analyst"}, cps[0].AllowRoles)
+	require.Equal(t, "email", cps[1].Column)
+	require.Equal(t, MaskPartial, cps[1].Mask)
+	require.Equal(t, 3, cps[1].PartialReveal)
+}
+
+// TestBuilder_ColumnPolicy_DuplicateColumnFails verifies that declaring the
+// same Column twice causes Build() to return ErrColumnPolicyDuplicateColumn.
+func TestBuilder_ColumnPolicy_DuplicateColumnFails(t *testing.T) {
+	_, err := New("orders_dup").
+		Connector("snowflake").
+		Materialize(noopMaterialize).
+		ColumnPolicy(ColumnPolicy{Column: "ssn", Mask: MaskHash}).
+		ColumnPolicy(ColumnPolicy{Column: "ssn", Mask: MaskRedact}).
+		Build()
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrColumnPolicyDuplicateColumn)
+}
+
+// TestBuilder_ColumnPolicy_AffectsCodeHash verifies the ColumnPolicy slice
+// participates in code_hash so a builder mask change forces a new
+// asset_versions row (Phase 5 D-02). Reordering AllowRoles or ColumnPolicy
+// declarations must NOT change the hash (canonical sort).
+func TestBuilder_ColumnPolicy_AffectsCodeHash(t *testing.T) {
+	plain, err := New("orders_h1").
+		Connector("snowflake").
+		Materialize(noopMaterialize).
+		Build()
+	require.NoError(t, err)
+	masked, err := New("orders_h1").
+		Connector("snowflake").
+		Materialize(noopMaterialize).
+		ColumnPolicy(ColumnPolicy{Column: "ssn", Mask: MaskHash, AllowRoles: []string{"pii-analyst"}}).
+		Build()
+	require.NoError(t, err)
+	require.NotEqual(t, plain.CodeHash(), masked.CodeHash(),
+		"adding a ColumnPolicy must change code_hash (D-02)")
+
+	// Reordering AllowRoles must not change the hash (canonical sort).
+	roleA, err := New("orders_h1").
+		Connector("snowflake").
+		Materialize(noopMaterialize).
+		ColumnPolicy(ColumnPolicy{Column: "ssn", Mask: MaskHash, AllowRoles: []string{"a", "b"}}).
+		Build()
+	require.NoError(t, err)
+	roleB, err := New("orders_h1").
+		Connector("snowflake").
+		Materialize(noopMaterialize).
+		ColumnPolicy(ColumnPolicy{Column: "ssn", Mask: MaskHash, AllowRoles: []string{"b", "a"}}).
+		Build()
+	require.NoError(t, err)
+	require.Equal(t, roleA.CodeHash(), roleB.CodeHash(),
+		"AllowRoles ordering must not affect the hash (canonical sort)")
+}
+
+// TestBuilder_ColumnPolicy_InvalidMask verifies that an invalid Mask surfaces
+// as ErrColumnPolicyInvalidMask at Build() time.
+func TestBuilder_ColumnPolicy_InvalidMask(t *testing.T) {
+	_, err := New("orders_invalidmask").
+		Connector("snowflake").
+		Materialize(noopMaterialize).
+		ColumnPolicy(ColumnPolicy{Column: "ssn", Mask: "blowfish"}).
+		Build()
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrColumnPolicyInvalidMask)
+}
+
+// TestBuilder_ColumnPolicy_MissingColumn verifies that an empty Column surfaces
+// as ErrColumnPolicyMissingColumn at Build() time.
+func TestBuilder_ColumnPolicy_MissingColumn(t *testing.T) {
+	_, err := New("orders_emptycol").
+		Connector("snowflake").
+		Materialize(noopMaterialize).
+		ColumnPolicy(ColumnPolicy{Column: "", Mask: MaskHash}).
+		Build()
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrColumnPolicyMissingColumn)
+}
