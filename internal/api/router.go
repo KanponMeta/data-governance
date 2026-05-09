@@ -10,7 +10,10 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/kanpon/data-governance/internal/auth"
 	"github.com/kanpon/data-governance/internal/event"
+	lineageq "github.com/kanpon/data-governance/internal/lineage/queries"
+	"github.com/kanpon/data-governance/internal/lineage/openlineage"
 	"github.com/kanpon/data-governance/internal/storage"
+	"github.com/kanpon/data-governance/internal/storage/ent"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -21,6 +24,14 @@ type Deps struct {
 	Storage storage.Storage
 	Events  event.Writer
 	Version string
+
+	// Phase 4 additions (04-07):
+	// Ent is the ent client for schema-ack mutation and metadata store.
+	Ent *ent.Client
+	// LineageQueries is the sqlc-generated query client for impact analysis (Wave 6).
+	LineageQueries *lineageq.Queries
+	// OLTranslator is the OpenLineage export translator interface.
+	OLTranslator openlineage.Translator
 }
 
 // NewRouter returns a chi router with all routes mounted and middleware applied.
