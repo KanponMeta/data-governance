@@ -85,14 +85,14 @@ Plans:
   5. 用户可通过 API 为资产、表或列添加描述、负责人和标签，并在后续查询中检索到
 **Plans:** 8 plans
 Plans:
-- [ ] 04-01-PLAN.md — Wave 0: test fixtures + DAG seeder + executor testcontainers helper + migration stub (Wave 1)
-- [ ] 04-02-PLAN.md — Phase 4 schema migration + 6 ent entities + connector.Schema/Column types + D-21 event types (Wave 2)
-- [ ] 04-03-PLAN.md — Builder DSL extensions + code-hash fingerprint + MaterializeResult typed fields + SchemaDescriber capability (Wave 3)
-- [ ] 04-04-PLAN.md — Lineage writer + Schema writer + executor transactional integration (Wave 4)
-- [ ] 04-05-PLAN.md — Schema diff classifier + breaking-change writer (Wave 5)
-- [ ] 04-06-PLAN.md — sqlc recursive CTE traversal + impact.Analyze library + sqlc tooling setup (Wave 6)
-- [ ] 04-07-PLAN.md — Metadata + Lineage + Schema-ack REST API + OpenLineage export translator (Wave 7)
-- [ ] 04-08-PLAN.md — CLI subcommands (impact, schema, lineage) + EXPLAIN ANALYZE harness + phase E2E tests (Wave 8)
+- [x] 04-01-PLAN.md — Wave 0: test fixtures + DAG seeder + executor testcontainers helper + migration stub (Wave 1)
+- [x] 04-02-PLAN.md — Phase 4 schema migration + 6 ent entities + connector.Schema/Column types + D-21 event types (Wave 2)
+- [x] 04-03-PLAN.md — Builder DSL extensions + code-hash fingerprint + MaterializeResult typed fields + SchemaDescriber capability (Wave 3)
+- [x] 04-04-PLAN.md — Lineage writer + Schema writer + executor transactional integration (Wave 4)
+- [x] 04-05-PLAN.md — Schema diff classifier + breaking-change writer (Wave 5)
+- [x] 04-06-PLAN.md — sqlc recursive CTE traversal + impact.Analyze library + sqlc tooling setup (Wave 6)
+- [x] 04-07-PLAN.md — Metadata + Lineage + Schema-ack REST API + OpenLineage export translator (Wave 7)
+- [x] 04-08-PLAN.md — CLI subcommands (impact, schema, lineage) + EXPLAIN ANALYZE harness + phase E2E tests (Wave 8)
 **UI 提示**：否
 
 ### Phase 5: 治理引擎
