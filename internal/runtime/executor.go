@@ -30,6 +30,7 @@ import (
 	"github.com/kanpon/data-governance/internal/dag"
 	"github.com/kanpon/data-governance/internal/event"
 	"github.com/kanpon/data-governance/internal/lineage"
+	"github.com/kanpon/data-governance/internal/quality"
 	"github.com/kanpon/data-governance/internal/retry"
 	"github.com/kanpon/data-governance/internal/run"
 	"github.com/kanpon/data-governance/internal/schema"
@@ -53,6 +54,13 @@ type Deps struct {
 	// When non-nil, each is called inside commitSuccess's per-step transaction.
 	LineageWriter *lineage.Writer // lineage edges + drift detection (D-01/D-02/D-04)
 	SchemaWriter  *schema.Writer  // schema versioning + hash dedup (D-05/D-06/D-08)
+
+	// Phase 5 Plan 05-05 (D-19) — optional quality evaluator. nil = skip.
+	// When non-nil, Evaluate is called inside commitSuccess after SchemaWriter
+	// and before tx.Commit, so quality_results commits atomically with lineage
+	// + schema rows. runs.run_quality_status is updated independently of
+	// runs.state (D-19: quality failure does NOT flip runs.state to 'failed').
+	QualityEvaluator *quality.Evaluator
 }
 
 // Executor runs claimed runs end-to-end. Create with NewExecutor.
@@ -381,6 +389,29 @@ func (e *Executor) commitSuccess(ctx context.Context, runID uuid.UUID,
 		if err := e.deps.SchemaWriter.Capture(ctx, tx, runID, a, result, conn, ref, a.CodeHash()); err != nil {
 			return fmt.Errorf("schema capture: %w", err)
 		}
+	}
+
+	// Phase 5 Plan 05-05 (D-19): quality evaluation in same tx as lineage/schema.
+	// Quality failures DO NOT flip runs.state — only run_quality_status. Lineage
+	// rows captured above stay committed even if quality fails (failure is a row,
+	// not an error returned from Evaluate).
+	if e.deps.QualityEvaluator != nil {
+		conn, ref, rerr := e.Resolve(a.Name())
+		if rerr != nil {
+			return fmt.Errorf("resolve connector for quality: %w", rerr)
+		}
+		if _, err := e.deps.QualityEvaluator.Evaluate(ctx, tx, runID, a, conn, ref); err != nil {
+			return fmt.Errorf("quality evaluate: %w", err)
+		}
+	}
+
+	// Phase 5 Plan 05-05 (D-20): update schedules.last_succeeded_at so the
+	// FreshnessSLA scanner can evaluate the staleness window. The UPDATE is a
+	// no-op for assets without a schedule row.
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE schedules SET last_succeeded_at = NOW(), freshness_breach_emitted_at = NULL WHERE asset_name = $1`,
+		a.Name()); err != nil {
+		return fmt.Errorf("update schedules.last_succeeded_at: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {

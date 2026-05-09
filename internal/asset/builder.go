@@ -43,6 +43,14 @@ var (
 	// ErrPartitionInvalidKey is returned when a CategoryPartitions key fails
 	// the validation rules in partition.ValidateCategoryKey (Pitfall 4).
 	ErrPartitionInvalidKey = errors.New("asset: CategoryPartitions key invalid")
+
+	// ErrQualityRuleNameDuplicate is returned by Build() when two QualityRules
+	// share the same Name() (Plan 05-05). Names must be unique per-asset so
+	// quality_results rows + emitted events can disambiguate.
+	ErrQualityRuleNameDuplicate = errors.New("asset: duplicate QualityRule name")
+
+	// ErrFreshnessSLAInvalid is returned when FreshnessSLA.MaxLag <= 0.
+	ErrFreshnessSLAInvalid = errors.New("asset: FreshnessSLA.MaxLag must be > 0")
 )
 
 // cronParser is initialised once and reused. Parser-only usage per D-03 — the
@@ -211,6 +219,29 @@ func (cb *ColumnBuilder) And() *Builder {
 	return cb.parent
 }
 
+// ---- Phase 5 Plan 05-05 additions: QualityRule + FreshnessSLA ----
+
+// QualityRule appends a quality rule to the asset definition (Plan 05-05 D-18).
+// Rules are evaluated by the executor in commitSuccess (same tx as lineage and
+// schema capture). Duplicate Name() across rules fails Build() / Register().
+//
+// QualityRule definitions ARE included in the asset's code_hash via
+// fingerprint.go: changing a rule reseats the asset version (D-08 governance reset).
+func (b *Builder) QualityRule(r QualityRule) *Builder {
+	b.a.qualityRules = append(b.a.qualityRules, r)
+	return b
+}
+
+// FreshnessSLA attaches a freshness SLA to the asset (Plan 05-05 D-20).
+// MaxLag must be > 0 — validated at Build() time.
+//
+// Operational config only — NOT included in code_hash.
+func (b *Builder) FreshnessSLA(s FreshnessSLA) *Builder {
+	cp := s
+	b.a.freshnessSLA = &cp
+	return b
+}
+
 // Build validates the accumulated configuration and returns the *Asset WITHOUT
 // committing it to the process-global Default() registry.
 //
@@ -274,6 +305,19 @@ func (b *Builder) Build() (*Asset, error) {
 					ErrInvalidColumnRef, outCol, b.a.name)
 			}
 		}
+	}
+	// Phase 5 Plan 05-05 validation: unique QualityRule names + non-zero FreshnessSLA.
+	seenRule := make(map[string]struct{}, len(b.a.qualityRules))
+	for _, r := range b.a.qualityRules {
+		if _, dup := seenRule[r.Name()]; dup {
+			return nil, fmt.Errorf("%w: %q (asset %q)",
+				ErrQualityRuleNameDuplicate, r.Name(), b.a.name)
+		}
+		seenRule[r.Name()] = struct{}{}
+	}
+	if b.a.freshnessSLA != nil && b.a.freshnessSLA.MaxLag <= 0 {
+		return nil, fmt.Errorf("%w (asset %q): %s",
+			ErrFreshnessSLAInvalid, b.a.name, b.a.freshnessSLA.MaxLag)
 	}
 	// D-03: compute deterministic code hash at Build() time; stored on Asset.codeHash.
 	// Both Build() (test path) and Register() (production path) get the hash set here.

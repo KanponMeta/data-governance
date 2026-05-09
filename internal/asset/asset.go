@@ -98,6 +98,9 @@ type Asset struct {
 	columns       []ColumnMeta
 	columnLineage ColumnLineageMap
 	codeHash      string // computed at Build()/Register() via fingerprint.go (D-03)
+	// Phase 5 additions (Plan 05-05):
+	qualityRules []QualityRule
+	freshnessSLA *FreshnessSLA
 }
 
 // Name returns the unique asset identifier.
@@ -171,3 +174,23 @@ func (a *Asset) ColumnLineage() ColumnLineageMap {
 // CodeHash returns the deterministic SHA-256 fingerprint of this asset's declaration (D-03).
 // Populated by Build()/Register(); empty string if asset was constructed directly (test usage without Build).
 func (a *Asset) CodeHash() string { return a.codeHash }
+
+// QualityRules returns a defensive copy of the declared quality rules (Plan 05-05).
+// Order matches declaration order on the Builder. Rule definitions ARE part of
+// code_hash via fingerprint.go.
+func (a *Asset) QualityRules() []QualityRule {
+	if a.qualityRules == nil {
+		return nil
+	}
+	return append([]QualityRule(nil), a.qualityRules...)
+}
+
+// FreshnessSLA returns the asset's freshness SLA, or nil if none declared.
+// FreshnessSLA is operational config only — NOT in code_hash.
+func (a *Asset) FreshnessSLA() *FreshnessSLA {
+	if a.freshnessSLA == nil {
+		return nil
+	}
+	cp := *a.freshnessSLA
+	return &cp
+}
