@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -12,7 +13,9 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"github.com/casbin/casbin/v2"
 	"github.com/google/uuid"
+	"github.com/kanpon/data-governance/internal/audit"
 	"github.com/kanpon/data-governance/internal/event"
 	"github.com/kanpon/data-governance/internal/storage"
 	"github.com/kanpon/data-governance/internal/storage/ent"
@@ -67,6 +70,7 @@ type Service struct {
 	store     storage.Storage
 	events    event.Writer
 	issuer    *TokenIssuer
+	enforcer  *casbin.Enforcer
 	clock     func() time.Time
 	inviteTTL time.Duration
 }
@@ -82,6 +86,9 @@ func NewService(store storage.Storage, events event.Writer, issuer *TokenIssuer)
 		inviteTTL: 72 * time.Hour,
 	}
 }
+
+// SetEnforcer sets the Casbin enforcer for RBAC policy management.
+func (s *Service) SetEnforcer(e *casbin.Enforcer) { s.enforcer = e }
 
 // Register creates a new user account. The first user in the system is given
 // role=admin; subsequent registrations default to role=member. Emits
@@ -306,4 +313,218 @@ func (s *Service) AcceptInvite(ctx context.Context, in AcceptInviteInput) (*Acce
 func sha256Hash(data string) string {
 	sum := sha256.Sum256([]byte(data))
 	return hex.EncodeToString(sum[:])
+}
+
+// ---- Role management (RBAC-01/RBAC-02) ----
+
+// CreateRole creates a new named role. The caller must have admin role.
+// Emits role.created audit entry inside the same transaction.
+func (s *Service) CreateRole(ctx context.Context, actor uuid.UUID, name, description string) error {
+	tx, err := s.store.DB().BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("create_role: begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Insert role.
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO roles (name, description, created_by_id)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (name) DO NOTHING
+	`, name, description, actor)
+	if err != nil {
+		return fmt.Errorf("create_role: insert: %w", err)
+	}
+
+	// Audit entry inside same tx.
+	_, err = audit.WriteEntry(ctx, tx, audit.Entry{
+		EventType:    audit.AuditRoleCreated,
+		OccurredAt:   s.clock().UTC(),
+		ActorID:      &actor,
+		ResourceType: "role",
+		ResourceID:   name,
+		Payload:      map[string]any{"name": name, "description": description},
+	})
+	if err != nil {
+		return fmt.Errorf("create_role: audit write: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("create_role: commit: %w", err)
+	}
+	return nil
+}
+
+// DeleteRole deletes a named role. The caller must have admin role.
+// Emits role.deleted audit entry inside the same transaction.
+func (s *Service) DeleteRole(ctx context.Context, actor uuid.UUID, name string) error {
+	tx, err := s.store.DB().BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("delete_role: begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Remove role assignments first (soft-delete via revoked_at would be better,
+	// but for simplicity we hard-delete).
+	_, err = tx.ExecContext(ctx, `DELETE FROM role_assignments WHERE role_name = $1`, name)
+	if err != nil {
+		return fmt.Errorf("delete_role: remove assignments: %w", err)
+	}
+
+	// Remove Casbin policy entries for this role.
+	if s.enforcer != nil {
+		_, _ = s.enforcer.RemoveFilteredNamedGroupingPolicy("g", 0, "role:"+name)
+	}
+
+	// Delete role.
+	_, err = tx.ExecContext(ctx, `DELETE FROM roles WHERE name = $1`, name)
+	if err != nil {
+		return fmt.Errorf("delete_role: delete: %w", err)
+	}
+
+	// Audit entry.
+	_, err = audit.WriteEntry(ctx, tx, audit.Entry{
+		EventType:    audit.AuditRoleDeleted,
+		OccurredAt:   s.clock().UTC(),
+		ActorID:      &actor,
+		ResourceType: "role",
+		ResourceID:   name,
+		Payload:      map[string]any{"name": name},
+	})
+	if err != nil {
+		return fmt.Errorf("delete_role: audit write: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("delete_role: commit: %w", err)
+	}
+	return nil
+}
+
+// AssignRole assigns a role to a user. The caller must have admin role.
+// Emits role.assigned audit entry and updates Casbin policy in same transaction.
+// Note: the Casbin adapter writes to casbin_rule through its own connection,
+// so the policy update is not in the same DB transaction as the role_assignment.
+// This is acceptable since RolesForUser (the JWT source) reads from role_assignments,
+// not from Casbin.
+func (s *Service) AssignRole(ctx context.Context, actor, user uuid.UUID, role string) error {
+	tx, err := s.store.DB().BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("assign_role: begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Insert role assignment.
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO role_assignments (user_id, role_name, granted_by_id)
+		VALUES ($1, $2, $3)
+		ON CONFLICT DO NOTHING
+	`, user, role, actor)
+	if err != nil {
+		return fmt.Errorf("assign_role: insert assignment: %w", err)
+	}
+
+	// Get user email for Casbin grouping policy.
+	var email string
+	err = tx.QueryRowContext(ctx, `SELECT email FROM "user" WHERE id = $1`, user).Scan(&email)
+	if err != nil {
+		return fmt.Errorf("assign_role: get user email: %w", err)
+	}
+
+	// Update Casbin policy (uses the enforcer's own adapter connection).
+	if s.enforcer != nil {
+		_, _ = s.enforcer.AddGroupingPolicy(email, "role:"+role)
+	}
+
+	// Audit entry.
+	_, err = audit.WriteEntry(ctx, tx, audit.Entry{
+		EventType:    audit.AuditRoleAssigned,
+		OccurredAt:   s.clock().UTC(),
+		ActorID:      &actor,
+		ResourceType: "user",
+		ResourceID:   user.String(),
+		Payload:      map[string]any{"role": role, "user_id": user.String()},
+	})
+	if err != nil {
+		return fmt.Errorf("assign_role: audit write: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("assign_role: commit: %w", err)
+	}
+	return nil
+}
+
+// RevokeRole revokes a role from a user. The caller must have admin role.
+// Emits role.revoked audit entry inside same transaction.
+func (s *Service) RevokeRole(ctx context.Context, actor, user uuid.UUID, role string) error {
+	tx, err := s.store.DB().BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("revoke_role: begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Soft revoke: set revoked_at.
+	result, err := tx.ExecContext(ctx, `
+		UPDATE role_assignments
+		SET revoked_at = NOW(), revoked_by_id = $1
+		WHERE user_id = $2 AND role_name = $3 AND revoked_at IS NULL
+	`, actor, user, role)
+	if err != nil {
+		return fmt.Errorf("revoke_role: update: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return errors.New("revoke_role: no active assignment found")
+	}
+
+	// Remove from Casbin grouping policy.
+	var email string
+	err = tx.QueryRowContext(ctx, `SELECT email FROM "user" WHERE id = $1`, user).Scan(&email)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("revoke_role: get user email: %w", err)
+	}
+	if s.enforcer != nil && email != "" {
+		_, _ = s.enforcer.RemoveGroupingPolicy(email, "role:"+role)
+	}
+
+	// Audit entry.
+	_, err = audit.WriteEntry(ctx, tx, audit.Entry{
+		EventType:    audit.AuditRoleRevoked,
+		OccurredAt:   s.clock().UTC(),
+		ActorID:      &actor,
+		ResourceType: "user",
+		ResourceID:   user.String(),
+		Payload:      map[string]any{"role": role, "user_id": user.String()},
+	})
+	if err != nil {
+		return fmt.Errorf("revoke_role: audit write: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("revoke_role: commit: %w", err)
+	}
+	return nil
+}
+
+// RolesForUser returns the list of active (non-revoked) roles for a user.
+func (s *Service) RolesForUser(ctx context.Context, user uuid.UUID) ([]string, error) {
+	rows, err := s.store.DB().QueryContext(ctx, `
+		SELECT role_name FROM role_assignments
+		WHERE user_id = $1 AND revoked_at IS NULL
+	`, user)
+	if err != nil {
+		return nil, fmt.Errorf("roles_for_user: query: %w", err)
+	}
+	defer rows.Close()
+
+	var roles []string
+	for rows.Next() {
+		var role string
+		if err := rows.Scan(&role); err != nil {
+			return nil, fmt.Errorf("roles_for_user: scan: %w", err)
+		}
+		roles = append(roles, role)
+	}
+	return roles, rows.Err()
 }

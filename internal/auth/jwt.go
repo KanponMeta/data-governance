@@ -26,10 +26,12 @@ const (
 // Claims extends jwt.RegisteredClaims with platform-specific fields.
 // UserID is populated from RegisteredClaims.Subject after parse; the json:"-"
 // tag keeps it from being serialized into the token (Subject is the source of truth).
+// Roles is the list of active roles for RBAC enforcement (populated at login).
 type Claims struct {
 	jwt.RegisteredClaims
 	UserID uuid.UUID `json:"-"`
-	Role   string    `json:"role"`
+	Role   string    `json:"role"` // primary role (admin, member, etc.)
+	Roles  []string  `json:"roles,omitempty"` // all active roles for RBAC
 }
 
 // TokenIssuer signs and verifies access tokens. Refresh-token rotation is
