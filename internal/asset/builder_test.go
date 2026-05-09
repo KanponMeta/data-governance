@@ -423,3 +423,118 @@ func TestOrthogonalComposition(t *testing.T) {
 	require.Equal(t, a1.Sensors()[0].Name, a2.Sensors()[0].Name)
 	require.Equal(t, a1.Partitions().Kind(), a2.Partitions().Kind())
 }
+
+// ---- Phase 4 Builder DSL extensions ----
+
+// TestBuilderColumnLineage exercises the full Phase 4 chain from 04-RESEARCH.md.
+func TestBuilderColumnLineage(t *testing.T) {
+	a, err := New("orders").
+		Connector("postgres-prod").
+		Materialize(noopMaterialize).
+		Description("Daily orders fact table").
+		Owner("team-data@example.com").
+		Tags("finance", "pii").
+		Column("user_id").Description("FK users.id").Tags("pii").And().
+		Column("total").Description("USD cents").And().
+		ColumnLineage(ColumnLineageMap{
+			"user_id": {{Asset: "payments", Column: "payer_id"}},
+		}).
+		Build()
+
+	require.NoError(t, err)
+	require.NotNil(t, a)
+	require.Equal(t, "Daily orders fact table", a.Description())
+	require.Equal(t, "team-data@example.com", a.Owner())
+	require.Equal(t, []string{"finance", "pii"}, a.Tags())
+	cols := a.Columns()
+	require.Len(t, cols, 2)
+	require.Equal(t, "user_id", cols[0].Name)
+	require.Equal(t, "FK users.id", cols[0].Description)
+	require.Equal(t, []string{"pii"}, cols[0].Tags)
+	require.Equal(t, "total", cols[1].Name)
+	require.Equal(t, "USD cents", cols[1].Description)
+	cl := a.ColumnLineage()
+	require.NotNil(t, cl)
+	require.Len(t, cl["user_id"], 1)
+	require.Equal(t, "payments", cl["user_id"][0].Asset)
+	require.Equal(t, "payer_id", cl["user_id"][0].Column)
+}
+
+// TestBuilderColumnLineageEmpty — calling no Phase 4 methods leaves all zero.
+func TestBuilderColumnLineageEmpty(t *testing.T) {
+	a, err := New("bare").
+		Connector("c").
+		Materialize(noopMaterialize).
+		Build()
+	require.NoError(t, err)
+	require.Equal(t, "", a.Description())
+	require.Equal(t, "", a.Owner())
+	require.Nil(t, a.Tags())
+	require.Nil(t, a.Columns())
+	require.Nil(t, a.ColumnLineage())
+}
+
+// TestBuilderColumnLineageDefensiveCopy — mutating the slice passed to Tags does not affect the asset.
+func TestBuilderColumnLineageDefensiveCopy(t *testing.T) {
+	tags := []string{"finance", "pii"}
+	a, err := New("copy_test").
+		Connector("c").
+		Materialize(noopMaterialize).
+		Tags(tags...).
+		Build()
+	require.NoError(t, err)
+	// Mutate original slice
+	tags[0] = "mutated"
+	// Asset's tags must be unchanged
+	require.Equal(t, "finance", a.Tags()[0])
+}
+
+// TestMaterializeResultBackwardCompat — existing zero-value construction works.
+func TestMaterializeResultBackwardCompat(t *testing.T) {
+	r := MaterializeResult{
+		RowsWritten: 42,
+		Metadata:    map[string]any{"x": 1},
+	}
+	require.Equal(t, int64(42), r.RowsWritten)
+	require.Equal(t, 1, r.Metadata["x"])
+	require.Nil(t, r.ColumnLineage)
+	require.Nil(t, r.Schema)
+}
+
+// TestBuilderPhase23Unchanged — Phase 2/3 chain still works correctly.
+func TestBuilderPhase23Unchanged(t *testing.T) {
+	t.Cleanup(resetForTest)
+
+	a, err := New("phase23_compat").
+		Upstream("upstream_a").
+		Connector("pg").
+		Materialize(noopMaterialize).
+		Schedule("@daily").
+		Build()
+	require.NoError(t, err)
+	require.Equal(t, "phase23_compat", a.Name())
+	require.Equal(t, []string{"upstream_a"}, a.Upstreams())
+	require.Equal(t, "pg", a.ConnectorName())
+	require.NotNil(t, a.Schedule())
+	require.Equal(t, "@daily", a.Schedule().CronExpr)
+}
+
+// TestBuilderColumnLineageMapDefensiveCopy — mutating the ColumnLineageMap after
+// passing to ColumnLineage() does not affect the asset's stored value.
+func TestBuilderColumnLineageMapDefensiveCopy(t *testing.T) {
+	cl := ColumnLineageMap{
+		"out_col": {{Asset: "src", Column: "in_col"}},
+	}
+	a, err := New("defensecopy").
+		Connector("c").
+		Materialize(noopMaterialize).
+		ColumnLineage(cl).
+		Build()
+	require.NoError(t, err)
+	// Mutate original map
+	cl["out_col"][0] = ColumnRef{Asset: "evil", Column: "bad"}
+	// Asset must be unchanged
+	stored := a.ColumnLineage()
+	require.Equal(t, "src", stored["out_col"][0].Asset)
+	require.Equal(t, "in_col", stored["out_col"][0].Column)
+}

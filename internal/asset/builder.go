@@ -14,6 +14,10 @@ var (
 	// was not called on the builder before committing the asset definition.
 	ErrMissingMaterialize = errors.New("asset: Materialize(fn) is required before Register/Build")
 
+	// ErrInvalidColumnRef is returned by Build/Register when a ColumnRef in the
+	// builder-default ColumnLineageMap has an empty Asset or Column (T-04-03-05).
+	ErrInvalidColumnRef = errors.New("asset: ColumnRef must have non-empty Asset and Column")
+
 	// ErrMissingConnector is returned by Build/Register when Connector(name)
 	// was not called on the builder before committing the asset definition.
 	ErrMissingConnector = errors.New("asset: Connector(name) is required before Register/Build")
@@ -127,6 +131,86 @@ func (b *Builder) Partitions(strategy partition.PartitionStrategy) *Builder {
 	return b
 }
 
+// ---- Phase 4 additions (D-02, D-17) ----
+
+// Description sets the asset's human-readable description (Phase 4 D-17).
+// Last call wins — multiple calls overwrite, not append.
+func (b *Builder) Description(desc string) *Builder {
+	b.a.description = desc
+	return b
+}
+
+// Owner sets the asset's declared owner (Phase 4 D-17).
+func (b *Builder) Owner(owner string) *Builder {
+	b.a.owner = owner
+	return b
+}
+
+// Tags replaces the asset's declared tag set with the supplied values (Phase 4 D-17).
+// Variadic — pass all tags in one call. Defensive copy prevents caller mutation.
+func (b *Builder) Tags(tags ...string) *Builder {
+	if tags == nil {
+		b.a.tags = nil
+		return b
+	}
+	b.a.tags = append([]string(nil), tags...)
+	return b
+}
+
+// ColumnLineage sets the builder-default column-level lineage (Phase 4 D-02).
+// Runtime MaterializeResult.ColumnLineage overrides this per-run.
+// Defensive deep copy.
+func (b *Builder) ColumnLineage(cl ColumnLineageMap) *Builder {
+	if cl == nil {
+		b.a.columnLineage = nil
+		return b
+	}
+	cp := make(ColumnLineageMap, len(cl))
+	for k, refs := range cl {
+		cp[k] = append([]ColumnRef(nil), refs...)
+	}
+	b.a.columnLineage = cp
+	return b
+}
+
+// Column starts a column-level metadata declaration chain (Phase 4 D-17).
+// Returns a *ColumnBuilder that scopes subsequent Description/Tags calls
+// to the named column. End the chain with .And() to return to *Builder.
+func (b *Builder) Column(name string) *ColumnBuilder {
+	return &ColumnBuilder{parent: b, name: name}
+}
+
+// ColumnBuilder provides fluent column-level metadata declaration (D-17).
+// Construct via Builder.Column(name); end the chain with And() to return to *Builder.
+type ColumnBuilder struct {
+	parent *Builder
+	name   string
+	desc   string
+	tags   []string
+}
+
+// Description sets the column's description.
+func (cb *ColumnBuilder) Description(desc string) *ColumnBuilder {
+	cb.desc = desc
+	return cb
+}
+
+// Tags replaces the column's tag list. Defensive copy.
+func (cb *ColumnBuilder) Tags(tags ...string) *ColumnBuilder {
+	cb.tags = append([]string(nil), tags...)
+	return cb
+}
+
+// And finalizes the column declaration and returns to the parent Builder chain.
+func (cb *ColumnBuilder) And() *Builder {
+	cb.parent.a.columns = append(cb.parent.a.columns, ColumnMeta{
+		Name:        cb.name,
+		Description: cb.desc,
+		Tags:        cb.tags,
+	})
+	return cb.parent
+}
+
 // Build validates the accumulated configuration and returns the *Asset WITHOUT
 // committing it to the process-global Default() registry.
 //
@@ -179,6 +263,15 @@ func (b *Builder) Build() (*Asset, error) {
 			if err := partition.ValidateCategoryKey(k); err != nil {
 				return nil, fmt.Errorf("%w: %v (asset %q)",
 					ErrPartitionInvalidKey, err, b.a.name)
+			}
+		}
+	}
+	// Phase 4 validation (T-04-03-05): each ColumnRef must have non-empty Asset and Column.
+	for outCol, refs := range b.a.columnLineage {
+		for _, ref := range refs {
+			if ref.Asset == "" || ref.Column == "" {
+				return nil, fmt.Errorf("%w: output column %q has ref with empty Asset or Column (asset %q)",
+					ErrInvalidColumnRef, outCol, b.a.name)
 			}
 		}
 	}

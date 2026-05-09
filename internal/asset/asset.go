@@ -15,6 +15,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/kanpon/data-governance/internal/connector"
 	"github.com/kanpon/data-governance/internal/partition"
 )
 
@@ -23,11 +24,16 @@ import (
 type MaterializeFunc func(ctx context.Context, io AssetIO) (MaterializeResult, error)
 
 // MaterializeResult is the return value from a Materialize call.
-// RowsWritten is business-meaningful row count; Metadata is the Phase 4
-// lineage hook (D-04) — values are free-form in Phase 2.
+// RowsWritten is business-meaningful row count; Metadata is the Phase 3
+// sensor Payload hook (D-04) — values are free-form.
+// Phase 4 additions (additive — existing call sites with RowsWritten+Metadata still compile):
+//   - ColumnLineage: runtime override for per-run column-level lineage (D-02); nil = use builder default.
+//   - Schema: inline schema for connectors without SchemaDescriber (D-06 fallback); nil = use capability.
 type MaterializeResult struct {
-	RowsWritten int64
-	Metadata    map[string]any
+	RowsWritten   int64
+	ColumnLineage ColumnLineageMap  // nil = use builder default (D-02 runtime override hook)
+	Schema        *connector.Schema // nil = rely on SchemaDescriber capability (D-06 fallback)
+	Metadata      map[string]any    // retained for sensor Payload coexistence (Phase 3 D-06)
 }
 
 // Resource attaches a named resource constraint with weight (D-16). Plan 02-03
@@ -85,6 +91,13 @@ type Asset struct {
 	schedule   *ScheduleSpec
 	sensors    []SensorSpec
 	partitions partition.PartitionStrategy
+	// Phase 4 additions (D-02, D-03, D-17):
+	description   string
+	owner         string
+	tags          []string
+	columns       []ColumnMeta
+	columnLineage ColumnLineageMap
+	codeHash      string // computed at Build()/Register() via fingerprint.go (D-03)
 }
 
 // Name returns the unique asset identifier.
@@ -117,3 +130,44 @@ func (a *Asset) Sensors() []SensorSpec { return append([]SensorSpec(nil), a.sens
 
 // Partitions returns the partition strategy attached via .Partitions(...) (D-09). Nil if none.
 func (a *Asset) Partitions() partition.PartitionStrategy { return a.partitions }
+
+// Phase 4 accessors (D-02, D-03, D-17) — used by Wave 4 lineage/schema writers and Wave 6 REST.
+
+// Description returns the human-readable description declared via Builder.Description (D-17).
+func (a *Asset) Description() string { return a.description }
+
+// Owner returns the declared owner declared via Builder.Owner (D-17).
+func (a *Asset) Owner() string { return a.owner }
+
+// Tags returns a defensive copy of the declared tag set (D-17).
+func (a *Asset) Tags() []string {
+	if a.tags == nil {
+		return nil
+	}
+	return append([]string(nil), a.tags...)
+}
+
+// Columns returns a defensive copy of the per-column metadata declarations (D-17).
+func (a *Asset) Columns() []ColumnMeta {
+	if a.columns == nil {
+		return nil
+	}
+	return append([]ColumnMeta(nil), a.columns...)
+}
+
+// ColumnLineage returns a defensive deep copy of the builder-default column lineage map (D-02).
+// Wave 4's lineage writer uses this as the default; MaterializeResult.ColumnLineage overrides per-run.
+func (a *Asset) ColumnLineage() ColumnLineageMap {
+	if a.columnLineage == nil {
+		return nil
+	}
+	out := make(ColumnLineageMap, len(a.columnLineage))
+	for k, v := range a.columnLineage {
+		out[k] = append([]ColumnRef(nil), v...)
+	}
+	return out
+}
+
+// CodeHash returns the deterministic SHA-256 fingerprint of this asset's declaration (D-03).
+// Populated by Build()/Register(); empty string if asset was constructed directly (test usage without Build).
+func (a *Asset) CodeHash() string { return a.codeHash }
