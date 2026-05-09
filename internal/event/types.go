@@ -220,3 +220,20 @@ type RunStepRetryScheduledPayload struct {
 	DelayMs     int64     `json:"delay_ms"`
 	Error       string    `json:"error"`
 }
+
+// ===== Phase 4 Typed payloads (D-17, D-21) =====
+
+// MetadataUpdatedPayload is the typed payload for metadata.updated events (D-17, D-21).
+// The event_type constant EventTypeMetadataUpdated is defined in plan 04-02 task 3.
+type MetadataUpdatedPayload struct {
+	Asset       string   `json:"asset"`
+	Column      *string  `json:"column,omitempty"`
+	ActorID     string   `json:"actor_id"`
+	BeforeDesc  string   `json:"before_description,omitempty"`
+	BeforeOwner string   `json:"before_owner,omitempty"`
+	BeforeTags  []string `json:"before_tags,omitempty"`
+	AfterDesc   string   `json:"after_description,omitempty"`
+	AfterOwner  string   `json:"after_owner,omitempty"`
+	AfterTags   []string `json:"after_tags,omitempty"`
+	Merge       bool     `json:"merge"`
+}

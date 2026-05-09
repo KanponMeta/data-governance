@@ -26,6 +26,19 @@ func PrincipalFromContext(ctx context.Context) (Principal, bool) {
 	return p, ok
 }
 
+// ContextWithPrincipal returns ctx with the given Principal injected.
+// Intended for use in tests that need to simulate an authenticated caller
+// without going through the full JWT middleware.
+func ContextWithPrincipal(ctx context.Context, p Principal) context.Context {
+	return context.WithValue(ctx, principalKey{}, p)
+}
+
+// TestPrincipalKey returns the context key used by ContextWithPrincipal.
+// Only intended for test helpers that need to set the key directly.
+func TestPrincipalKey() any {
+	return principalKey{}
+}
+
 // Middleware returns a chi-compatible HTTP middleware that validates Bearer
 // tokens using the supplied TokenIssuer. On success it injects a Principal
 // into the request context. On failure it writes a RFC 7807 problem+json
