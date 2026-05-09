@@ -83,7 +83,16 @@ Plans:
   3. 给定任意资产上的任意列，影响分析 API 返回所有依赖它的下游资产和列，遍历完整血缘图
   4. 平台在每次物化时捕获表和列的 Schema，与上一版本做 diff，并在 Schema 演化时间线中记录破坏性变更（列删除、类型变更）
   5. 用户可通过 API 为资产、表或列添加描述、负责人和标签，并在后续查询中检索到
-**计划**：待定
+**Plans:** 8 plans
+Plans:
+- [ ] 04-01-PLAN.md — Wave 0: test fixtures + DAG seeder + executor testcontainers helper + migration stub (Wave 1)
+- [ ] 04-02-PLAN.md — Phase 4 schema migration + 6 ent entities + connector.Schema/Column types + D-21 event types (Wave 2)
+- [ ] 04-03-PLAN.md — Builder DSL extensions + code-hash fingerprint + MaterializeResult typed fields + SchemaDescriber capability (Wave 3)
+- [ ] 04-04-PLAN.md — Lineage writer + Schema writer + executor transactional integration (Wave 4)
+- [ ] 04-05-PLAN.md — Schema diff classifier + breaking-change writer (Wave 5)
+- [ ] 04-06-PLAN.md — sqlc recursive CTE traversal + impact.Analyze library + sqlc tooling setup (Wave 6)
+- [ ] 04-07-PLAN.md — Metadata + Lineage + Schema-ack REST API + OpenLineage export translator (Wave 7)
+- [ ] 04-08-PLAN.md — CLI subcommands (impact, schema, lineage) + EXPLAIN ANALYZE harness + phase E2E tests (Wave 8)
 **UI 提示**：否
 
 ### Phase 5: 治理引擎

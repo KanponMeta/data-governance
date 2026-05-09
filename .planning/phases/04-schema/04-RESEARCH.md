@@ -1122,20 +1122,20 @@ CREATE POLICY event_log_insert ON event_log FOR INSERT TO platform_app WITH CHEC
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Fingerprint includes metadata (Description/Owner/Tags)?**
    - What we know: D-03 says "leaning yes"; CONTEXT.md lists as Claude's Discretion.
    - What's unclear: Does a governance-team PATCH to owner/tags trigger a code_hash change and thus a new `asset_versions` row? If yes, do drift alarms fire?
-   - Recommendation: **Include in fingerprint** (governance-team self-serve edits are version-controlled provenance). Drift alarm (`lineage.drift_detected`) fires only on upstream divergence (D-04), not on code_hash change alone. New `asset_versions` row is the expected and desired outcome.
+   - RESOLVED: **Include Description/Owner/Tags in the D-03 fingerprint.** Governance-team self-serve edits are version-controlled provenance — a PATCH that changes owner/tags should produce a new `asset_versions` row with a fresh `code_hash`. This is the expected and desired outcome (it preserves the audit trail). Drift alarm (`lineage.drift_detected`) is **decoupled** from the code_hash change: drift fires only on upstream divergence between observed (instrumented `AssetIO.Read`) and declared (`Asset.Upstreams()`) — never on code_hash change alone. Therefore metadata-only edits create new asset versions without triggering drift noise.
 
 2. **AssetVersion as own ent entity vs implicit `(asset, code_hash)` grouping?**
    - What we know: D-16 lists `AssetVersion` as an ent entity; CONTEXT.md "Claude's Discretion" says pick one.
-   - Recommendation: **Own ent entity** with fields `(id, asset, code_hash, description, owner, tags, column_lineage JSONB, created_at)`. Phase 5 RBAC will bind to asset versions; a foreign key to an explicit `asset_versions.id` is cleaner than a composite key.
+   - RESOLVED: **AssetVersion is its own ent entity** with fields `(id, asset, code_hash, description, owner, tags, column_lineage JSONB, drift_status, created_at)`. Phase 5 RBAC will bind policies to specific asset versions; a foreign-key reference to an explicit `asset_versions.id` is cleaner than a composite `(asset, code_hash)` key. Plan 04-02 creates the ent entity; plans 04-04 (CaptureRun) and 04-07 (metadata read API) consume it.
 
 3. **Schema_changes ack UPDATE pattern — SECURITY DEFINER or allow UPDATE?**
    - What we know: `schema_changes` should be immutable except for ack columns; RLS blocks UPDATE for platform_app.
-   - Recommendation: **Allow UPDATE on schema_changes for platform_app, restricted by application logic** to only the ack columns (ent mutation only sets `acknowledged_at`, `acknowledged_by`, `acknowledgement_reason`). Full RLS column-level UPDATE policies in PostgreSQL require PostgreSQL 15+ `FOR UPDATE OF (col)` syntax which is not standard. Simpler: no RLS on schema_changes UPDATE; trust the ent mutation to only update ack columns.
+   - RESOLVED: **Allow UPDATE on schema_changes for platform_app, restricted by application logic.** The ent mutation in plan 04-07 (and CLI in plan 04-08) only calls `Set{AcknowledgedAt,AcknowledgedBy,AcknowledgementReason}` — non-ack columns are never touched. Column-level UPDATE policies in PostgreSQL require PG 15+ `FOR UPDATE OF (col)` which is non-portable. Compile-time mutation surface (only three Set methods exist on the ack code path) plus DB grants `SELECT, INSERT, UPDATE` (no DELETE/TRUNCATE) form the two-layer defense. The Wave 2 `TestSchemaChangesAckOnly` test asserts the mutation surface is bounded to ack columns.
 
 ---
 
