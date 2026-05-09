@@ -82,6 +82,21 @@ func main() {
 				os.Exit(1)
 			}
 		}
+	case "impact":
+		if err := runImpact(os.Args[2:]); err != nil {
+			slog.Error("platform.impact_failed", "error", err)
+			os.Exit(1)
+		}
+	case "schema":
+		if err := dispatchSchema(os.Args[2:]); err != nil {
+			slog.Error("platform.schema_failed", "error", err)
+			os.Exit(1)
+		}
+	case "lineage":
+		if err := dispatchLineage(os.Args[2:]); err != nil {
+			slog.Error("platform.lineage_failed", "error", err)
+			os.Exit(1)
+		}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
 		os.Exit(2)
