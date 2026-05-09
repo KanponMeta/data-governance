@@ -70,6 +70,29 @@ func NewRouter(deps Deps) http.Handler {
 			r.Use(auth.RequireRole("admin"))
 			r.Post("/", (&authHandler{svc: deps.Auth}).invite)
 		})
+
+		// Phase 4 (D-19, D-20, LINE-06): impact analysis (any authenticated user).
+		r.Get("/v1/lineage/impact", impactHandler(deps))
+
+		// Phase 4 (D-18, LINE-01): OpenLineage export (any authenticated user).
+		r.Get("/v1/lineage/export", exportLineageHandler(deps))
+
+		// Phase 4 (META-05, D-12): schema-change timeline (any authenticated user).
+		r.Get("/v1/schema/changes", listSchemaChanges(deps))
+
+		// Phase 4 (META-03, D-17): asset/column metadata read (any authenticated user).
+		if deps.Ent != nil {
+			mh := metadataHandler(deps)
+			r.Get("/v1/assets/{name}/metadata", mh.Get)
+
+			// Phase 4 governance-only writes — D-10 ack, D-17 PATCH metadata.
+			r.Group(func(r chi.Router) {
+				r.Use(auth.RequireRole("governance"))
+				r.Post("/v1/schema/changes/{id}/ack", ackSchemaChange(deps))
+				r.Patch("/v1/assets/{name}/metadata", mh.PatchAsset)
+				r.Patch("/v1/assets/{name}/columns/{col}/metadata", mh.PatchColumn)
+			})
+		}
 	})
 
 	// Health, readiness, and metrics endpoints.

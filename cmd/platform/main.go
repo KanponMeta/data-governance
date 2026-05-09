@@ -12,11 +12,13 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/kanpon/data-governance/internal/api"
 	"github.com/kanpon/data-governance/internal/auth"
 	"github.com/kanpon/data-governance/internal/config"
 	"github.com/kanpon/data-governance/internal/event"
+	"github.com/kanpon/data-governance/internal/lineage/openlineage"
 	"github.com/kanpon/data-governance/internal/storage"
 )
 
@@ -106,6 +108,16 @@ func runStart() error {
 	issuer := auth.NewTokenIssuer(cfg.JWTSigningKey, cfg.JWTAccessTTL)
 	svc := auth.NewService(store, writer, issuer)
 
+	// Phase 4 wiring: pgxpool for sqlc recursive CTE traversal (impact.Analyze).
+	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("open pgx pool: %w", err)
+	}
+	defer pool.Close()
+
+	// OpenLineage translator using the existing ent client from storage.
+	olTranslator := openlineage.NewDefault(store.Ent(), "platform.local")
+
 	// Emit platform.started event.
 	if err := writer.Append(ctx, event.Event{
 		Type:         event.EventTypePlatformStarted,
@@ -120,11 +132,15 @@ func runStart() error {
 	slog.Info("platform.started", "version", version)
 
 	deps := api.Deps{
-		Auth:    svc,
-		Issuer:  issuer,
-		Storage: store,
-		Events:  writer,
-		Version: version,
+		Auth:         svc,
+		Issuer:       issuer,
+		Storage:      store,
+		Events:       writer,
+		Version:      version,
+		// Phase 4 additions (04-07): metadata store, schema-ack, impact analysis, OL export.
+		Ent:          store.Ent(),
+		LineageDB:    pool,
+		OLTranslator: olTranslator,
 	}
 
 	return api.Run(ctx, cfg, deps)
