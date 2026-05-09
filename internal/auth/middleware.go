@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/casbin/casbin/v2"
 	"github.com/google/uuid"
 	"github.com/kanpon/data-governance/internal/event"
 )
@@ -117,6 +118,48 @@ func RequireRole(role string) func(http.Handler) http.Handler {
 			}
 			next.ServeHTTP(w, r)
 		})
+	}
+}
+
+// RequirePermission returns a chi-compatible middleware that enforces
+// Casbin RBAC policy: (role, obj, act) must be permitted.
+// It extracts all roles from the authenticated Principal's JWT and checks
+// each against the Casbin enforcer. Passes if any role matches; 403 otherwise.
+func RequirePermission(enforcer *casbin.Enforcer, obj, act string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			p, ok := PrincipalFromContext(r.Context())
+			if !ok {
+				writeUnauthorized(w, "authentication required")
+				return
+			}
+			// Principal.Role is the single primary role from JWT.
+			enforcedRole := "role:" + p.Role
+			allowed, err := enforcer.Enforce(enforcedRole, obj, act)
+			if err != nil {
+				writeInternalError(w, "policy check failed")
+				return
+			}
+			if !allowed {
+				writeForbidden(w, "insufficient permissions for "+obj+" "+act)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func writeInternalError(w http.ResponseWriter, detail string) {
+	problem := map[string]any{
+		"type":   "about:blank",
+		"title":  "Internal Server Error",
+		"status": http.StatusInternalServerError,
+		"detail": detail,
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(http.StatusInternalServerError)
+	if enc := json.NewEncoder(w); enc != nil {
+		_ = enc.Encode(problem)
 	}
 }
 

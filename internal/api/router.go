@@ -6,12 +6,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/casbin/casbin/v2"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/kanpon/data-governance/internal/auth"
 	"github.com/kanpon/data-governance/internal/event"
 	"github.com/kanpon/data-governance/internal/lineage/openlineage"
 	lineageq "github.com/kanpon/data-governance/internal/lineage/queries"
+	"github.com/kanpon/data-governance/internal/platform"
 	"github.com/kanpon/data-governance/internal/storage"
 	"github.com/kanpon/data-governance/internal/storage/ent"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -33,9 +35,27 @@ type Deps struct {
 	LineageDB lineageq.DBTX
 	// OLTranslator is the OpenLineage export translator interface.
 	OLTranslator openlineage.Translator
+
+	// Phase 5 (05-01): Casbin enforcer + auth middleware for RBAC permission checks.
+	Enforcer *casbin.Enforcer
+	// AuthMW is the chi middleware for JWT authentication (from auth.Middleware).
+	AuthMW func(http.Handler) http.Handler
+}
+
+// ToMountDeps converts api.Deps to platform.MountDeps for route mounting.
+func (d Deps) ToMountDeps() platform.MountDeps {
+	return platform.MountDeps{
+		DB:          d.Storage.DB(),
+		AuthMW:      d.AuthMW,
+		Enforcer:    d.Enforcer,
+		AuthService: d.Auth,
+		Events:      d.Events,
+	}
 }
 
 // NewRouter returns a chi router with all routes mounted and middleware applied.
+// It calls platform.MountAllRoutes at the end to mount all registered extension
+// routes (B-03 fix — downstream plans never edit this function directly).
 func NewRouter(deps Deps) http.Handler {
 	r := chi.NewRouter()
 
