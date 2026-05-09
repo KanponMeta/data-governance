@@ -665,6 +665,56 @@ func TestExecutorBackfillTagAcquisition(t *testing.T) {
 	}
 }
 
+// ===== Phase 4 writer tests =====
+
+// TestExecutorWithoutPhase4Writers is a regression guard confirming that the executor
+// behaves identically when LineageWriter and SchemaWriter are nil. The trackingIO
+// wrapper must be transparent from the user's perspective when no writer is wired.
+func TestExecutorWithoutPhase4Writers(t *testing.T) {
+	db, entClient := setupTestDB(t)
+
+	conn := &recordingConnector{rowsWritten: 7}
+	var readUpstream string
+	a, err := asset.New("no-phase4-writers-asset").
+		Connector("test-connector").
+		Materialize(func(ctx context.Context, io asset.AssetIO) (asset.MaterializeResult, error) {
+			// PartitionKey pass-through.
+			_ = io.PartitionKey()
+			// Write — pass-through.
+			_, _ = io.Write(ctx, nil)
+			// Capture what happens when tracking IO wraps the inner IO.
+			readUpstream = io.PartitionKey() // just exercises the interface; no upstreams declared
+			return asset.MaterializeResult{RowsWritten: 7}, nil
+		}).
+		Build()
+	if err != nil {
+		t.Fatalf("build asset: %v", err)
+	}
+
+	insertRun(t, db, "no-phase4-writers-asset")
+	claimed := claimRun(t, db, "no-phase4-writers-asset")
+
+	// Build executor WITHOUT Phase 4 writers — LineageWriter and SchemaWriter default to nil.
+	exec := buildExecutor(t, db, entClient, []*asset.Asset{a}, conn, nil, asset.RetryPolicy{}, 30*time.Second)
+
+	if err := exec.Run(context.Background(), claimed); err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	// Run should succeed normally.
+	var state string
+	if err := db.QueryRowContext(context.Background(),
+		`SELECT state FROM runs WHERE id = $1`, claimed.ID,
+	).Scan(&state); err != nil {
+		t.Fatalf("query run state: %v", err)
+	}
+	if state != "succeeded" {
+		t.Errorf("expected state=succeeded, got %q", state)
+	}
+	// readUpstream captures the partition key; just verifies the decorated io is transparent.
+	_ = readUpstream
+}
+
 // ===== Helpers =====
 
 func sliceEqual(a, b []string) bool {

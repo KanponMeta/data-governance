@@ -17,6 +17,7 @@ package runtime
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -28,8 +29,10 @@ import (
 	"github.com/kanpon/data-governance/internal/connector"
 	"github.com/kanpon/data-governance/internal/dag"
 	"github.com/kanpon/data-governance/internal/event"
+	"github.com/kanpon/data-governance/internal/lineage"
 	"github.com/kanpon/data-governance/internal/retry"
 	"github.com/kanpon/data-governance/internal/run"
+	"github.com/kanpon/data-governance/internal/schema"
 	"github.com/kanpon/data-governance/internal/storage"
 )
 
@@ -45,6 +48,11 @@ type Deps struct {
 	WorkerID          string
 	StepTimeout       time.Duration // per-step ctx timeout; default 30m
 	HeartbeatInterval time.Duration // tick rate for runs.last_heartbeat; default 30s
+
+	// Phase 4 (D-01/D-02/D-04/D-05/D-06 — optional): nil = skip the respective capture.
+	// When non-nil, each is called inside commitSuccess's per-step transaction.
+	LineageWriter *lineage.Writer // lineage edges + drift detection (D-01/D-02/D-04)
+	SchemaWriter  *schema.Writer  // schema versioning + hash dedup (D-05/D-06/D-08)
 }
 
 // Executor runs claimed runs end-to-end. Create with NewExecutor.
@@ -289,19 +297,20 @@ func (e *Executor) runStep(ctx context.Context, runID uuid.UUID, a *asset.Asset,
 		// Execute the user function with panic recovery + per-step timeout.
 		stepCtx, cancel := context.WithTimeout(ctx, e.deps.StepTimeout)
 		startedAt := time.Now().UTC()
-		io := asset.NewAssetIO(a, e, partitionKey) // executor implements asset.ConnectorResolver; partition_key threaded from claimed run (D-10)
-		result, runErr := safeMaterialize(stepCtx, a.MaterializeFn(), io)
+		inner := asset.NewAssetIO(a, e, partitionKey) // executor implements asset.ConnectorResolver; partition_key threaded from claimed run (D-10)
+		tracker := asset.NewTrackingIO(inner)         // D-04 platform-driven drift: records every io.Read() call
+		result, runErr := safeMaterialize(stepCtx, a.MaterializeFn(), tracker)
 		cancel()
 		releaseAcquired()
 		durationMs := time.Since(startedAt).Milliseconds()
 
 		if runErr == nil {
-			e.appendEvent(ctx, runID, event.EventTypeRunStepSucceeded, event.RunStepSucceededPayload{
-				AssetName:   a.Name(),
-				RowsWritten: result.RowsWritten,
-				DurationMs:  durationMs,
-				Metadata:    result.Metadata,
-			})
+			// D-21 transactional boundary: lineage + schema writes in same tx as
+			// per-step observability. If commitSuccess fails, run stays 'running'
+			// for the reaper to re-queue.
+			if err := e.commitSuccess(ctx, runID, a, result, durationMs, tracker.Observed()); err != nil {
+				return fmt.Errorf("executor: commit success: %w", err)
+			}
 			return nil
 		}
 
@@ -317,6 +326,77 @@ func (e *Executor) runStep(ctx context.Context, runID uuid.UUID, a *asset.Asset,
 		e.scheduleRetry(ctx, runID, a, attempt, runErr, policy)
 		// Loop continues for attempt+1.
 	}
+}
+
+// commitSuccess is the per-step success path (D-21 transactional boundary).
+//
+// It wraps per-step lineage + schema writes in a single sql.Tx:
+//   - lineage.Writer.CaptureRun (D-01/D-02/D-04 platform-driven drift)
+//   - schema.Writer.Capture (D-05/D-06/D-08 content-addressed versioning)
+//
+// If any write fails: the tx rolls back and commitSuccess returns an error,
+// leaving the run in 'running'. The heartbeat goroutine keeps ticking, and
+// the stale-run reaper (plan 02-04) will re-queue the step for retry.
+//
+// After tx.Commit, the run.step.succeeded event is emitted (outside the tx so
+// event emission does not contribute to rollback decisions).
+//
+// Architectural note: This wraps PER-STEP lineage/schema writes only.
+// The runs.state UPDATE (running → succeeded) is handled by the outer
+// e.transition() call after all steps complete. This is intentional:
+// a 5-step DAG that succeeds on steps 1-4 and fails on step 5 should
+// not lose the lineage rows from steps 1-4 (each step commits atomically).
+// If the outer transition fails, the lineage rows are pre-committed but valid
+// (they reference runID which still exists in runs); re-running will UPSERT
+// idempotently.
+func (e *Executor) commitSuccess(ctx context.Context, runID uuid.UUID,
+	a *asset.Asset, result asset.MaterializeResult, durationMs int64,
+	observedUpstreams []string) error {
+
+	db := e.deps.Store.DB()
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if err != nil {
+		return fmt.Errorf("begin success tx: %w", err)
+	}
+	rollback := true
+	defer func() {
+		if rollback {
+			_ = tx.Rollback()
+		}
+	}()
+
+	// Lineage capture (D-01/D-02 + D-04 platform-driven drift). nil writer = skip.
+	if e.deps.LineageWriter != nil {
+		if err := e.deps.LineageWriter.CaptureRun(ctx, tx, runID, a, result, a.CodeHash(), observedUpstreams); err != nil {
+			return fmt.Errorf("lineage capture: %w", err)
+		}
+	}
+
+	// Schema capture (D-05/D-06/D-08). nil writer = skip.
+	if e.deps.SchemaWriter != nil {
+		conn, ref, rerr := e.Resolve(a.Name())
+		if rerr != nil {
+			return fmt.Errorf("resolve connector: %w", rerr)
+		}
+		if err := e.deps.SchemaWriter.Capture(ctx, tx, runID, a, result, conn, ref, a.CodeHash()); err != nil {
+			return fmt.Errorf("schema capture: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit success tx: %w", err)
+	}
+	rollback = false
+
+	// Emit step success event AFTER commit so events are not orphaned by
+	// a rolled-back tx (events are observability, not coordination).
+	e.appendEvent(ctx, runID, event.EventTypeRunStepSucceeded, event.RunStepSucceededPayload{
+		AssetName:   a.Name(),
+		RowsWritten: result.RowsWritten,
+		DurationMs:  durationMs,
+		Metadata:    result.Metadata,
+	})
+	return nil
 }
 
 // safeMaterialize wraps the user's MaterializeFunc in panic recovery (T-02-03-01).
