@@ -10,8 +10,8 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/kanpon/data-governance/internal/auth"
 	"github.com/kanpon/data-governance/internal/event"
-	lineageq "github.com/kanpon/data-governance/internal/lineage/queries"
 	"github.com/kanpon/data-governance/internal/lineage/openlineage"
+	lineageq "github.com/kanpon/data-governance/internal/lineage/queries"
 	"github.com/kanpon/data-governance/internal/storage"
 	"github.com/kanpon/data-governance/internal/storage/ent"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -28,8 +28,9 @@ type Deps struct {
 	// Phase 4 additions (04-07):
 	// Ent is the ent client for schema-ack mutation and metadata store.
 	Ent *ent.Client
-	// LineageQueries is the sqlc-generated query client for impact analysis (Wave 6).
-	LineageQueries *lineageq.Queries
+	// LineageDB is the raw DB connection passed to impact.Analyze (sqlc DBTX interface).
+	// *pgxpool.Pool satisfies lineageq.DBTX.
+	LineageDB lineageq.DBTX
 	// OLTranslator is the OpenLineage export translator interface.
 	OLTranslator openlineage.Translator
 }
