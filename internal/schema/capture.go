@@ -15,6 +15,13 @@ import (
 	"github.com/kanpon/data-governance/internal/event"
 )
 
+// prevVersionData holds the data read from the latest schema_versions row.
+type prevVersionData struct {
+	id     uuid.UUID
+	hash   string
+	schema connector.Schema
+}
+
 // Writer provides schema capture (D-05 + D-06 + D-07 + D-08) for the
 // Phase 4 data governance platform.
 //
@@ -132,23 +139,36 @@ func (w *Writer) Capture(ctx context.Context, tx *sql.Tx, runID uuid.UUID,
 	var versionID uuid.UUID
 
 	if tx != nil {
+		// Step 2: Query the latest schema_versions row for this asset.
+		// We SELECT schema_data so we can unmarshal prevSchema for Diff (plan 04-05).
 		const latestQuery = `
-			SELECT id, schema_hash FROM schema_versions
+			SELECT id, schema_hash, schema_data FROM schema_versions
 			 WHERE asset = $1 ORDER BY captured_at DESC LIMIT 1
 		`
-		var prevID uuid.UUID
-		var prevHash string
-		err := tx.QueryRowContext(ctx, latestQuery, a.Name()).Scan(&prevID, &prevHash)
+		var prev prevVersionData
+		var rawSchemaData []byte
+		err := tx.QueryRowContext(ctx, latestQuery, a.Name()).Scan(&prev.id, &prev.hash, &rawSchemaData)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("schema: latest version query: %w", err)
 		}
 		hasPrev := err == nil
 
-		if hasPrev && prevHash == schemaHash {
+		// Unmarshal the previous schema_data if we have a prev row (T-04-05-01 note:
+		// json.Unmarshal returns error, not panic; we treat unmarshal failure as missing prev).
+		if hasPrev && len(rawSchemaData) > 0 {
+			if err := json.Unmarshal(rawSchemaData, &prev.schema); err != nil {
+				slog.Warn("schema: failed to unmarshal prev schema_data; diff will be skipped",
+					"asset", a.Name(), "error", err)
+				hasPrev = false // treat as first capture to avoid diff on bad data
+			}
+		}
+		prev.schema.CapturedAt = time.Time{} // not stored; zero is fine
+
+		if hasPrev && prev.hash == schemaHash {
 			// Step 3a: dedup — UPDATE last_seen_*.
-			versionID = prevID
+			versionID = prev.id
 			const upd = `UPDATE schema_versions SET last_seen_run_id=$1, last_seen_at=$2 WHERE id=$3`
-			if _, err := tx.ExecContext(ctx, upd, runID, now, prevID); err != nil {
+			if _, err := tx.ExecContext(ctx, upd, runID, now, prev.id); err != nil {
 				return fmt.Errorf("schema: dedup update: %w", err)
 			}
 			if w.events != nil {
@@ -159,7 +179,7 @@ func (w *Writer) Capture(ctx context.Context, tx *sql.Tx, runID uuid.UUID,
 					Payload: map[string]any{
 						"asset":       a.Name(),
 						"schema_hash": schemaHash,
-						"version_id":  prevID.String(),
+						"version_id":  prev.id.String(),
 					},
 				})
 			}
@@ -179,17 +199,35 @@ func (w *Writer) Capture(ctx context.Context, tx *sql.Tx, runID uuid.UUID,
 				return fmt.Errorf("schema: insert version: %w", err)
 			}
 
-			// Emit schema.change_detected — Wave 5 plan 04-05 reads this event
-			// (or the new schema_versions row) to write schema_changes diff rows.
+			// Step 3c: Compute diff + write schema_changes rows (plan 04-05).
+			// Only diff if we have a valid previous schema to compare against.
+			var changes []SchemaChange
+			if hasPrev {
+				changes = Diff(prev.schema, captured)
+			}
+
+			var prevIDPtr *uuid.UUID
+			if hasPrev {
+				prevIDPtr = &prev.id
+			}
+
+			changeIDs, err := WriteSchemaChanges(ctx, tx, runID, a.Name(), codeHash,
+				prevIDPtr, versionID, changes)
+			if err != nil {
+				return fmt.Errorf("schema: write schema_changes: %w", err)
+			}
+
+			// Emit schema.change_detected with audit-pointer payload (D-11).
 			if w.events != nil {
 				payload := map[string]any{
-					"asset":          a.Name(),
-					"schema_hash":    schemaHash,
-					"new_version_id": versionID.String(),
-					"code_hash":      codeHash,
+					"asset":              a.Name(),
+					"schema_hash":        schemaHash,
+					"new_version_id":     versionID.String(),
+					"code_hash":          codeHash,
+					"schema_changes_ids": uuidsToStrings(changeIDs),
 				}
 				if hasPrev {
-					payload["prev_version_id"] = prevID.String()
+					payload["prev_version_id"] = prev.id.String()
 				}
 				_ = w.events.Append(ctx, event.Event{
 					Type:         event.EventTypeSchemaChangeDetected,

@@ -58,12 +58,12 @@ END
 $$;
 
 -- Owner controls schema changes; app does runtime DML.
-ALTER TABLE user         OWNER TO platform_owner;
+ALTER TABLE "user"       OWNER TO platform_owner;
 ALTER TABLE invite_token OWNER TO platform_owner;
 ALTER TABLE event_log    OWNER TO platform_owner;
 
 -- Default DML privileges for app role.
-GRANT SELECT, INSERT, UPDATE, DELETE ON user         TO platform_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON "user"       TO platform_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON invite_token TO platform_app;
 
 -- event_log is APPEND-ONLY for the application role.
