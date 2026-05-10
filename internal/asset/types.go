@@ -146,6 +146,16 @@ func (RowCountIsZero) Test(value any) (bool, *float64) {
 	return pass, &v
 }
 
+// quoteSQLIdent wraps a SQL identifier in double quotes and escapes any
+// embedded double-quote characters by doubling them — the standard ANSI
+// SQL identifier-quoting rule. Used by NullCheck / RangeCheck to prevent
+// identifier injection if a column name contains attacker-controlled
+// content (e.g., from upstream catalog discovery via a third-party
+// connector). CR-06.
+func quoteSQLIdent(s string) string {
+	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+}
+
 // numericFloat coerces common database scalar types into float64. Returns
 // (0, false) for unsupported types so the caller can mark the rule as 'error'.
 func numericFloat(value any) (float64, bool) {
@@ -191,8 +201,8 @@ func (n NullCheck) ConfigJSON() ([]byte, error) {
 // Evaluate runs the null-rate query against the supplied evaluator.
 func (n NullCheck) Evaluate(ctx context.Context, eval QualityEvaluator) (QualityResult, error) {
 	sqlText := fmt.Sprintf(
-		`SELECT COUNT(*)::float8 AS total, COUNT(*) FILTER (WHERE "%s" IS NULL)::float8 AS nulls FROM %s`,
-		n.Column, eval.AssetTable())
+		`SELECT COUNT(*)::float8 AS total, COUNT(*) FILTER (WHERE %s IS NULL)::float8 AS nulls FROM %s`,
+		quoteSQLIdent(n.Column), eval.AssetTable())
 	row, err := eval.QueryAggregate(ctx, sqlText)
 	if err != nil {
 		return QualityResult{Status: "error", ErrorMessage: err.Error()}, nil
@@ -237,9 +247,10 @@ func (r RangeCheck) ConfigJSON() ([]byte, error) {
 
 // Evaluate runs the MIN/MAX query and asserts both fall within bounds.
 func (r RangeCheck) Evaluate(ctx context.Context, eval QualityEvaluator) (QualityResult, error) {
+	col := quoteSQLIdent(r.Column)
 	sqlText := fmt.Sprintf(
-		`SELECT MIN("%s")::float8, MAX("%s")::float8 FROM %s`,
-		r.Column, r.Column, eval.AssetTable())
+		`SELECT MIN(%s)::float8, MAX(%s)::float8 FROM %s`,
+		col, col, eval.AssetTable())
 	row, err := eval.QueryAggregate(ctx, sqlText)
 	if err != nil {
 		return QualityResult{Status: "error", ErrorMessage: err.Error()}, nil
