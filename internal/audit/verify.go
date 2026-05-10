@@ -166,6 +166,7 @@ func emitVerifyFailedEntry(ctx context.Context, db *sql.DB, badSeq int64, stored
 
 	_, _ = WriteEntry(ctx, tx, Entry{
 		EventType:    AuditVerifyFailed,
+		OccurredAt:   time.Now().UTC(),
 		ResourceType: "audit",
 		ResourceID:   fmt.Sprintf("%d", badSeq),
 		Payload: map[string]any{

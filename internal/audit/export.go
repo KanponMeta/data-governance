@@ -219,6 +219,7 @@ func emitExportAuditEntry(ctx context.Context, db *sql.DB, format Format, rowCou
 
 	_, err = WriteEntry(ctx, tx, Entry{
 		EventType:    AuditExported,
+		OccurredAt:   time.Now().UTC(),
 		ResourceType: "audit",
 		ResourceID:   "export",
 		Payload: map[string]any{
