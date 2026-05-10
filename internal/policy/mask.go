@@ -83,17 +83,23 @@ func ApplyRedact(_ string) string { return "***" }
 
 // ApplyPartial reveals reveal leading and reveal trailing characters and
 // replaces the middle with '*'. If the value is too short to reveal both
-// sides without overlap (len(value) <= 2*reveal+1), the entire value is
+// sides without overlap (rune-count <= 2*reveal+1), the entire value is
 // redacted. reveal <= 0 is normalised to 2.
+//
+// Indexes by rune (not byte) so multi-byte UTF-8 sequences are not split
+// mid-rune; previously, a 3-byte character with reveal=2 could expose
+// 2 bytes of a 3-byte rune, producing invalid UTF-8 and partially leaking
+// the supposedly-masked character (WR-06).
 func ApplyPartial(value string, reveal int) string {
 	if reveal <= 0 {
 		reveal = 2
 	}
-	if len(value) <= 2*reveal+1 {
+	runes := []rune(value)
+	if len(runes) <= 2*reveal+1 {
 		return ApplyRedact(value)
 	}
-	mid := strings.Repeat("*", len(value)-2*reveal)
-	return value[:reveal] + mid + value[len(value)-reveal:]
+	mid := strings.Repeat("*", len(runes)-2*reveal)
+	return string(runes[:reveal]) + mid + string(runes[len(runes)-reveal:])
 }
 
 // Apply dispatches to the right ApplyXxx based on the supplied MaskType.
