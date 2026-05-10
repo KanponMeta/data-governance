@@ -16,9 +16,15 @@ import (
 type principalKey struct{}
 
 // Principal describes the authenticated caller extracted from a JWT.
+//
+// Role is the primary role (back-compat); Roles is the full active set used
+// by RequirePermission for RBAC enforcement. WR-01: a user assigned both
+// data-engineer and governance must have BOTH roles considered when checking
+// (role, obj, act); previous code only checked Role and silently denied.
 type Principal struct {
 	UserID uuid.UUID
 	Role   string
+	Roles  []string
 }
 
 // PrincipalFromContext retrieves the Principal from ctx, if present.
@@ -94,6 +100,7 @@ func Middleware(issuer *TokenIssuer, events event.Writer) func(http.Handler) htt
 			ctx := context.WithValue(r.Context(), principalKey{}, Principal{
 				UserID: claims.UserID,
 				Role:   claims.Role,
+				Roles:  claims.Roles,
 			})
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
@@ -123,8 +130,13 @@ func RequireRole(role string) func(http.Handler) http.Handler {
 
 // RequirePermission returns a chi-compatible middleware that enforces
 // Casbin RBAC policy: (role, obj, act) must be permitted.
-// It extracts all roles from the authenticated Principal's JWT and checks
-// each against the Casbin enforcer. Passes if any role matches; 403 otherwise.
+// It extracts ALL active roles from the authenticated Principal's JWT
+// (Principal.Role primary + Principal.Roles set) and checks each against
+// the Casbin enforcer. Passes if ANY role matches; 403 otherwise.
+//
+// WR-01: previous code only checked Role and ignored Roles, so a user
+// assigned multiple roles was silently denied access permitted by their
+// non-primary roles.
 func RequirePermission(enforcer *casbin.Enforcer, obj, act string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -133,18 +145,37 @@ func RequirePermission(enforcer *casbin.Enforcer, obj, act string) func(http.Han
 				writeUnauthorized(w, "authentication required")
 				return
 			}
-			// Principal.Role is the single primary role from JWT.
-			enforcedRole := "role:" + p.Role
-			allowed, err := enforcer.Enforce(enforcedRole, obj, act)
-			if err != nil {
-				writeInternalError(w, "policy check failed")
-				return
+			// Build the de-duplicated role set: primary Role plus the full
+			// Roles list. Empty role values are skipped to avoid spurious
+			// "role:" enforcement against the empty role identifier.
+			seen := make(map[string]struct{}, 1+len(p.Roles))
+			roles := make([]string, 0, 1+len(p.Roles))
+			if p.Role != "" {
+				seen[p.Role] = struct{}{}
+				roles = append(roles, p.Role)
 			}
-			if !allowed {
-				writeForbidden(w, "insufficient permissions for "+obj+" "+act)
-				return
+			for _, extraRole := range p.Roles {
+				if extraRole == "" {
+					continue
+				}
+				if _, dup := seen[extraRole]; dup {
+					continue
+				}
+				seen[extraRole] = struct{}{}
+				roles = append(roles, extraRole)
 			}
-			next.ServeHTTP(w, r)
+			for _, role := range roles {
+				allowed, err := enforcer.Enforce("role:"+role, obj, act)
+				if err != nil {
+					writeInternalError(w, "policy check failed")
+					return
+				}
+				if allowed {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+			writeForbidden(w, "insufficient permissions for "+obj+" "+act)
 		})
 	}
 }
