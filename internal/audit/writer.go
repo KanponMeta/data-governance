@@ -48,15 +48,19 @@ func WriteEntry(ctx context.Context, tx *sql.Tx, e Entry) (seq int64, err error)
 		return 0, fmt.Errorf("write_entry: canonical payload: %w", err)
 	}
 
-	// 3. Compute self_hash.
-	seq = prevSeq + 1
-	selfHash := computeSelfHash(seq, prevHash, e.OccurredAt, e.EventType, e.ActorID, e.ResourceType, e.ResourceID, payloadBytes)
-
-	// 4. Insert the audit row.
+	// 3. Resolve occurredAt BEFORE hashing — the hash MUST use the same
+	// timestamp value that is persisted to audit_log.occurred_at, otherwise
+	// Verify will recompute a hash that does not match the stored row.
 	occurredAt := e.OccurredAt
 	if occurredAt.IsZero() {
 		occurredAt = time.Now().UTC()
 	}
+
+	// 4. Compute self_hash using the resolved occurredAt.
+	seq = prevSeq + 1
+	selfHash := computeSelfHash(seq, prevHash, occurredAt, e.EventType, e.ActorID, e.ResourceType, e.ResourceID, payloadBytes)
+
+	// 5. Insert the audit row.
 	var actorID any = nil
 	if e.ActorID != nil {
 		actorID = *e.ActorID
@@ -73,7 +77,7 @@ func WriteEntry(ctx context.Context, tx *sql.Tx, e Entry) (seq int64, err error)
 		return 0, fmt.Errorf("write_entry: insert audit_log: %w", err)
 	}
 
-	// 5. Advance sentinel.
+	// 6. Advance sentinel.
 	_, err = tx.ExecContext(ctx, `
 		UPDATE audit.audit_sentinel SET seq = $1, self_hash = $2 WHERE id = 1
 	`, seq, selfHash)
