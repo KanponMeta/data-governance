@@ -633,3 +633,91 @@ func TestBuilder_ColumnPolicy_MissingColumn(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrColumnPolicyMissingColumn)
 }
+
+// ---- Phase 5 Plan 05-03 (D-06) — TagOverride builder tests ----
+
+// TestBuilder_TagOverride_HappyPath verifies that Column().TagOverride()
+// accumulates onto the builder and surfaces via Asset.TagOverrides().
+func TestBuilder_TagOverride_HappyPath(t *testing.T) {
+	a, err := New("orders_anon").
+		Connector("postgres-prod").
+		Materialize(noopMaterialize).
+		Column("hashed_ssn").
+		TagOverride(TagOverride{Remove: "pii", Reason: "hashed at source via SHA-256"}).
+		And().
+		Build()
+	require.NoError(t, err)
+	overrides := a.TagOverrides()
+	require.Len(t, overrides, 1)
+	require.Equal(t, "orders_anon", overrides[0].Asset)
+	require.Equal(t, "hashed_ssn", overrides[0].Column)
+	require.Equal(t, "pii", overrides[0].Override.Remove)
+	require.Equal(t, "hashed at source via SHA-256", overrides[0].Override.Reason)
+}
+
+// TestBuilder_TagOverride_MissingReasonFails verifies Reason is mandatory.
+func TestBuilder_TagOverride_MissingReasonFails(t *testing.T) {
+	_, err := New("a").
+		Connector("c").
+		Materialize(noopMaterialize).
+		Column("x").
+		TagOverride(TagOverride{Remove: "pii"}).
+		And().
+		Build()
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrTagOverrideInvalid)
+}
+
+// TestBuilder_TagOverride_DuplicateColumnFails verifies that two overrides on
+// the same column surface ErrTagOverrideDuplicateColumn at Build() time.
+func TestBuilder_TagOverride_DuplicateColumnFails(t *testing.T) {
+	_, err := New("a").
+		Connector("c").
+		Materialize(noopMaterialize).
+		Column("x").
+		TagOverride(TagOverride{Remove: "pii", Reason: "first"}).
+		And().
+		Column("x").
+		TagOverride(TagOverride{Add: "anonymized", Reason: "second"}).
+		And().
+		Build()
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrTagOverrideDuplicateColumn)
+}
+
+// TestBuilder_TagOverride_NeitherRemoveNorAddFails verifies that supplying
+// only Reason without Remove or Add is rejected.
+func TestBuilder_TagOverride_NeitherRemoveNorAddFails(t *testing.T) {
+	_, err := New("a").
+		Connector("c").
+		Materialize(noopMaterialize).
+		Column("x").
+		TagOverride(TagOverride{Reason: "no-op override"}).
+		And().
+		Build()
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrTagOverrideInvalid)
+}
+
+// TestBuilder_TagOverride_NotInCodeHash verifies that adding a TagOverride
+// does NOT change the asset's code_hash. Override is operational metadata.
+func TestBuilder_TagOverride_NotInCodeHash(t *testing.T) {
+	plain, err := New("a").
+		Connector("c").
+		Materialize(noopMaterialize).
+		Column("x").And().
+		Build()
+	require.NoError(t, err)
+
+	withOverride, err := New("a").
+		Connector("c").
+		Materialize(noopMaterialize).
+		Column("x").
+		TagOverride(TagOverride{Remove: "pii", Reason: "hashed via Sha-256"}).
+		And().
+		Build()
+	require.NoError(t, err)
+
+	require.Equal(t, plain.CodeHash(), withOverride.CodeHash(),
+		"TagOverride is operational config (D-06) — not in code_hash")
+}

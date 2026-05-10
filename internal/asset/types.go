@@ -328,3 +328,44 @@ type FreshnessSLA struct {
 	MaxLag             time.Duration
 	ScopeAfterCronFire bool
 }
+
+// ===== Phase 5 Plan 05-03: TagOverride (D-06) =====
+
+// TagOverride is a column-level metadata tag override declared via
+// Builder.Column(c).TagOverride(asset.TagOverride{...}). It is the only
+// auditable path through which a downstream column can REMOVE the inherited
+// pii=true tag (e.g., after the upstream value has been irreversibly hashed
+// inside the materialize function). Reason is mandatory: the audit chain
+// captures it alongside actor + asset + column.
+//
+// Either Remove or Add must be non-empty; both may be set in the same
+// override (e.g., Remove="pii", Add="anonymized"). Reason is ALWAYS required.
+type TagOverride struct {
+	// Remove is the tag key to strip from the column (typically "pii").
+	Remove string
+	// Add is the tag key to add to the column (e.g., "anonymized").
+	Add string
+	// Reason is a human-readable justification recorded in the audit chain.
+	// MUST be non-empty.
+	Reason string
+}
+
+// Validate returns an error if the override is missing required fields.
+func (o TagOverride) Validate() error {
+	if o.Reason == "" {
+		return fmt.Errorf("asset: TagOverride.Reason is required")
+	}
+	if o.Remove == "" && o.Add == "" {
+		return fmt.Errorf("asset: TagOverride: one of Remove or Add must be set")
+	}
+	return nil
+}
+
+// ColumnTagOverride associates a TagOverride with a specific column on a
+// specific asset. Builder collects these as a slice; the lineage_writer
+// hook (Plan 05-03) turns them into pii_propagator inputs at run time.
+type ColumnTagOverride struct {
+	Asset    string
+	Column   string
+	Override TagOverride
+}

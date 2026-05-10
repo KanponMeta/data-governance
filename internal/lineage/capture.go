@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/kanpon/data-governance/internal/asset"
 	"github.com/kanpon/data-governance/internal/event"
+	"github.com/kanpon/data-governance/internal/governance"
 )
 
 // Writer provides SyncStaticEdges (static derivation, D-01) and CaptureRun
@@ -23,15 +24,30 @@ import (
 // All SQL is written via *sql.DB / *sql.Tx (raw SQL, following Phase 2
 // claim.go precedent — D-16 doesn't require sqlc for write paths).
 type Writer struct {
-	db     *sql.DB      // for SyncStaticEdges (internal short tx)
-	events event.Writer // for appending Phase 4 events to event_log
+	db         *sql.DB      // for SyncStaticEdges (internal short tx)
+	events     event.Writer // for appending Phase 4 events to event_log
+	propagator *governance.Propagator // optional Phase 5 D-06 PII propagator (Plan 05-03); nil = skip.
 }
 
 // NewWriter returns a lineage.Writer. db may be nil only when the caller
 // guarantees it will only call SyncStaticEdges with assets that have 0
 // upstreams (test-only pattern).
+//
+// Phase 5 Plan 05-03: PII propagation is opt-in via WithPropagator — Phase 4
+// callers (NewWriter(db, events)) continue to work unchanged.
 func NewWriter(db *sql.DB, events event.Writer) *Writer {
 	return &Writer{db: db, events: events}
+}
+
+// WithPropagator wires the Phase 5 D-06 PII propagator into CaptureRun so
+// every successful column_edges UPSERT triggers BFS-of-depth-1 union over
+// upstream pii=true tags inside the same transaction (zero unmasked window).
+// Returns the receiver to allow fluent construction:
+//
+//	w := lineage.NewWriter(db, events).WithPropagator(governance.NewPropagator())
+func (w *Writer) WithPropagator(p *governance.Propagator) *Writer {
+	w.propagator = p
+	return w
 }
 
 // SyncStaticEdges UPSERTs asset_edges for every declared upstream of a (D-01).
@@ -178,6 +194,22 @@ func (w *Writer) CaptureRun(ctx context.Context, tx *sql.Tx, runID uuid.UUID,
 		}
 	}
 
+	// Step 2b (Plan 05-03 D-06): synchronous PII propagation. If a propagator
+	// was wired in via WithPropagator, run it on the same tx so any pii=true
+	// upstream tags inherit to the just-written column_edges and any
+	// builder-declared TagOverride emits its first-time audit entry.
+	//
+	// Output columns are derived from the column_lineage map's keys; if the
+	// asset declared no column lineage we still walk overrides since they
+	// can apply to columns regardless of edge presence.
+	if w.propagator != nil {
+		outCols := outputColumnsFromLineage(a, cl)
+		overrides := a.TagOverrides()
+		if err := w.propagator.Propagate(ctx, tx, runID, outCols, overrides); err != nil {
+			return fmt.Errorf("lineage: pii propagator: %w", err)
+		}
+	}
+
 	// Step 3: UPDATE asset_edges last_seen_* for run-attribution.
 	// Promotes the uuid.Nil sentinel (inserted by SyncStaticEdges at registration)
 	// to the real first_seen_run_id when this is the first run.
@@ -272,6 +304,39 @@ func (w *Writer) CaptureRun(ctx context.Context, tx *sql.Tx, runID uuid.UUID,
 	}
 
 	return nil
+}
+
+// outputColumnsFromLineage derives the per-run output column set the PII
+// propagator should iterate. Priority:
+//
+//  1. Keys of the resolved ColumnLineageMap (whether runtime or builder
+//     default) — these are the columns that just had column_edges UPSERTed.
+//  2. Fallback: the asset's declared Columns() metadata.
+//
+// The result is deterministically sorted so propagator runs are stable
+// across deployments (handy for tests + audit reads).
+func outputColumnsFromLineage(a *asset.Asset, cl asset.ColumnLineageMap) []governance.ColumnRef {
+	seen := make(map[string]struct{})
+	out := make([]governance.ColumnRef, 0)
+	for outCol := range cl {
+		if _, dup := seen[outCol]; dup {
+			continue
+		}
+		seen[outCol] = struct{}{}
+		out = append(out, governance.ColumnRef{Asset: a.Name(), Column: outCol})
+	}
+	if len(out) == 0 {
+		// Fall back to declared column metadata.
+		for _, c := range a.Columns() {
+			if _, dup := seen[c.Name]; dup {
+				continue
+			}
+			seen[c.Name] = struct{}{}
+			out = append(out, governance.ColumnRef{Asset: a.Name(), Column: c.Name})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Column < out[j].Column })
+	return out
 }
 
 // placeholders returns a comma-separated list of $n placeholders starting at start.

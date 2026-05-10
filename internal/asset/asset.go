@@ -103,6 +103,9 @@ type Asset struct {
 	// Phase 5 additions (Plan 05-05):
 	qualityRules []QualityRule
 	freshnessSLA *FreshnessSLA
+	// Phase 5 Plan 05-03 (D-06): builder-declared tag overrides — the only
+	// auditable path that REMOVES the propagated pii=true tag from a column.
+	tagOverrides []ColumnTagOverride
 }
 
 // Name returns the unique asset identifier.
@@ -215,4 +218,14 @@ func (a *Asset) FreshnessSLA() *FreshnessSLA {
 	}
 	cp := *a.freshnessSLA
 	return &cp
+}
+
+// TagOverrides returns a defensive copy of the builder-declared
+// ColumnTagOverride list (Plan 05-03 D-06). Operational override config —
+// not part of code_hash.
+func (a *Asset) TagOverrides() []ColumnTagOverride {
+	if a.tagOverrides == nil {
+		return nil
+	}
+	return append([]ColumnTagOverride(nil), a.tagOverrides...)
 }
