@@ -31,6 +31,14 @@ var (
 	// ErrAlreadyDecided is returned by Approve/Reject when the review already
 	// has decided_at set.
 	ErrAlreadyDecided = errors.New("governance: review already decided")
+	// ErrSelfApproval is returned by Approve/Reject when the decider is the
+	// submitter — four-eyes principle (D-12). A submitter cannot decide on
+	// their own review.
+	ErrSelfApproval = errors.New("governance: decider cannot be submitter (four-eyes)")
+	// ErrDuplicateVote is returned by Approve/Reject when the decider has
+	// already voted on this review. Prevents quorum bypass via repeat
+	// approvals from the same actor.
+	ErrDuplicateVote = errors.New("governance: decider already voted on this review")
 )
 
 // ===== Public types =====
@@ -307,6 +315,20 @@ func (w *Workflow) decide(ctx context.Context, reviewID, decider uuid.UUID, comm
 		return Review{}, ErrAlreadyDecided
 	}
 
+	// Four-eyes: a submitter cannot decide on their own review. Without this
+	// check, a submitter holding the governance permission could self-approve
+	// and bypass review entirely (D-12).
+	if decider == submitterID {
+		return Review{}, ErrSelfApproval
+	}
+
+	// Duplicate-vote check: scan the existing comment ledger for a prior vote
+	// from this decider. Without this check, a single privileged user could
+	// flip status to approved by repeated calls (quorum bypass).
+	if hasPriorVoteByDecider(currentComment, decider) {
+		return Review{}, ErrDuplicateVote
+	}
+
 	var pool ReviewerPool
 	_ = json.Unmarshal(poolJSON, &pool)
 
@@ -568,19 +590,40 @@ func scanReviewRow(s rowScanner) (Review, error) {
 	return r, nil
 }
 
-// countApprovals scans a stored comment for "[approved by ...]" markers.
-// Quick & dirty v1: line containing "approved by " counts as a vote.
+// countApprovals scans a stored comment for the structured "[approved by <uuid>]"
+// token. The token shape is produced exclusively by decide() — free-form reject
+// comments containing the substring "approved by" no longer count as approvals
+// (CR-03 hardening). Quick & dirty v1: each line whose prefix matches the
+// canonical token counts as one vote.
 func countApprovals(comment string) int {
 	if comment == "" {
 		return 0
 	}
 	count := 0
 	for _, line := range strings.Split(comment, "\n") {
-		if strings.Contains(line, "approved by ") {
+		if strings.HasPrefix(strings.TrimSpace(line), "[approved by ") {
 			count++
 		}
 	}
 	return count
+}
+
+// hasPriorVoteByDecider returns true if the comment ledger already contains an
+// "[approved by <decider>]" or "[rejected by <decider>]" token for the given
+// decider id. Used by decide() to enforce one-vote-per-decider (CR-03).
+func hasPriorVoteByDecider(comment string, decider uuid.UUID) bool {
+	if comment == "" {
+		return false
+	}
+	approveToken := "[approved by " + decider.String() + "]"
+	rejectToken := "[rejected by " + decider.String() + "]"
+	for _, line := range strings.Split(comment, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, approveToken) || strings.HasPrefix(trimmed, rejectToken) {
+			return true
+		}
+	}
+	return false
 }
 
 // normaliseQuorum maps QuorumAll (-1) to len(roles). Used at INSERT time so
