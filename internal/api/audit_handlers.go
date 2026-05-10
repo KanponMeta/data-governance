@@ -70,24 +70,46 @@ func handleExport(db *sql.DB) http.HandlerFunc {
 
 func handleVerify(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		result, err := audit.Verify(r.Context(), db, 1, 0)
+		// Look up MAX(seq) so the full chain is verified, not just seq=1.
+		// WR-03: previously called Verify(ctx, db, 1, 0) which clamps to=1
+		// inside Verify, so the endpoint silently returned OK after scanning
+		// a single row even when later rows were tampered.
+		var maxSeq sql.NullInt64
+		if err := db.QueryRowContext(r.Context(), `SELECT MAX(seq) FROM audit.audit_log`).Scan(&maxSeq); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to read max seq"})
+			return
+		}
+		var to int64
+		if maxSeq.Valid {
+			to = maxSeq.Int64
+		}
+		// Empty chain (no rows): report scanned=0, ok=true.
+		if to < 1 {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"ok":      true,
+				"scanned": 0,
+			})
+			return
+		}
+		result, err := audit.Verify(r.Context(), db, 1, to)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
 			return
 		}
 		if !result.OK {
 			w.WriteHeader(http.StatusUnprocessableEntity)
-			json.NewEncoder(w).Encode(map[string]any{
-				"ok":           false,
-				"scanned":      result.Scanned,
-				"mismatch_seq": result.MismatchSeq,
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"ok":            false,
+				"scanned":       result.Scanned,
+				"mismatch_seq":  result.MismatchSeq,
 				"stored_hash":   result.StoredHash,
 				"computed_hash": result.ComputedHash,
 			})
 			return
 		}
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"ok":      true,
 			"scanned": result.Scanned,
 		})
