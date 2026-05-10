@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -115,7 +116,8 @@ func submitHandler(deps HandlerDeps) http.HandlerFunc {
 				writeProblem(w, http.StatusNotFound, "Not Found", err.Error())
 				return
 			}
-			writeProblem(w, http.StatusInternalServerError, "Internal Server Error", err.Error())
+			slog.Error("governance submit failed", "actor", submitter, "asset", body.Asset, "code_hash", body.CodeHash, "err", err)
+			writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "internal error; see server logs")
 			return
 		}
 		writeJSON(w, http.StatusCreated, res)
@@ -194,7 +196,8 @@ func reassignHandler(deps HandlerDeps) http.HandlerFunc {
 				writeProblem(w, http.StatusConflict, "Conflict", err.Error())
 				return
 			}
-			writeProblem(w, http.StatusInternalServerError, "Internal Server Error", err.Error())
+			slog.Error("governance reassign failed", "actor", actor, "review", reviewID, "err", err)
+			writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "internal error; see server logs")
 			return
 		}
 		writeJSON(w, http.StatusOK, rev)
@@ -205,7 +208,8 @@ func statusHandler(deps HandlerDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		out, err := deps.Workflow.Status(r.Context(), "")
 		if err != nil {
-			writeProblem(w, http.StatusInternalServerError, "Internal Server Error", err.Error())
+			slog.Error("governance status failed", "err", err)
+			writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "internal error; see server logs")
 			return
 		}
 		writeJSON(w, http.StatusOK, out)
@@ -217,7 +221,8 @@ func statusForAssetHandler(deps HandlerDeps) http.HandlerFunc {
 		assetName := chi.URLParam(r, "asset")
 		out, err := deps.Workflow.Status(r.Context(), assetName)
 		if err != nil {
-			writeProblem(w, http.StatusInternalServerError, "Internal Server Error", err.Error())
+			slog.Error("governance status failed", "asset", assetName, "err", err)
+			writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "internal error; see server logs")
 			return
 		}
 		writeJSON(w, http.StatusOK, out)
@@ -234,8 +239,13 @@ func handleDecideError(w http.ResponseWriter, err error) {
 		writeProblem(w, http.StatusNotFound, "Not Found", err.Error())
 	case errors.Is(err, ErrAlreadyDecided):
 		writeProblem(w, http.StatusConflict, "Conflict", err.Error())
+	case errors.Is(err, ErrSelfApproval):
+		writeProblem(w, http.StatusForbidden, "Forbidden", err.Error())
+	case errors.Is(err, ErrDuplicateVote):
+		writeProblem(w, http.StatusConflict, "Conflict", err.Error())
 	default:
-		writeProblem(w, http.StatusInternalServerError, "Internal Server Error", err.Error())
+		slog.Error("governance decide failed", "err", err)
+		writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "internal error; see server logs")
 	}
 }
 

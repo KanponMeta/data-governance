@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -47,7 +48,8 @@ func createRoleHandler(deps platform.MountDeps) http.HandlerFunc {
 		}
 		actor, _ := auth.PrincipalFromContext(r.Context())
 		if err := deps.AuthService.CreateRole(r.Context(), actor.UserID, req.Name, req.Description); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			slog.Error("create_role failed", "actor", actor.UserID, "name", req.Name, "err", err)
+			http.Error(w, "internal error; see server logs", http.StatusInternalServerError)
 			return
 		}
 		w.WriteHeader(http.StatusCreated)
@@ -59,7 +61,8 @@ func listRolesHandler(deps platform.MountDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		rows, err := deps.DB.QueryContext(r.Context(), `SELECT name, description FROM roles ORDER BY name`)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			slog.Error("list_roles failed", "err", err)
+			http.Error(w, "internal error; see server logs", http.StatusInternalServerError)
 			return
 		}
 		defer rows.Close()
@@ -80,7 +83,8 @@ func deleteRoleHandler(deps platform.MountDeps) http.HandlerFunc {
 		name := chi.URLParam(r, "name")
 		actor, _ := auth.PrincipalFromContext(r.Context())
 		if err := deps.AuthService.DeleteRole(r.Context(), actor.UserID, name); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			slog.Error("delete_role failed", "actor", actor.UserID, "name", name, "err", err)
+			http.Error(w, "internal error; see server logs", http.StatusInternalServerError)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -106,7 +110,8 @@ func assignRolesHandler(deps platform.MountDeps) http.HandlerFunc {
 		}
 		actor, _ := auth.PrincipalFromContext(r.Context())
 		if err := deps.AuthService.AssignRole(r.Context(), actor.UserID, userID, req.Role); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			slog.Error("assign_role failed", "actor", actor.UserID, "user_id", userID, "role", req.Role, "err", err)
+			http.Error(w, "internal error; see server logs", http.StatusInternalServerError)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
@@ -125,7 +130,8 @@ func revokeRoleHandler(deps platform.MountDeps) http.HandlerFunc {
 		}
 		actor, _ := auth.PrincipalFromContext(r.Context())
 		if err := deps.AuthService.RevokeRole(r.Context(), actor.UserID, userID, role); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			slog.Error("revoke_role failed", "actor", actor.UserID, "user_id", userID, "role", role, "err", err)
+			http.Error(w, "internal error; see server logs", http.StatusInternalServerError)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/casbin/casbin/v2"
@@ -82,7 +83,8 @@ func patchPolicyHandler(store *Store) http.HandlerFunc {
 				writeProblem(w, http.StatusBadRequest, "Bad Request", "reason is required")
 				return
 			}
-			writeProblem(w, http.StatusInternalServerError, "Internal Server Error", err.Error())
+			slog.Error("policy patch failed", "actor", actorID, "asset", assetName, "column", column, "err", err)
+			writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "internal error; see server logs")
 			return
 		}
 		writeJSON(w, http.StatusOK, effectiveDTO(eff))
@@ -106,7 +108,8 @@ func deletePolicyHandler(store *Store) http.HandlerFunc {
 				writeProblem(w, http.StatusNotFound, "Not Found", "no runtime policy for that column")
 				return
 			}
-			writeProblem(w, http.StatusInternalServerError, "Internal Server Error", err.Error())
+			slog.Error("policy delete failed", "actor", actorID, "asset", assetName, "column", column, "err", err)
+			writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "internal error; see server logs")
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -125,7 +128,8 @@ func effectiveHandler(store *Store) http.HandlerFunc {
 				writeProblem(w, http.StatusNotFound, "Not Found", "no policy for that column")
 				return
 			}
-			writeProblem(w, http.StatusInternalServerError, "Internal Server Error", err.Error())
+			slog.Error("policy resolve failed", "asset", assetName, "column", column, "err", err)
+			writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "internal error; see server logs")
 			return
 		}
 		writeJSON(w, http.StatusOK, effectiveDTO(eff))
@@ -142,13 +146,15 @@ func yamlReloadHandler(store *Store, loader func() (*YAMLConfig, error)) http.Ha
 		}
 		cfg, err := loader()
 		if err != nil {
-			writeProblem(w, http.StatusInternalServerError, "Internal Server Error", err.Error())
+			slog.Error("policy yaml-reload load failed", "err", err)
+			writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "internal error; see server logs")
 			return
 		}
 		actor := principalUUID(r)
 		applied, err := store.ApplyYAML(r.Context(), cfg, actor)
 		if err != nil {
-			writeProblem(w, http.StatusInternalServerError, "Internal Server Error", err.Error())
+			slog.Error("policy yaml-reload apply failed", "actor", actor, "err", err)
+			writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "internal error; see server logs")
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"applied": applied})
