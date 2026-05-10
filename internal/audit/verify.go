@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/binary"
 	"fmt"
+	"time"
 )
 
 // Result describes the outcome of a Verify run.
@@ -52,15 +53,16 @@ func Verify(ctx context.Context, db *sql.DB, from, to int64) (Result, error) {
 	for rows.Next() {
 		var seq int64
 		var storedHash, rowPrevHash []byte
-		var occurredAtUnixNano int64
+		var occurredAt time.Time
 		var eventType string
 		var actorID *string
 		var resourceType, resourceID string
 		var payload []byte
 
-		if err := rows.Scan(&seq, &rowPrevHash, &storedHash, &occurredAtUnixNano, &eventType, &actorID, &resourceType, &resourceID, &payload); err != nil {
+		if err := rows.Scan(&seq, &rowPrevHash, &storedHash, &occurredAt, &eventType, &actorID, &resourceType, &resourceID, &payload); err != nil {
 			return Result{Err: fmt.Errorf("verify: scan row %d: %w", seq, err)}, nil
 		}
+		occurredAtUnixNano := occurredAt.UnixNano()
 
 		// Verify prev_hash linkage for first row in range.
 		if scanned == 0 {
