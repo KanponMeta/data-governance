@@ -90,7 +90,7 @@ func (w *PolicySyncWorker) Work(ctx context.Context, args PolicySyncArgs, attemp
 		// Non-warehouse target — Plan 05-03 in-pipeline takes over.
 		logger.Info("policy.sync.in_pipeline",
 			"asset", eff.Asset, "column", eff.Column,
-			"connector", connectorName(conn))
+			"connector", connectorName(ctx, conn))
 		_ = w.Store.SetEnforcementMode(ctx, eff.Asset, eff.Column, "in-pipeline")
 		_ = w.Store.SetSyncStatus(ctx, eff.Asset, eff.Column, "synced")
 		return nil
@@ -118,7 +118,7 @@ func (w *PolicySyncWorker) Work(ctx context.Context, args PolicySyncArgs, attemp
 					Payload: map[string]any{
 						"asset":     eff.Asset,
 						"column":    eff.Column,
-						"connector": connectorName(conn),
+						"connector": connectorName(ctx, conn),
 						"error":     err.Error(),
 						"attempts":  attempt,
 					},
@@ -129,19 +129,21 @@ func (w *PolicySyncWorker) Work(ctx context.Context, args PolicySyncArgs, attemp
 	}
 	logger.Info("policy.sync.applied",
 		"asset", eff.Asset, "column", eff.Column,
-		"mask", string(eff.Mask), "connector", connectorName(conn))
+		"mask", string(eff.Mask), "connector", connectorName(ctx, conn))
 	_ = w.Store.SetEnforcementMode(ctx, eff.Asset, eff.Column, "warehouse-native")
 	_ = w.Store.SetSyncStatus(ctx, eff.Asset, eff.Column, "synced")
 	return nil
 }
 
 // connectorName best-effort returns the connector identity for logging.
-// Falls back to "unknown" on any error so the worker keeps running.
-func connectorName(c connector.Connector) string {
+// Falls back to "unknown" on any error so the worker keeps running. Honours
+// the caller's ctx (WR-08): a Ping issued during shutdown will not stall
+// the goroutine waiting on an unresponsive warehouse.
+func connectorName(ctx context.Context, c connector.Connector) string {
 	if c == nil {
 		return "<nil>"
 	}
-	resp, err := c.Ping(context.Background(), connector.PingRequest{})
+	resp, err := c.Ping(ctx, connector.PingRequest{})
 	if err != nil || resp.ConnectorName == "" {
 		return "unknown"
 	}
