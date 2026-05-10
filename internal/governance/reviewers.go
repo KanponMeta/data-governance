@@ -136,12 +136,17 @@ func (r *Resolver) ResolveReviewers(
 // dedupRoles removes duplicate role names while preserving first-seen order.
 // Stable order is essential because reviewer_pool_snapshot is JSONB and any
 // downstream comparison (audit hash chain payload, tests) needs determinism.
+//
+// WR-11: always returns a freshly allocated slice — previously the len<=1
+// fast-path returned the input slice directly. Callers that retained the
+// returned slice could observe aliasing mutations if a later append on the
+// shared backing array fit in spare capacity.
 func dedupRoles(in []string) []string {
-	if len(in) <= 1 {
-		return in
+	out := make([]string, 0, len(in))
+	if len(in) == 0 {
+		return out
 	}
 	seen := make(map[string]struct{}, len(in))
-	out := make([]string, 0, len(in))
 	for _, r := range in {
 		if _, ok := seen[r]; ok {
 			continue
