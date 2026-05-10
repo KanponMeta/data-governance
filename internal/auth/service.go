@@ -327,13 +327,29 @@ func (s *Service) CreateRole(ctx context.Context, actor uuid.UUID, name, descrip
 	defer tx.Rollback()
 
 	// Insert role.
-	_, err = tx.ExecContext(ctx, `
+	res, err := tx.ExecContext(ctx, `
 		INSERT INTO roles (name, description, created_by_id)
 		VALUES ($1, $2, $3)
 		ON CONFLICT (name) DO NOTHING
 	`, name, description, actor)
 	if err != nil {
 		return fmt.Errorf("create_role: insert: %w", err)
+	}
+
+	// WR-10: only emit audit when a row was actually created. Previously
+	// every call appended a role.created entry even when ON CONFLICT
+	// DO NOTHING short-circuited the insert, making the audit chain
+	// indistinguishable between a true create and a no-op replay.
+	rows, raErr := res.RowsAffected()
+	if raErr != nil {
+		return fmt.Errorf("create_role: rows affected: %w", raErr)
+	}
+	if rows == 0 {
+		// Role already exists — no-op; commit to release the tx and return.
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("create_role: commit (no-op): %w", err)
+		}
+		return nil
 	}
 
 	// Audit entry inside same tx.
