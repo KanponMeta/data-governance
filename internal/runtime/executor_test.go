@@ -715,6 +715,208 @@ func TestExecutorWithoutPhase4Writers(t *testing.T) {
 	_ = readUpstream
 }
 
+// ===== Phase 5 Plan 05-04 governance gate tests =====
+
+// buildExecutorWithGate constructs a runtime.Executor with the given assets,
+// connector, and GovernanceGatingEnabled flag. Wraps buildExecutor so the
+// existing helpers stay intact.
+func buildExecutorWithGate(
+	t *testing.T,
+	db *sql.DB,
+	entClient *stent.Client,
+	assets []*asset.Asset,
+	conn connector.Connector,
+	gateEnabled bool,
+) *runtime.Executor {
+	t.Helper()
+	store := &entStorage{db: db, ent: entClient}
+	evtWriter := event.NewWriter(store)
+	reg := asset.NewDefinitionRegistry()
+	for _, a := range assets {
+		if err := reg.Register(a); err != nil {
+			t.Fatalf("register asset %q: %v", a.Name(), err)
+		}
+	}
+	connReg := connector.NewRegistry()
+	if conn != nil {
+		if err := connReg.RegisterInProcess("test-connector", conn); err != nil {
+			t.Fatalf("register connector: %v", err)
+		}
+	}
+	pool := concurrency.NewPool(store, nil)
+	return runtime.NewExecutor(runtime.Deps{
+		Store:                   store,
+		Events:                  evtWriter,
+		Registry:                reg,
+		ConnectorReg:            connReg,
+		Pool:                    pool,
+		DefaultPolicy:           asset.RetryPolicy{},
+		WorkerID:                "test-worker",
+		StepTimeout:             5 * time.Second,
+		HeartbeatInterval:       30 * time.Second,
+		GovernanceGatingEnabled: gateEnabled,
+	})
+}
+
+// insertAssetVersion writes an asset_versions row with the given governance_state.
+func insertAssetVersion(t *testing.T, db *sql.DB, assetName, codeHash, govState string) {
+	t.Helper()
+	_, err := db.ExecContext(context.Background(), `
+		INSERT INTO asset_versions (id, asset, code_hash, drift_status, governance_state, created_at)
+		VALUES ($1, $2, $3, 'clean', $4, NOW())
+		ON CONFLICT (asset, code_hash) DO UPDATE SET governance_state = EXCLUDED.governance_state
+	`, uuid.New(), assetName, codeHash, govState)
+	if err != nil {
+		t.Fatalf("insert asset_versions: %v", err)
+	}
+}
+
+// TestExecutor_GatingDisabled_AllowsRun_EvenWhenStateIsDraft verifies the
+// default behaviour (gating off) is unchanged: a draft asset_versions row
+// does NOT block the run.
+func TestExecutor_GatingDisabled_AllowsRun_EvenWhenStateIsDraft(t *testing.T) {
+	db, entClient := setupTestDB(t)
+
+	conn := &recordingConnector{rowsWritten: 1}
+	a, err := asset.New("gate-disabled-asset").
+		Connector("test-connector").
+		Materialize(func(ctx context.Context, io asset.AssetIO) (asset.MaterializeResult, error) {
+			return asset.MaterializeResult{RowsWritten: 1}, nil
+		}).
+		Build()
+	if err != nil {
+		t.Fatalf("build asset: %v", err)
+	}
+	insertAssetVersion(t, db, a.Name(), a.CodeHash(), "draft")
+
+	insertRun(t, db, a.Name())
+	claimed := claimRun(t, db, a.Name())
+
+	exec := buildExecutorWithGate(t, db, entClient, []*asset.Asset{a}, conn, false)
+	if err := exec.Run(context.Background(), claimed); err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	var state string
+	if err := db.QueryRowContext(context.Background(),
+		`SELECT state FROM runs WHERE id = $1`, claimed.ID).Scan(&state); err != nil {
+		t.Fatalf("query state: %v", err)
+	}
+	if state != "succeeded" {
+		t.Errorf("expected state=succeeded with gate disabled, got %q", state)
+	}
+}
+
+// TestExecutor_GatingEnabled_StateActive_AllowsRun verifies gating on +
+// governance_state=active permits the run to proceed.
+func TestExecutor_GatingEnabled_StateActive_AllowsRun(t *testing.T) {
+	db, entClient := setupTestDB(t)
+
+	conn := &recordingConnector{rowsWritten: 2}
+	a, err := asset.New("gate-active-asset").
+		Connector("test-connector").
+		Materialize(func(ctx context.Context, io asset.AssetIO) (asset.MaterializeResult, error) {
+			return asset.MaterializeResult{RowsWritten: 2}, nil
+		}).
+		Build()
+	if err != nil {
+		t.Fatalf("build asset: %v", err)
+	}
+	insertAssetVersion(t, db, a.Name(), a.CodeHash(), "active")
+
+	insertRun(t, db, a.Name())
+	claimed := claimRun(t, db, a.Name())
+
+	exec := buildExecutorWithGate(t, db, entClient, []*asset.Asset{a}, conn, true)
+	if err := exec.Run(context.Background(), claimed); err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	var state string
+	if err := db.QueryRowContext(context.Background(),
+		`SELECT state FROM runs WHERE id = $1`, claimed.ID).Scan(&state); err != nil {
+		t.Fatalf("query state: %v", err)
+	}
+	if state != "succeeded" {
+		t.Errorf("expected state=succeeded with active gate, got %q", state)
+	}
+}
+
+// TestExecutor_GatingEnabled_StateDraft_BlocksAndEmits verifies that gating on
+// + state=draft refuses the materialize and emits governance.materialization_blocked.
+func TestExecutor_GatingEnabled_StateDraft_BlocksAndEmits(t *testing.T) {
+	db, entClient := setupTestDB(t)
+
+	conn := &recordingConnector{rowsWritten: 3}
+	a, err := asset.New("gate-draft-asset").
+		Connector("test-connector").
+		Materialize(func(ctx context.Context, io asset.AssetIO) (asset.MaterializeResult, error) {
+			return asset.MaterializeResult{RowsWritten: 3}, nil
+		}).
+		Build()
+	if err != nil {
+		t.Fatalf("build asset: %v", err)
+	}
+	insertAssetVersion(t, db, a.Name(), a.CodeHash(), "draft")
+
+	insertRun(t, db, a.Name())
+	claimed := claimRun(t, db, a.Name())
+
+	exec := buildExecutorWithGate(t, db, entClient, []*asset.Asset{a}, conn, true)
+	runErr := exec.Run(context.Background(), claimed)
+	if runErr == nil {
+		t.Fatal("expected error from gated run, got nil")
+	}
+	// Verify the event_log received governance.materialization_blocked.
+	evtTypes := queryEventTypes(t, db, claimed.ID)
+	found := false
+	for _, et := range evtTypes {
+		if et == "governance.materialization_blocked" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected governance.materialization_blocked in events, got: %v", evtTypes)
+	}
+}
+
+// TestExecutor_GatingEnabled_StateRejected_BlocksAndEmits — same as above
+// but with state=rejected. The behaviour MUST be identical: any non-active
+// state blocks materialize.
+func TestExecutor_GatingEnabled_StateRejected_BlocksAndEmits(t *testing.T) {
+	db, entClient := setupTestDB(t)
+
+	conn := &recordingConnector{rowsWritten: 4}
+	a, err := asset.New("gate-rejected-asset").
+		Connector("test-connector").
+		Materialize(func(ctx context.Context, io asset.AssetIO) (asset.MaterializeResult, error) {
+			return asset.MaterializeResult{RowsWritten: 4}, nil
+		}).
+		Build()
+	if err != nil {
+		t.Fatalf("build asset: %v", err)
+	}
+	insertAssetVersion(t, db, a.Name(), a.CodeHash(), "rejected")
+
+	insertRun(t, db, a.Name())
+	claimed := claimRun(t, db, a.Name())
+
+	exec := buildExecutorWithGate(t, db, entClient, []*asset.Asset{a}, conn, true)
+	if err := exec.Run(context.Background(), claimed); err == nil {
+		t.Fatal("expected error from gated rejected-state run, got nil")
+	}
+	evtTypes := queryEventTypes(t, db, claimed.ID)
+	found := false
+	for _, et := range evtTypes {
+		if et == "governance.materialization_blocked" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected governance.materialization_blocked in events, got: %v", evtTypes)
+	}
+}
+
 // ===== Helpers =====
 
 func sliceEqual(a, b []string) bool {

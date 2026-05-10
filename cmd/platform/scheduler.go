@@ -13,6 +13,7 @@ import (
 
 	"github.com/kanpon/data-governance/internal/asset"
 	"github.com/kanpon/data-governance/internal/event"
+	"github.com/kanpon/data-governance/internal/governance"
 	"github.com/kanpon/data-governance/internal/notification"
 	"github.com/kanpon/data-governance/internal/quality"
 	"github.com/kanpon/data-governance/internal/schedule"
@@ -108,6 +109,18 @@ func runScheduler() error {
 	notifyWorker := &notification.Worker{Router: router, Events: events, DB: store.DB()}
 	queue := notification.NewInProcessQueue(ctx, notifyWorker, 4, 256)
 	freshnessScanner := quality.NewScanner(store.DB(), queue, events)
+
+	// Phase 5 Plan 05-04 (D-11): governance review SLA scanner. Detects reviews
+	// past sla_hours with decided_at IS NULL → emits governance.review_sla_breached.
+	// Hours configurable via PLATFORM_GOVERNANCE_SLA_HOURS (default 48).
+	govSLAHours := 48
+	if v := os.Getenv("PLATFORM_GOVERNANCE_SLA_HOURS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			govSLAHours = n
+		}
+	}
+	govOwnerLookup := &governance.SQLOwnerLookup{DB: store.DB()}
+	govSLAScanner := governance.NewSLAScanner(store.DB(), queue, govSLAHours, govOwnerLookup)
 	// Register worker symbol for grep + future River swap (placeholder no-op
 	// while in-process queue uses direct goroutines).
 	_ = notifyWorker
@@ -146,6 +159,12 @@ func runScheduler() error {
 			slog.Error("scheduler.freshness_scan_failed", "error", err)
 		} else if n > 0 {
 			slog.Info("scheduler.freshness_breaches_emitted", "count", n)
+		}
+		// Phase 5 Plan 05-04 (D-11): governance review SLA scanner pass.
+		if n, err := govSLAScanner.Scan(tickCtx); err != nil {
+			slog.Error("scheduler.governance_sla_scan_failed", "error", err)
+		} else if n > 0 {
+			slog.Info("scheduler.governance_sla_breaches_emitted", "count", n)
 		}
 		slog.Debug("scheduler.tick_completed", "duration", time.Since(start))
 	}

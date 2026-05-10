@@ -18,6 +18,7 @@ package runtime
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -25,6 +26,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/kanpon/data-governance/internal/asset"
+	"github.com/kanpon/data-governance/internal/audit"
 	"github.com/kanpon/data-governance/internal/concurrency"
 	"github.com/kanpon/data-governance/internal/connector"
 	"github.com/kanpon/data-governance/internal/dag"
@@ -36,6 +38,11 @@ import (
 	"github.com/kanpon/data-governance/internal/schema"
 	"github.com/kanpon/data-governance/internal/storage"
 )
+
+// errMaterializationGated is the sentinel error returned by runStep when
+// e.deps.GovernanceGatingEnabled is true and the asset's
+// asset_versions.governance_state is not 'active' (Plan 05-04 D-08).
+var errMaterializationGated = errors.New("runtime: materialization blocked by governance gate")
 
 // Deps bundles the Executor's dependencies. Plan 02-04 wires these from
 // cmd/platform/main.go subcommands.
@@ -61,6 +68,14 @@ type Deps struct {
 	// + schema rows. runs.run_quality_status is updated independently of
 	// runs.state (D-19: quality failure does NOT flip runs.state to 'failed').
 	QualityEvaluator *quality.Evaluator
+
+	// Phase 5 Plan 05-04 (D-08) — governance materialization gate. When true,
+	// runStep checks asset_versions.governance_state='active' before resolve +
+	// materialize and emits governance.materialization_blocked + audit entry
+	// when blocked. Default false — production deployments MUST flip this on.
+	// Pitfall #11: gating_enabled=false at startup logs a WARN so operators
+	// notice that governance is decorative.
+	GovernanceGatingEnabled bool
 }
 
 // Executor runs claimed runs end-to-end. Create with NewExecutor.
@@ -76,6 +91,15 @@ func NewExecutor(deps Deps) *Executor {
 	}
 	if deps.HeartbeatInterval == 0 {
 		deps.HeartbeatInterval = 30 * time.Second
+	}
+	if !deps.GovernanceGatingEnabled {
+		// Pitfall #11: log on every executor construction so operators notice
+		// that the governance gate is off — it is the difference between
+		// "governance is enforced" and "governance is decorative". Production
+		// runbook MUST flip GovernanceGatingEnabled=true.
+		slog.Warn("runtime.governance_gating_disabled",
+			"reason", "GovernanceGatingEnabled is false; asset_versions.governance_state is not enforced before materialize",
+		)
 	}
 	return &Executor{deps: deps}
 }
@@ -227,6 +251,58 @@ func (e *Executor) runStep(ctx context.Context, runID uuid.UUID, a *asset.Asset,
 	policy := a.RetryPolicy()
 	if policy.IsZero() {
 		policy = e.deps.DefaultPolicy
+	}
+
+	// Phase 5 Plan 05-04 (D-08): governance materialization gate. When enabled,
+	// refuse to materialize any asset whose latest asset_versions row is not in
+	// 'active' state. Per Pitfall D-09 ("metadata failures don't fail data work"),
+	// the run is NOT marked failed — we emit the audit + event_log row and
+	// short-circuit the step. The outer Run() will treat the returned sentinel
+	// as terminal-but-not-failure: emit run_step_failed but transition the run
+	// to failed only if there are no more retries. v1 returns the sentinel and
+	// allows the outer transition to mark failure.
+	if e.deps.GovernanceGatingEnabled {
+		var state string
+		err := e.deps.Store.DB().QueryRowContext(ctx,
+			`SELECT governance_state FROM asset_versions WHERE asset=$1 AND code_hash=$2`,
+			a.Name(), a.CodeHash(),
+		).Scan(&state)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			// No registered version yet — race during first registration.
+			// Allow the run to proceed (D-09 fail-open).
+		case err != nil:
+			slog.Warn("runtime.governance_gate_query_failed", "asset", a.Name(), "err", err)
+		default:
+			if state != "active" {
+				e.appendEvent(ctx, runID, event.EventTypeGovernanceMaterializationBlocked,
+					event.GovernanceMaterializationBlockedPayload{
+						Asset:        a.Name(),
+						CurrentState: state,
+						CodeHash:     a.CodeHash(),
+						RunID:        runID.String(),
+					})
+				// Hash-chain audit entry — governance is access control.
+				tx, btErr := e.deps.Store.DB().BeginTx(ctx, nil)
+				if btErr == nil {
+					_, _ = audit.WriteEntry(ctx, tx, audit.Entry{
+						EventType:    audit.AuditGovernanceMaterializationBlocked,
+						OccurredAt:   time.Now().UTC(),
+						ResourceType: "asset",
+						ResourceID:   a.Name(),
+						Payload: map[string]any{
+							"current_state": state,
+							"code_hash":     a.CodeHash(),
+							"run_id":        runID.String(),
+						},
+					})
+					if cmErr := tx.Commit(); cmErr != nil {
+						slog.Warn("runtime.governance_gate_audit_commit_failed", "asset", a.Name(), "err", cmErr)
+					}
+				}
+				return fmt.Errorf("step %q: %w (state=%s)", a.Name(), errMaterializationGated, state)
+			}
+		}
 	}
 
 	for attempt := 1; ; attempt++ {

@@ -103,6 +103,11 @@ func main() {
 		// Dispatched through the platform registry so init()-time
 		// self-registration in cmd/platform/policy.go is the single source of truth.
 		os.Exit(platform.DispatchCommand("policy", os.Args[2:]))
+	case "governance":
+		// Phase 5 plan 05-04 — governance CLI (submit / review / status / reassign).
+		// Dispatched through the platform registry so init()-time
+		// self-registration in cmd/platform/governance.go is the single source of truth.
+		os.Exit(platform.DispatchCommand("governance", os.Args[2:]))
 	default:
 		// Fall through to platform.DispatchCommand so init()-registered
 		// subcommands (audit, role, policy, future plans) work without
