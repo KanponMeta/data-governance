@@ -289,8 +289,15 @@ func (e *Executor) runStep(ctx context.Context, runID uuid.UUID, a *asset.Asset,
 		).Scan(&state)
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
-			// No registered version yet — race during first registration.
-			// Allow the run to proceed (D-09 fail-open).
+			// No registered version yet — fail CLOSED (WR-09). Previously
+			// allowed the run to proceed citing a 'race during first
+			// registration', but that is exactly the bypass an attacker
+			// would target: register an asset with a fresh code_hash and
+			// race the materialization in before governance review. The
+			// registration race is expected to resolve within milliseconds;
+			// returning the gate sentinel triggers a brief retry rather
+			// than skipping access control.
+			return fmt.Errorf("step %q: %w (asset_version not yet registered)", a.Name(), errMaterializationGated)
 		case err != nil:
 			slog.Warn("runtime.governance_gate_query_failed", "asset", a.Name(), "err", err)
 		default:
