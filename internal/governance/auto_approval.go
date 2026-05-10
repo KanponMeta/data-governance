@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"github.com/kanpon/data-governance/internal/asset"
 )
 
@@ -367,14 +369,25 @@ func (c *AutoApprovalChecker) driftPending(ctx context.Context, assetName, codeH
 }
 
 // isUndefinedTable reports whether err is a Postgres "undefined_table" /
-// "undefined_column" error. We match on substring rather than importing pgx
-// errcodes — this keeps the package free of pgx imports for testability.
+// "undefined_column" error. WR-07: previously matched on the substring
+// "does not exist" which is locale- and version-dependent (Postgres
+// translates messages) and matches false positives such as "value 'pii'
+// does not exist in enum" — risk: legitimate query errors silently
+// degraded to "table missing → fail-open, no policy needed".
+//
+// We now match on the structured pg_error.Code (42P01 undefined_table,
+// 42703 undefined_column). The substring check is retained as a fallback
+// so wrapped or non-pg errors carrying the canonical phrase still match
+// (used by some unit-test scaffolds).
 func isUndefinedTable(err error) bool {
 	if err == nil {
 		return false
 	}
+	var pe *pgconn.PgError
+	if errors.As(err, &pe) {
+		return pe.Code == "42P01" || pe.Code == "42703"
+	}
 	msg := err.Error()
-	return strings.Contains(msg, "does not exist") ||
-		strings.Contains(msg, "undefined_table") ||
+	return strings.Contains(msg, "undefined_table") ||
 		strings.Contains(msg, "undefined_column")
 }
