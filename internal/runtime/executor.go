@@ -30,12 +30,27 @@ import (
 	"github.com/kanpon/data-governance/internal/dag"
 	"github.com/kanpon/data-governance/internal/event"
 	"github.com/kanpon/data-governance/internal/lineage"
+	policypkg "github.com/kanpon/data-governance/internal/policy"
 	"github.com/kanpon/data-governance/internal/quality"
 	"github.com/kanpon/data-governance/internal/retry"
 	"github.com/kanpon/data-governance/internal/run"
 	"github.com/kanpon/data-governance/internal/schema"
 	"github.com/kanpon/data-governance/internal/storage"
 )
+
+// MaskRulesProvider returns the in-pipeline mask rules the executor must
+// wrap around AssetIO.Write for the named asset. Plan 05-03 (RBAC-05): for
+// connectors that don't implement connector.MaskingProvisioner, the
+// executor calls MaskRulesForAsset to discover the column-level masks, then
+// wraps the AssetIO with asset.NewMaskingIO. Returning an empty slice +
+// nil error means "no policies on this asset; do not wrap".
+//
+// The interface is satisfied by *internal/policy.Store directly — the
+// production wiring in cmd/platform/worker.go assigns deps.MaskRulesProvider
+// = policyStore. Tests pass an inline stub implementing the same signature.
+type MaskRulesProvider interface {
+	MaskRulesForAsset(ctx context.Context, asset string) ([]policypkg.MaskRule, error)
+}
 
 // Deps bundles the Executor's dependencies. Plan 02-04 wires these from
 // cmd/platform/main.go subcommands.
@@ -61,6 +76,13 @@ type Deps struct {
 	// + schema rows. runs.run_quality_status is updated independently of
 	// runs.state (D-19: quality failure does NOT flip runs.state to 'failed').
 	QualityEvaluator *quality.Evaluator
+
+	// Phase 5 Plan 05-03 (RBAC-05) — optional mask rules provider. nil = skip
+	// (Phase 4 path: no MaskingIO wrapping). Connectors that implement
+	// connector.MaskingProvisioner are NEVER wrapped — warehouse-native
+	// masking takes precedence. The runStep type assertion checks each
+	// asset's connector before consulting this provider.
+	MaskRulesProvider MaskRulesProvider
 }
 
 // Executor runs claimed runs end-to-end. Create with NewExecutor.
@@ -306,7 +328,18 @@ func (e *Executor) runStep(ctx context.Context, runID uuid.UUID, a *asset.Asset,
 		stepCtx, cancel := context.WithTimeout(ctx, e.deps.StepTimeout)
 		startedAt := time.Now().UTC()
 		inner := asset.NewAssetIO(a, e, partitionKey) // executor implements asset.ConnectorResolver; partition_key threaded from claimed run (D-10)
-		tracker := asset.NewTrackingIO(inner)         // D-04 platform-driven drift: records every io.Read() call
+
+		// Phase 5 Plan 05-03 D-05 capability assertion order:
+		// (1) connector implements MaskingProvisioner → warehouse-native, no wrap;
+		// (2) otherwise check policy store for in-pipeline / pii fallback rules.
+		io, mrerr := e.maybeWrapMaskingIO(ctx, a.Name(), inner)
+		if mrerr != nil {
+			releaseAcquired()
+			cancel()
+			return fmt.Errorf("executor: resolve mask rules for %q: %w", a.Name(), mrerr)
+		}
+
+		tracker := asset.NewTrackingIO(io) // D-04 platform-driven drift: records every io.Read() call
 		result, runErr := safeMaterialize(stepCtx, a.MaterializeFn(), tracker)
 		cancel()
 		releaseAcquired()
@@ -468,6 +501,47 @@ func (e *Executor) scheduleRetry(
 			return
 		}
 	}
+}
+
+// maybeWrapMaskingIO returns the AssetIO that runStep should hand to the
+// user MaterializeFunc. Plan 05-03 D-05 capability assertion order:
+//
+//  1. No MaskRulesProvider configured → return inner unchanged (Phase 4 path).
+//  2. Connector implements connector.MaskingProvisioner → return inner
+//     unchanged (warehouse-native masking takes precedence; in-pipeline
+//     wrap would double-mask).
+//  3. Otherwise → query MaskRulesProvider; if rules exist, wrap with
+//     MaskingIO. If no rules, return inner unchanged (no policies on this
+//     asset, no need to wrap).
+//
+// Errors from the provider are surfaced — the executor cannot silently
+// drop masking when the resolver call fails because that risks shipping
+// unmasked data downstream.
+func (e *Executor) maybeWrapMaskingIO(ctx context.Context, assetName string, inner asset.AssetIO) (asset.AssetIO, error) {
+	if e.deps.MaskRulesProvider == nil {
+		return inner, nil
+	}
+	conn, _, rerr := e.Resolve(assetName)
+	if rerr != nil {
+		// If we cannot resolve the connector, we proceed without wrapping —
+		// the underlying AssetIO will surface the same error during Read/Write.
+		return inner, nil //nolint:nilerr // resolution failures will reappear at IO time
+	}
+	if _, isMP := conn.(connector.MaskingProvisioner); isMP {
+		return inner, nil
+	}
+	rules, err := e.deps.MaskRulesProvider.MaskRulesForAsset(ctx, assetName)
+	if err != nil {
+		return nil, err
+	}
+	if len(rules) == 0 {
+		return inner, nil
+	}
+	assetRules := make([]asset.MaskRule, len(rules))
+	for i, r := range rules {
+		assetRules[i] = asset.MaskRule{Column: r.Column, Mask: r.Mask, Reveal: r.Reveal}
+	}
+	return asset.NewMaskingIO(inner, assetName, assetRules, policypkg.Apply), nil
 }
 
 // Resolve implements asset.ConnectorResolver. The executor is the resolver that

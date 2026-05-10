@@ -16,7 +16,9 @@ import (
 	"github.com/kanpon/data-governance/internal/connector"
 	conncfg "github.com/kanpon/data-governance/internal/connector/config"
 	"github.com/kanpon/data-governance/internal/event"
+	"github.com/kanpon/data-governance/internal/governance"
 	"github.com/kanpon/data-governance/internal/lineage"
+	"github.com/kanpon/data-governance/internal/policy"
 	"github.com/kanpon/data-governance/internal/run"
 	"github.com/kanpon/data-governance/internal/runtime"
 	"github.com/kanpon/data-governance/internal/schema"
@@ -178,22 +180,31 @@ func bootstrap(ctx context.Context) (*workerDeps, error) {
 	// Phase 4 capture writers — wired into the executor's per-step transaction
 	// (executor.commitSuccess) and into asset.Default().OnRegister so static
 	// upstream edges are materialized at registration time.
-	lineageWriter := lineage.NewWriter(store.DB(), writer)
+	//
+	// Phase 5 Plan 05-03 (D-06): the lineage writer's PII propagator runs in
+	// the same tx as column_edges UPSERT — zero unmasked window for downstream
+	// columns. The policy store is also exposed as MaskRulesProvider so the
+	// executor can wrap MaskingIO around AssetIO.Write for non-warehouse
+	// connectors (RBAC-05).
+	policyStore := policy.NewStore(store.DB(), nil)
+	propagator := governance.NewPropagator()
+	lineageWriter := lineage.NewWriter(store.DB(), writer).WithPropagator(propagator)
 	schemaWriter := schema.NewWriter(writer)
 	asset.Default().OnRegister = func(a *asset.Asset) error {
 		return lineageWriter.SyncStaticEdges(ctx, a, a.CodeHash())
 	}
 
 	exec := runtime.NewExecutor(runtime.Deps{
-		Store:         store,
-		Events:        writer,
-		Registry:      asset.Default(),
-		ConnectorReg:  connReg,
-		Pool:          pool,
-		DefaultPolicy: defaultPolicy,
-		WorkerID:      workerID,
-		LineageWriter: lineageWriter,
-		SchemaWriter:  schemaWriter,
+		Store:             store,
+		Events:            writer,
+		Registry:          asset.Default(),
+		ConnectorReg:      connReg,
+		Pool:              pool,
+		DefaultPolicy:     defaultPolicy,
+		WorkerID:          workerID,
+		LineageWriter:     lineageWriter,
+		SchemaWriter:      schemaWriter,
+		MaskRulesProvider: policyStore,
 		// HeartbeatInterval defaults to 30s in NewExecutor — paired with reaper StaleAfter=5m.
 	})
 
