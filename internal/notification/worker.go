@@ -250,11 +250,19 @@ func (q *InProcessQueue) Insert(ctx context.Context, args NotificationDispatchAr
 	}
 }
 
-// InsertTx mirrors river.Client.InsertTx — enqueue is non-transactional in the
-// in-process queue, so the caller is responsible for ensuring tx commits before
-// the job is acted upon. We deliberately Insert AFTER tx.Commit() in production
-// callers (see internal/quality/dispatcher.go); here we just call Insert so the
-// surface remains compatible with River's InsertTx.
+// InsertTx mirrors river.Client.InsertTx for source-compatibility, but is
+// **non-transactional** in the in-process queue: the supplied tx is IGNORED
+// and the job is enqueued immediately. If tx subsequently rolls back, the
+// notification will still fire — producing a phantom notification for a
+// transition that never persisted (CR-04).
+//
+// Callers that require atomic enqueue MUST instead build their args before
+// commit and call Insert AFTER tx.Commit() succeeds (see
+// internal/governance/workflow.go, internal/governance/sla_scanner.go, and
+// internal/quality/freshness.go for the post-commit pattern).
+//
+// This method is retained so the JobInserter surface stays compatible with
+// the eventual River backend, where InsertTx will honour the tx natively.
 func (q *InProcessQueue) InsertTx(ctx context.Context, _ *sql.Tx, args NotificationDispatchArgs) error {
 	return q.Insert(ctx, args)
 }

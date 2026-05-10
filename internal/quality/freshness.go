@@ -127,9 +127,12 @@ func (s *Scanner) emitBreach(ctx context.Context, b breachRow) error {
 		return fmt.Errorf("freshness.emitBreach: append event: %w", err)
 	}
 
-	// 3. Enqueue notification job (best-effort — queue may be nil).
+	// 3. Build pending notification args pre-commit (best-effort — queue may be nil).
+	// Enqueue happens AFTER commit so a rolled-back tx never produces a
+	// phantom notification (CR-04). The in-process queue is non-transactional.
+	var pendingArgs *notification.NotificationDispatchArgs
 	if s.queue != nil {
-		args := notification.NotificationDispatchArgs{
+		pendingArgs = &notification.NotificationDispatchArgs{
 			EventType: "sla.breached",
 			AssetName: b.asset,
 			Payload: map[string]any{
@@ -138,14 +141,18 @@ func (s *Scanner) emitBreach(ctx context.Context, b breachRow) error {
 				"breach_window_start": windowStart,
 			},
 		}
-		if err := s.queue.InsertTx(ctx, tx, args); err != nil {
-			return fmt.Errorf("freshness.emitBreach: enqueue: %w", err)
-		}
 	}
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("freshness.emitBreach: commit: %w", err)
 	}
 	rollback = false
+
+	// Post-commit enqueue — fire-and-forget; failure does not roll back.
+	if pendingArgs != nil {
+		if err := s.queue.Insert(ctx, *pendingArgs); err != nil {
+			return fmt.Errorf("freshness.emitBreach: enqueue: %w", err)
+		}
+	}
 	return nil
 }

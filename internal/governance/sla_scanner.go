@@ -136,19 +136,25 @@ func (s *SLAScanner) Scan(ctx context.Context) (int, error) {
 			_ = tx.Rollback()
 			return emitted, fmt.Errorf("governance: sla mark emitted %s: %w", p.ID, err)
 		}
-		// Enqueue notification while still in tx — InsertTx semantics.
+		// Build pending notification args pre-commit. Enqueue happens AFTER
+		// commit so a rolled-back tx never produces a phantom notification
+		// (CR-04). The in-process queue is non-transactional.
+		var pendingArgs *notification.NotificationDispatchArgs
 		if s.queue != nil {
-			args := notification.NotificationDispatchArgs{
+			pendingArgs = &notification.NotificationDispatchArgs{
 				EventType:  string(audit.AuditGovernanceReviewSLABreached),
 				AssetName:  p.Asset,
 				Payload:    auditPayload,
 				Recipients: recipients,
 				WebhookID:  p.ID.String() + ":sla-breach",
 			}
-			_ = s.queue.InsertTx(ctx, tx, args)
 		}
 		if err := tx.Commit(); err != nil {
 			return emitted, fmt.Errorf("governance: sla commit %s: %w", p.ID, err)
+		}
+		// Post-commit enqueue — fire-and-forget; failure does not roll back.
+		if pendingArgs != nil {
+			_ = s.queue.Insert(ctx, *pendingArgs)
 		}
 		emitted++
 	}

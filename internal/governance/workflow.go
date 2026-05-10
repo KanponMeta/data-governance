@@ -227,23 +227,30 @@ func (w *Workflow) Submit(
 		return SubmitResult{}, fmt.Errorf("governance: audit submit: %w", err)
 	}
 
-	// Enqueue notification (best-effort — if queue is nil, skip).
+	// Build notification args before commit so the audit-aligned payload is
+	// captured pre-commit. Enqueue happens AFTER commit so a rolled-back tx
+	// never produces a phantom notification (CR-04). The in-process queue's
+	// InsertTx is non-transactional — see internal/notification/worker.go.
+	var pendingArgs *notification.NotificationDispatchArgs
 	if w.queue != nil {
-		args := notification.NotificationDispatchArgs{
+		pendingArgs = &notification.NotificationDispatchArgs{
 			EventType:  string(auditEvent),
 			AssetName:  assetName,
 			Payload:    auditPayload,
 			Recipients: pool.Roles,
 			WebhookID:  reviewID.String() + ":submit",
 		}
-		// Fire-and-forget — failure to enqueue should not block submit.
-		_ = w.queue.InsertTx(ctx, tx, args)
 	}
 
 	if err := tx.Commit(); err != nil {
 		return SubmitResult{}, fmt.Errorf("governance: commit tx: %w", err)
 	}
 	rollback = false
+
+	// Post-commit enqueue — fire-and-forget; failure does not roll back.
+	if pendingArgs != nil {
+		_ = w.queue.Insert(ctx, *pendingArgs)
+	}
 
 	return SubmitResult{
 		ReviewID: reviewID,
@@ -416,22 +423,28 @@ func (w *Workflow) decide(ctx context.Context, reviewID, decider uuid.UUID, comm
 		return Review{}, fmt.Errorf("governance: audit decision: %w", err)
 	}
 
-	// Notification dispatch to submitter (and, on terminal, all reviewers).
+	// Build pending notification args pre-commit. Enqueue happens AFTER commit
+	// so a rolled-back tx never produces a phantom notification (CR-04).
+	var pendingArgs *notification.NotificationDispatchArgs
 	if w.queue != nil {
-		args := notification.NotificationDispatchArgs{
+		pendingArgs = &notification.NotificationDispatchArgs{
 			EventType:  string(auditEvent),
 			AssetName:  assetName,
 			Payload:    auditPayload,
 			Recipients: append([]string{}, submitterID.String()),
 			WebhookID:  reviewID.String() + ":decide",
 		}
-		_ = w.queue.InsertTx(ctx, tx, args)
 	}
 
 	if err := tx.Commit(); err != nil {
 		return Review{}, fmt.Errorf("governance: commit tx: %w", err)
 	}
 	rollback = false
+
+	// Post-commit enqueue — fire-and-forget; failure does not roll back.
+	if pendingArgs != nil {
+		_ = w.queue.Insert(ctx, *pendingArgs)
+	}
 
 	// Return read-shape; re-query for a clean snapshot.
 	return w.Get(ctx, reviewID)
