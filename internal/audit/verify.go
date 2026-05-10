@@ -3,6 +3,7 @@ package audit
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/binary"
 	"fmt"
@@ -95,7 +96,7 @@ func Verify(ctx context.Context, db *sql.DB, from, to int64) (Result, error) {
 		}
 		computedHash := computeSelfHashFromRow(seq, prevHash, occurredAtUnixNano, eventType, actorStr, resourceType, resourceID, payload)
 
-		if !bytesEqual(computedHash, storedHash) {
+		if subtle.ConstantTimeCompare(computedHash, storedHash) != 1 {
 			// Emit audit.verify_failed entry (async — don't fail the verify result itself).
 			go emitVerifyFailedEntry(ctx, db, seq, storedHash, computedHash)
 			return Result{
@@ -123,18 +124,6 @@ func Verify(ctx context.Context, db *sql.DB, from, to int64) (Result, error) {
 		From:    from,
 		To:      from + scanned - 1,
 	}, nil
-}
-
-func bytesEqual(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 // computeSelfHashFromRow recomputes self_hash from raw row fields.
