@@ -33,6 +33,11 @@ func init() {
 //	review   <review-id> --approve|--reject --comment=<txt>
 //	status   [<asset>]
 //	reassign <review-id> <new-reviewer1,new-reviewer2,...>
+//
+// All write subcommands (submit / review / reassign) are gated behind the
+// PLATFORM_CLI_DANGEROUS=1 environment variable because the CLI currently
+// has no authentication — actor identity is read from ACTOR_ID env (CR-05).
+// status remains accessible without the flag (read-only).
 func dispatchGovernance(args []string) int {
 	if len(args) == 0 {
 		fmt.Fprintf(os.Stderr, "Usage: platform governance [submit|review|status|reassign]\n")
@@ -40,17 +45,53 @@ func dispatchGovernance(args []string) int {
 	}
 	switch args[0] {
 	case "submit":
+		if !cliDangerousEnabled() {
+			fmt.Fprintln(os.Stderr, cliAuthDisabledMsg)
+			return 2
+		}
 		return governanceSubmitCmd(args[1:])
 	case "review":
+		if !cliDangerousEnabled() {
+			fmt.Fprintln(os.Stderr, cliAuthDisabledMsg)
+			return 2
+		}
 		return governanceReviewCmd(args[1:])
 	case "status":
 		return governanceStatusCmd(args[1:])
 	case "reassign":
+		if !cliDangerousEnabled() {
+			fmt.Fprintln(os.Stderr, cliAuthDisabledMsg)
+			return 2
+		}
 		return governanceReassignCmd(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown governance subcommand: %s\n", args[0])
 		return 2
 	}
+}
+
+// cliAuthDisabledMsg is the user-facing error printed when a write CLI
+// subcommand is invoked without PLATFORM_CLI_DANGEROUS=1 (CR-05).
+const cliAuthDisabledMsg = `error: CLI write commands are disabled.
+
+The CLI currently authenticates via the ACTOR_ID env var only, which would
+allow any shell user to spoof the audit hash chain. To re-enable for break-
+glass operations on a trusted host, set PLATFORM_CLI_DANGEROUS=1.
+
+For routine governance / policy / role mutations, use the REST API with a
+valid JWT (Plan 05-02 auth). CLI auth via 'platform login' is tracked but
+not yet implemented.`
+
+// cliDangerousEnabled reports whether the CLI break-glass flag is set.
+// PLATFORM_CLI_DANGEROUS=1 (or any non-empty value other than "0"/"false")
+// re-enables write subcommands.
+func cliDangerousEnabled() bool {
+	v := strings.TrimSpace(os.Getenv("PLATFORM_CLI_DANGEROUS"))
+	switch v {
+	case "", "0", "false", "no", "off":
+		return false
+	}
+	return true
 }
 
 // openGovernanceDB opens a *sql.DB to the platform metadata store.
@@ -286,6 +327,13 @@ func parseCSV(s string) []string {
 // getActorFromEnv reads ACTOR_ID from env (UUID); falls back to uuid.Nil. CLI
 // invocations do not have a JWT principal so the operator either sets
 // ACTOR_ID=<uuid> or accepts the all-zeros uuid placeholder.
+//
+// SECURITY (CR-05): there is NO authentication on this value — anyone with
+// shell access can spoof an arbitrary actor into the audit hash chain. CLI
+// write commands are gated behind PLATFORM_CLI_DANGEROUS=1 (see
+// cliDangerousEnabled). When proper CLI auth (`platform login` issuing a
+// JWT) is wired, this helper will be removed in favour of reading the user
+// UUID from a verified token on disk.
 func getActorFromEnv() uuid.UUID {
 	if v := os.Getenv("ACTOR_ID"); v != "" {
 		if id, err := uuid.Parse(v); err == nil {

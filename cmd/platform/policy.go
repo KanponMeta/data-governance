@@ -43,8 +43,19 @@ func dispatchPolicy(args []string) int {
 	case "list":
 		return policyListCmd(args[1:])
 	case "patch":
+		// Write subcommand — gate behind PLATFORM_CLI_DANGEROUS (CR-05).
+		// CLI uses --actor flag with no auth, allowing audit-chain spoofing.
+		if !cliDangerousEnabled() {
+			fmt.Fprintln(os.Stderr, cliAuthDisabledMsg)
+			return 2
+		}
 		return policyPatchCmd(args[1:])
 	case "yaml-reload":
+		// Write subcommand — gate behind PLATFORM_CLI_DANGEROUS (CR-05).
+		if !cliDangerousEnabled() {
+			fmt.Fprintln(os.Stderr, cliAuthDisabledMsg)
+			return 2
+		}
 		return policyYAMLReloadCmd(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown policy subcommand: %s\n", args[0])

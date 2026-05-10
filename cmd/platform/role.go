@@ -25,10 +25,23 @@ func dispatchRole(args []string) int {
 	}
 	switch args[0] {
 	case "create":
+		// Write subcommand — gate behind PLATFORM_CLI_DANGEROUS (CR-05).
+		if !cliDangerousEnabled() {
+			fmt.Fprintln(os.Stderr, cliAuthDisabledMsg)
+			return 2
+		}
 		return roleCreateCmd(args[1:])
 	case "assign":
+		if !cliDangerousEnabled() {
+			fmt.Fprintln(os.Stderr, cliAuthDisabledMsg)
+			return 2
+		}
 		return roleAssignCmd(args[1:])
 	case "revoke":
+		if !cliDangerousEnabled() {
+			fmt.Fprintln(os.Stderr, cliAuthDisabledMsg)
+			return 2
+		}
 		return roleRevokeCmd(args[1:])
 	case "list":
 		return roleListCmd(args[1:])

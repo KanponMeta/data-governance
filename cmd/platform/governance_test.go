@@ -16,7 +16,10 @@ import (
 // should reach the openGovernanceDB step (returns 1 if config load fails).
 // We assert the dispatch reaches submit and produces a non-2 exit code,
 // indicating flags parsed OK.
+//
+// CR-05: write subcommands now require PLATFORM_CLI_DANGEROUS=1; tests opt in.
 func TestSubmitCmd_HappyPath(t *testing.T) {
+	t.Setenv("PLATFORM_CLI_DANGEROUS", "1")
 	// With a missing required flag, parseError → 2.
 	rc := dispatchGovernance([]string{"submit"})
 	require.Equal(t, 2, rc, "missing asset arg → 2")
@@ -33,10 +36,21 @@ func TestSubmitCmd_HappyPath(t *testing.T) {
 	require.NotEqual(t, 2, rc, "valid flags should leave parse layer; exit=%d", rc)
 }
 
+// TestSubmitCmd_DangerousFlagRequired verifies the CR-05 gate: submit returns
+// 2 with a clear message when PLATFORM_CLI_DANGEROUS is unset.
+func TestSubmitCmd_DangerousFlagRequired(t *testing.T) {
+	t.Setenv("PLATFORM_CLI_DANGEROUS", "")
+	rc := dispatchGovernance([]string{"submit", "--code-hash=abc", "orders"})
+	require.Equal(t, 2, rc, "submit without PLATFORM_CLI_DANGEROUS=1 should return 2")
+}
+
 // TestReviewCmd_RejectRequiresComment verifies the CLI enforces the same
 // "comment required for reject" rule as the workflow. This is a parse-layer
 // guard so operators get fast feedback without round-tripping the DB.
+//
+// CR-05: write subcommands now require PLATFORM_CLI_DANGEROUS=1; tests opt in.
 func TestReviewCmd_RejectRequiresComment(t *testing.T) {
+	t.Setenv("PLATFORM_CLI_DANGEROUS", "1")
 	id := uuid.New().String()
 	rc := dispatchGovernance([]string{"review", id, "--reject"})
 	require.Equal(t, 2, rc, "missing --comment for --reject → 2")
@@ -57,6 +71,9 @@ func TestReviewCmd_RejectRequiresComment(t *testing.T) {
 
 // TestStatusCmd verifies the dispatch reaches the status path. With no DB
 // env, the cmd returns 1; the absence of usage-error 2 is the assertion.
+//
+// status is a read-only subcommand; it remains accessible without
+// PLATFORM_CLI_DANGEROUS (CR-05).
 func TestStatusCmd(t *testing.T) {
 	t.Setenv("DATABASE_URL", "")
 	rc := dispatchGovernance([]string{"status"})
@@ -68,7 +85,10 @@ func TestStatusCmd(t *testing.T) {
 
 // TestReassignCmd_HappyPath verifies the dispatcher accepts a valid review id
 // + non-empty CSV reviewer list (parse layer); empty / invalid → 2.
+//
+// CR-05: write subcommands now require PLATFORM_CLI_DANGEROUS=1; tests opt in.
 func TestReassignCmd_HappyPath(t *testing.T) {
+	t.Setenv("PLATFORM_CLI_DANGEROUS", "1")
 	rc := dispatchGovernance([]string{"reassign"})
 	require.Equal(t, 2, rc, "missing args → 2")
 
