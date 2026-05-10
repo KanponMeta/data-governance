@@ -284,6 +284,57 @@ func (b *Builder) FreshnessSLA(s FreshnessSLA) *Builder {
 	return b
 }
 
+// ---- Phase 5 Plan 05-04 additions: governance routing DSL ----
+
+// Reviewers appends one or more reviewer role names to the asset's review
+// pool (Plan 05-04 D-09). Multiple calls accumulate. Roles flow into
+// ResolveReviewers as the highest-priority source (builder).
+//
+// Routing config only — NOT included in code_hash. Changing reviewer roles
+// must NOT reseat the asset version.
+func (b *Builder) Reviewers(roles ...string) *Builder {
+	if len(roles) == 0 {
+		return b
+	}
+	b.a.reviewerRoles = append(b.a.reviewerRoles, roles...)
+	return b
+}
+
+// Quorum sets the approval quorum for the asset (Plan 05-04 D-09). Default
+// is Quorum1 — Pitfall #7 minimum-friction. Pass QuorumAll for "all reviewers
+// must approve" or Quorum(N) for any-N-of-pool.
+//
+// Routing config only — NOT included in code_hash.
+func (b *Builder) Quorum(q Quorum) *Builder {
+	b.a.quorum = q
+	return b
+}
+
+// RequireHumanReview forces the AutoApprovalChecker to return
+// DecisionMustHumanReview even when all 5 checks pass (Plan 05-04 D-10).
+// Useful for assets with regulatory review requirements that cannot be
+// auto-approved regardless of risk score.
+//
+// Routing config only — NOT included in code_hash.
+func (b *Builder) RequireHumanReview() *Builder {
+	b.a.requireHumanReview = true
+	return b
+}
+
+// EscalationRoles appends roles to be notified (in addition to the reviewer
+// pool + owner) when the SLA scanner emits governance.review_sla_breached
+// (Plan 05-04 D-11). They do NOT auto-escalate state — SOC 2 compliance
+// requires every approval to be a deliberate human action.
+//
+// Routing config only — NOT included in code_hash.
+func (b *Builder) EscalationRoles(roles ...string) *Builder {
+	if len(roles) == 0 {
+		return b
+	}
+	b.a.escalationRoles = append(b.a.escalationRoles, roles...)
+	return b
+}
+
 // Build validates the accumulated configuration and returns the *Asset WITHOUT
 // committing it to the process-global Default() registry.
 //

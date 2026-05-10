@@ -317,6 +317,28 @@ func (s SQLAssertion) Evaluate(ctx context.Context, eval QualityEvaluator) (Qual
 	return QualityResult{Status: "passed", MeasuredValue: measured}, nil
 }
 
+// ===== Phase 5 Plan 05-04: Governance review routing =====
+
+// Quorum is the number of approvals required to flip a review from in_review
+// → approved (Plan 05-04 D-09). Construct via the constants below or with a
+// numeric Quorum(N). Default Quorum1 — Pitfall #7 minimum-friction default.
+//
+// Governance routing config (Reviewers / Quorum / RequireHumanReview /
+// EscalationRoles) is NOT included in the asset's code_hash — these are
+// approval-routing knobs, not data lineage.
+type Quorum int
+
+const (
+	// Quorum1 requires 1 approval to flip to approved (default).
+	Quorum1 Quorum = 1
+	// Quorum2 requires 2 approvals.
+	Quorum2 Quorum = 2
+	// QuorumAll requires every reviewer in the resolved pool to approve. The
+	// numeric value -1 sentinel is interpreted by ResolveReviewers /
+	// Workflow.Approve as "all roles in the pool".
+	QuorumAll Quorum = -1
+)
+
 // FreshnessSLA declares the maximum staleness budget for an asset (D-20).
 // MaxLag is the wall-clock duration after which the SLA scanner emits
 // sla.breached and dispatches a notification. ScopeAfterCronFire (default

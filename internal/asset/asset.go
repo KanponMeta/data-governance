@@ -103,6 +103,11 @@ type Asset struct {
 	// Phase 5 additions (Plan 05-05):
 	qualityRules []QualityRule
 	freshnessSLA *FreshnessSLA
+	// Phase 5 additions (Plan 05-04 — governance routing config; NOT in code_hash):
+	reviewerRoles      []string
+	quorum             Quorum
+	requireHumanReview bool
+	escalationRoles    []string
 }
 
 // Name returns the unique asset identifier.
@@ -215,4 +220,38 @@ func (a *Asset) FreshnessSLA() *FreshnessSLA {
 	}
 	cp := *a.freshnessSLA
 	return &cp
+}
+
+// ===== Phase 5 Plan 05-04: Governance routing accessors =====
+// All governance routing config below is intentionally EXCLUDED from
+// fingerprint.go (D-12). It is approval-flow metadata, not data shape.
+
+// ReviewerRoles returns a defensive copy of the declared reviewer role pool
+// (Plan 05-04). Multiple Builder.Reviewers calls accumulate; nil = no
+// builder-level reviewer roles (resolution falls back to YAML tag rules and
+// finally team_owners by D-09 ResolveReviewers).
+func (a *Asset) ReviewerRoles() []string {
+	if a.reviewerRoles == nil {
+		return nil
+	}
+	return append([]string(nil), a.reviewerRoles...)
+}
+
+// Quorum returns the declared approval quorum (Plan 05-04). Zero value means
+// "use the platform default" — the workflow service treats 0 as Quorum1.
+func (a *Asset) Quorum() Quorum { return a.quorum }
+
+// RequireHumanReview reports whether the builder explicitly forced human
+// review (Plan 05-04). When true, AutoApprovalChecker MUST return
+// DecisionMustHumanReview even when all 5 checks pass.
+func (a *Asset) RequireHumanReview() bool { return a.requireHumanReview }
+
+// EscalationRoles returns the additional notification recipients on SLA
+// breach (Plan 05-04 D-11). They do NOT auto-escalate the review state —
+// SOC 2 compliance requires deliberate human action on every approval.
+func (a *Asset) EscalationRoles() []string {
+	if a.escalationRoles == nil {
+		return nil
+	}
+	return append([]string(nil), a.escalationRoles...)
 }

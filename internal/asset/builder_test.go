@@ -633,3 +633,83 @@ func TestBuilder_ColumnPolicy_MissingColumn(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrColumnPolicyMissingColumn)
 }
+
+// ---- Phase 5 Plan 05-04 — governance routing DSL tests ----
+
+// TestBuilder_Reviewers_Accumulate verifies multiple Reviewers calls append.
+func TestBuilder_Reviewers_Accumulate(t *testing.T) {
+	a, err := New("orders_rev").
+		Connector("snowflake").
+		Materialize(noopMaterialize).
+		Reviewers("team-data-gov").
+		Reviewers("privacy-team", "compliance").
+		Build()
+	require.NoError(t, err)
+	require.Equal(t, []string{"team-data-gov", "privacy-team", "compliance"}, a.ReviewerRoles())
+}
+
+// TestBuilder_Quorum_DefaultIs1 verifies Quorum default + custom.
+// Note: Builder zero value is Quorum(0) — workflow treats this as Quorum1.
+func TestBuilder_Quorum_DefaultIs1(t *testing.T) {
+	def, err := New("a").Connector("c").Materialize(noopMaterialize).Build()
+	require.NoError(t, err)
+	require.Equal(t, Quorum(0), def.Quorum(),
+		"Quorum() returns 0 when not set; workflow normalises 0→Quorum1")
+
+	q2, err := New("b").Connector("c").Materialize(noopMaterialize).Quorum(Quorum2).Build()
+	require.NoError(t, err)
+	require.Equal(t, Quorum2, q2.Quorum())
+
+	all, err := New("c").Connector("c").Materialize(noopMaterialize).Quorum(QuorumAll).Build()
+	require.NoError(t, err)
+	require.Equal(t, QuorumAll, all.Quorum())
+}
+
+// TestBuilder_RequireHumanReview_Toggles verifies the toggle method.
+func TestBuilder_RequireHumanReview_Toggles(t *testing.T) {
+	off, err := New("a").Connector("c").Materialize(noopMaterialize).Build()
+	require.NoError(t, err)
+	require.False(t, off.RequireHumanReview())
+
+	on, err := New("b").Connector("c").Materialize(noopMaterialize).RequireHumanReview().Build()
+	require.NoError(t, err)
+	require.True(t, on.RequireHumanReview())
+}
+
+// TestBuilder_EscalationRoles_Accumulate verifies multiple EscalationRoles append.
+func TestBuilder_EscalationRoles_Accumulate(t *testing.T) {
+	a, err := New("a").
+		Connector("c").
+		Materialize(noopMaterialize).
+		EscalationRoles("director").
+		EscalationRoles("cto", "ciso").
+		Build()
+	require.NoError(t, err)
+	require.Equal(t, []string{"director", "cto", "ciso"}, a.EscalationRoles())
+}
+
+// TestBuilder_GovernanceConfig_NotInCodeHash verifies that all four governance
+// routing knobs are excluded from code_hash. Two assets identical except for
+// reviewer pool / quorum / RequireHumanReview / escalation roles must have
+// identical code_hash so a routing change does NOT reseat the asset version.
+func TestBuilder_GovernanceConfig_NotInCodeHash(t *testing.T) {
+	plain, err := New("orders_gov").
+		Connector("snowflake").
+		Materialize(noopMaterialize).
+		Build()
+	require.NoError(t, err)
+
+	configured, err := New("orders_gov").
+		Connector("snowflake").
+		Materialize(noopMaterialize).
+		Reviewers("team-data-gov", "privacy-team").
+		Quorum(Quorum2).
+		RequireHumanReview().
+		EscalationRoles("director", "cto").
+		Build()
+	require.NoError(t, err)
+
+	require.Equal(t, plain.CodeHash(), configured.CodeHash(),
+		"governance routing config (Reviewers/Quorum/RequireHumanReview/EscalationRoles) must NOT change code_hash")
+	require.NotEmpty(t, plain.CodeHash(), "code_hash must be populated by Build()")
+}

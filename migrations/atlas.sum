@@ -1,4 +1,4 @@
-h1:kIyZ+PwIplJf/p+L9dbrbagxxea3lShlm6gWf5ARvLI=
+h1:jBJD6hfhUpGTAVXTrlyBUgee7b0M0l6ZxaoZGF0ipHM=
 20260506062521_initial.sql h1:ve6kwa1zuw+8nwnwLW+q+/zFgPMhCFrUNYPUqqBr+eo=
 20260507120000_phase2_run_tables.sql h1:fR2K9g3sHTx3Yu0y0Vataa/y2dkn74X6/+AYMjWvH5U=
 20260507121500_phase2_concurrency_tokens.sql h1:2SiqYkaschMlTTD4my5BLCG50fTEoklzihlrWZarQ/4=
@@ -7,3 +7,5 @@ h1:kIyZ+PwIplJf/p+L9dbrbagxxea3lShlm6gWf5ARvLI=
 20260509120000_phase4_lineage_schema.sql h1:+nP2H9c11iYUrNexWKhbwyiYhQBRAsDDYznoFdu0EBE=
 20260510000001_phase5_audit_rbac.sql h1:xPabiK96eTNIeGOnoCos0ykIU/YoFf7AvJoez2LsboQ=
 20260510000002_phase5_column_policies.sql h1:dfo7whg5M79igxN83l9GCfL2/Jvl3t/+SrxJk9WAj2Y=
+20260510000003_phase5_quality.sql h1:gKojGu8Hg/hlvR9E9Zh+bnO+mNJA5CNpyhoTB+yfAHI=
+20260510000005_phase5_governance_workflow.sql h1:ViXzQh/uLtHF9+fgkttA1lWRVwUIqBh/ibLjnrEnFXs=

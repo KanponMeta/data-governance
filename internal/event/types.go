@@ -72,6 +72,14 @@ const (
 	// Phase 5 (Plan 05-05) — notification dispatch events.
 	EventTypeNotificationDispatched     EventType = "notification.dispatched"
 	EventTypeNotificationDispatchFailed EventType = "notification.dispatch_failed"
+
+	// Phase 5 (Plan 05-04) — governance event_log subset (D-23).
+	// governance.materialization_blocked is emitted to event_log on EVERY blocked
+	// materialization (high-volume) and ALSO to the audit_log hash-chain (access
+	// control event). reviewer_reassigned is event_log only — operational, not
+	// hash-chain (audit log captures the next decision).
+	EventTypeGovernanceMaterializationBlocked EventType = "governance.materialization_blocked"
+	EventTypeGovernanceReviewerReassigned     EventType = "governance.reviewer_reassigned"
 )
 
 // AllKnownTypes returns the complete set of valid EventType values including Phase 2 run.* types.
@@ -131,6 +139,9 @@ func AllKnownTypes() []EventType {
 		EventTypeSLARecovered,
 		EventTypeNotificationDispatched,
 		EventTypeNotificationDispatchFailed,
+		// Phase 5 governance event_log subset (Plan 05-04, D-23)
+		EventTypeGovernanceMaterializationBlocked,
+		EventTypeGovernanceReviewerReassigned,
 	}
 }
 
@@ -307,4 +318,27 @@ type NotificationDispatchFailedPayload struct {
 	EventType string `json:"event_type"`
 	Asset     string `json:"asset,omitempty"`
 	Error     string `json:"error"`
+}
+
+// ===== Phase 5 Plan 05-04 typed payloads =====
+
+// GovernanceMaterializationBlockedPayload reports a step refused by the
+// executor's governance gate (D-08). Emitted to event_log on every blocked
+// run + to audit_log (hash-chain) once per blocked attempt.
+type GovernanceMaterializationBlockedPayload struct {
+	Asset        string `json:"asset"`
+	CurrentState string `json:"current_state"`
+	CodeHash     string `json:"code_hash"`
+	RunID        string `json:"run_id,omitempty"`
+}
+
+// GovernanceReviewerReassignedPayload reports a reviewer pool rotation on an
+// in-flight review (Pitfall #12). Operational event_log only — the next
+// approve/reject writes the hash-chain entry.
+type GovernanceReviewerReassignedPayload struct {
+	ReviewID     string   `json:"review_id"`
+	Asset        string   `json:"asset"`
+	OldReviewers []string `json:"old_reviewers"`
+	NewReviewers []string `json:"new_reviewers"`
+	ActorID      string   `json:"actor_id"`
 }
