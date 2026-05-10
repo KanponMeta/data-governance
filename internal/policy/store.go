@@ -28,6 +28,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -629,4 +630,130 @@ func stringSlicesEqual(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// ===== Phase 5 Plan 05-03 (RBAC-05) — MaskRulesForAsset =====
+
+// MaskRule is the policy-store view of a single in-pipeline mask directive.
+// It is shaped identically to asset.MaskRule but lives here to avoid
+// introducing a circular import (asset.io_masking imports policy.Apply,
+// so policy cannot return asset types).
+//
+// Callers (the executor) translate []policy.MaskRule into []asset.MaskRule
+// before constructing the MaskingIO decorator.
+type MaskRule struct {
+	Column string
+	Mask   connector.MaskType
+	Reveal int
+}
+
+// MaskRulesForAsset returns the active mask rules the executor should apply
+// in-pipeline to the asset's outbound rows. Two row classes contribute:
+//
+//  1. column_policies rows with enforcement_mode IN ('in-pipeline','unknown')
+//     AND superseded_at IS NULL — the policy store has decided the column
+//     needs masking. We pick the highest-precedence active row per column
+//     (runtime > builder > yaml-default) so the source-precedence semantic
+//     mirrors Resolve().
+//  2. Columns with column_pii_tags.pii=TRUE that have NO active column_policy
+//     row — the safe-default fallback path emits a slog WARN and applies
+//     DefaultMaskForPII() (redact in v1).
+//
+// Behaviour for warehouse-native rows: enforcement_mode='warehouse-native'
+// rows are excluded — the warehouse handles them and adding an in-pipeline
+// pass would double-mask.
+func (s *Store) MaskRulesForAsset(ctx context.Context, assetName string) ([]MaskRule, error) {
+	if assetName == "" {
+		return nil, errors.New("policy: assetName required")
+	}
+
+	// 1. Pick the highest-precedence active in-pipeline / unknown row per column.
+	//    Postgres lateral-join would be more elegant but the table is small;
+	//    a CTE that ranks by source precedence keeps the SQL portable.
+	const inPipelineSQL = `
+		WITH ranked AS (
+		    SELECT column_name, mask_type, allow_roles, source, enforcement_mode,
+		           CASE source
+		               WHEN 'runtime'      THEN 1
+		               WHEN 'builder'      THEN 2
+		               WHEN 'yaml-default' THEN 3
+		               ELSE 9
+		           END AS rank
+		      FROM column_policies
+		     WHERE asset = $1
+		       AND superseded_at IS NULL
+		       AND enforcement_mode IN ('in-pipeline','unknown')
+		),
+		picked AS (
+		    SELECT DISTINCT ON (column_name) column_name, mask_type
+		      FROM ranked
+		     ORDER BY column_name, rank
+		)
+		SELECT column_name, mask_type FROM picked
+	`
+	rows, err := s.db.QueryContext(ctx, inPipelineSQL, assetName)
+	if err != nil {
+		return nil, fmt.Errorf("policy: mask rules in-pipeline: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]MaskRule, 0)
+	covered := map[string]struct{}{}
+	for rows.Next() {
+		var col, mask string
+		if err := rows.Scan(&col, &mask); err != nil {
+			return nil, fmt.Errorf("policy: mask rules scan: %w", err)
+		}
+		mt := connector.MaskType(mask)
+		if !mt.IsValid() {
+			continue
+		}
+		out = append(out, MaskRule{Column: col, Mask: mt})
+		covered[col] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("policy: mask rules iter: %w", err)
+	}
+
+	// 2. PII fallback: pii=true columns with no covering policy.
+	const piiFallbackSQL = `
+		SELECT t.column_name
+		  FROM column_pii_tags t
+		 WHERE t.asset = $1
+		   AND t.pii = TRUE
+		   AND NOT EXISTS (
+		       SELECT 1 FROM column_policies cp
+		        WHERE cp.asset = t.asset
+		          AND cp.column_name = t.column_name
+		          AND cp.superseded_at IS NULL
+		   )
+	`
+	piiRows, err := s.db.QueryContext(ctx, piiFallbackSQL, assetName)
+	if err != nil {
+		return nil, fmt.Errorf("policy: pii fallback: %w", err)
+	}
+	defer piiRows.Close()
+	for piiRows.Next() {
+		var col string
+		if err := piiRows.Scan(&col); err != nil {
+			return nil, fmt.Errorf("policy: pii fallback scan: %w", err)
+		}
+		if _, alreadyCovered := covered[col]; alreadyCovered {
+			continue
+		}
+		// slog.WARN: the column is pii but has no policy — applying default
+		// redact. Operators see this in production logs so missing policies
+		// are observable.
+		slog.Warn("pii column without policy",
+			"asset", assetName,
+			"column", col,
+			"fallback_mask", string(DefaultMaskForPII()),
+		)
+		out = append(out, MaskRule{Column: col, Mask: DefaultMaskForPII()})
+	}
+	if err := piiRows.Err(); err != nil {
+		return nil, fmt.Errorf("policy: pii fallback iter: %w", err)
+	}
+
+	return out, nil
 }

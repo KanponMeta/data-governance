@@ -62,6 +62,14 @@ var (
 
 	// ErrFreshnessSLAInvalid is returned when FreshnessSLA.MaxLag <= 0.
 	ErrFreshnessSLAInvalid = errors.New("asset: FreshnessSLA.MaxLag must be > 0")
+
+	// ErrTagOverrideInvalid is returned by Build() when an attached TagOverride
+	// fails Validate() (Plan 05-03 D-06).
+	ErrTagOverrideInvalid = errors.New("asset: TagOverride invalid")
+
+	// ErrTagOverrideDuplicateColumn is returned by Build() when the same Column
+	// has more than one TagOverride attached (Plan 05-03 D-06).
+	ErrTagOverrideDuplicateColumn = errors.New("asset: TagOverride duplicate column")
 )
 
 // cronParser is initialised once and reused. Parser-only usage per D-03 — the
@@ -76,8 +84,9 @@ var cronParser = cron.NewParser(
 // registry. Construct only via New(name). All methods return *Builder for
 // chaining (D-01). Method order is irrelevant — only Build()/Register() validate.
 type Builder struct {
-	a    *Asset
-	errs []error // deferred errors collected by chainable setters; surface at Build().
+	a            *Asset
+	errs         []error             // deferred errors collected by chainable setters; surface at Build().
+	tagOverrides []ColumnTagOverride // Plan 05-03 D-06 — collected via Column().TagOverride().
 }
 
 // New starts a new Asset definition. Name must be non-empty and unique within
@@ -237,6 +246,10 @@ type ColumnBuilder struct {
 	name   string
 	desc   string
 	tags   []string
+	// Plan 05-03 — at most one TagOverride per column; surfaces invalid
+	// overrides as deferred errors on the parent Builder.
+	override    *TagOverride
+	overrideSet bool
 }
 
 // Description sets the column's description.
@@ -251,6 +264,33 @@ func (cb *ColumnBuilder) Tags(tags ...string) *ColumnBuilder {
 	return cb
 }
 
+// TagOverride attaches a metadata tag override to this column (Plan 05-03 D-06).
+// Override.Reason is required; either Remove or Add must be non-empty. Validation
+// is deferred to Build()/Register() to keep the chained DSL ergonomic.
+//
+// At most one TagOverride per column — declaring two on the same Column surfaces
+// ErrTagOverrideDuplicateColumn at Build().
+//
+// The override is the only platform-sanctioned path for REMOVING an inherited
+// pii=true tag. Each first-time application emits metadata.tag_overridden to
+// the audit chain (idempotent on re-runs).
+func (cb *ColumnBuilder) TagOverride(o TagOverride) *ColumnBuilder {
+	if err := o.Validate(); err != nil {
+		cb.parent.errs = append(cb.parent.errs,
+			fmt.Errorf("%w: Column(%q): %v", ErrTagOverrideInvalid, cb.name, err))
+		return cb
+	}
+	if cb.overrideSet {
+		cb.parent.errs = append(cb.parent.errs,
+			fmt.Errorf("%w: Column(%q)", ErrTagOverrideDuplicateColumn, cb.name))
+		return cb
+	}
+	cp := o
+	cb.override = &cp
+	cb.overrideSet = true
+	return cb
+}
+
 // And finalizes the column declaration and returns to the parent Builder chain.
 func (cb *ColumnBuilder) And() *Builder {
 	cb.parent.a.columns = append(cb.parent.a.columns, ColumnMeta{
@@ -258,6 +298,10 @@ func (cb *ColumnBuilder) And() *Builder {
 		Description: cb.desc,
 		Tags:        cb.tags,
 	})
+	if cb.override != nil {
+		cb.parent.tagOverrides = append(cb.parent.tagOverrides,
+			ColumnTagOverride{Asset: cb.parent.a.name, Column: cb.name, Override: *cb.override})
+	}
 	return cb.parent
 }
 
@@ -428,6 +472,23 @@ func (b *Builder) Build() (*Asset, error) {
 	if b.a.freshnessSLA != nil && b.a.freshnessSLA.MaxLag <= 0 {
 		return nil, fmt.Errorf("%w (asset %q): %s",
 			ErrFreshnessSLAInvalid, b.a.name, b.a.freshnessSLA.MaxLag)
+	}
+	// Plan 05-03 D-06: validate TagOverrides — at most one per column;
+	// the per-ColumnBuilder check guards a single chain, this guards the
+	// across-chain case (Column("c")...And().Column("c")...And()).
+	if len(b.tagOverrides) > 0 {
+		seen := make(map[string]struct{}, len(b.tagOverrides))
+		for _, o := range b.tagOverrides {
+			key := o.Asset + "." + o.Column
+			if _, dup := seen[key]; dup {
+				return nil, fmt.Errorf("%w: column %q (asset %q)",
+					ErrTagOverrideDuplicateColumn, o.Column, b.a.name)
+			}
+			seen[key] = struct{}{}
+		}
+		// Persist on Asset (defensive copy is unnecessary — the slice is
+		// owned by the builder and the asset receives a fresh reference).
+		b.a.tagOverrides = append([]ColumnTagOverride(nil), b.tagOverrides...)
 	}
 	// D-03: compute deterministic code hash at Build() time; stored on Asset.codeHash.
 	// Both Build() (test path) and Register() (production path) get the hash set here.

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/kanpon/data-governance/internal/asset"
+	"github.com/kanpon/data-governance/internal/governance"
 	"github.com/kanpon/data-governance/internal/lineage"
 	"github.com/stretchr/testify/require"
 )
@@ -46,4 +47,20 @@ func TestSyncStaticEdgesEmptyCodeHash(t *testing.T) {
 	a := buildTestAsset(t, "source_asset")
 	err := w.SyncStaticEdges(context.Background(), a, "")
 	require.Error(t, err, "SyncStaticEdges with empty codeHash should return error")
+}
+
+// TestCaptureRun_BackwardCompat_NilPropagator — Phase 4 callsites (no
+// WithPropagator) must still compile and run without invoking the
+// propagator. We only verify the Writer accepts construction without a
+// propagator; the underlying SQL path is exercised in DB-backed tests.
+func TestCaptureRun_BackwardCompat_NilPropagator(t *testing.T) {
+	w := lineage.NewWriter(nil, nil)
+	require.NotNil(t, w, "Phase 4 NewWriter(db, events) must continue to work without propagator")
+}
+
+// TestCaptureRun_WithPropagator_FluentAPI verifies the fluent setter that
+// installs a propagator returns the same Writer so callers can chain.
+func TestCaptureRun_WithPropagator_FluentAPI(t *testing.T) {
+	w := lineage.NewWriter(nil, nil).WithPropagator(governance.NewPropagator())
+	require.NotNil(t, w, "WithPropagator must return the writer for chained construction")
 }

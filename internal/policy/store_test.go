@@ -267,3 +267,139 @@ func TestStore_SetEnforcementMode(t *testing.T) {
 	require.Error(t, store.SetEnforcementMode(ctx, "orders", "ssn", "bad-mode"))
 	require.Error(t, store.SetSyncStatus(ctx, "orders", "ssn", "bad-status"))
 }
+
+// ---- Plan 05-03 (RBAC-05) MaskRulesForAsset coverage ----
+
+// TestStore_MaskRulesForAsset_OnlyInPipelineRows verifies that
+// enforcement_mode='in-pipeline' AND 'unknown' rows are returned, while
+// 'warehouse-native' rows are excluded (warehouse handles those).
+func TestStore_MaskRulesForAsset_OnlyInPipelineRows(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires testcontainers")
+	}
+	store, db, _, cleanup := withStore(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	tx, err := db.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	require.NoError(t, store.Apply(ctx, tx, "orders", "h-1", nil, []asset.ColumnPolicy{
+		{Column: "ssn", Mask: connector.MaskHash},
+		{Column: "email", Mask: connector.MaskRedact},
+		{Column: "phone", Mask: connector.MaskPartial, PartialReveal: 2},
+	}))
+	require.NoError(t, tx.Commit())
+
+	// Mark only ssn as warehouse-native — others stay 'unknown'.
+	require.NoError(t, store.SetEnforcementMode(ctx, "orders", "ssn", "warehouse-native"))
+	require.NoError(t, store.SetEnforcementMode(ctx, "orders", "email", "in-pipeline"))
+	// phone stays at 'unknown' default → still picked.
+
+	rules, err := store.MaskRulesForAsset(ctx, "orders")
+	require.NoError(t, err)
+
+	got := map[string]connector.MaskType{}
+	for _, r := range rules {
+		got[r.Column] = r.Mask
+	}
+	require.NotContains(t, got, "ssn", "warehouse-native rows MUST be excluded")
+	require.Contains(t, got, "email")
+	require.Equal(t, connector.MaskRedact, got["email"])
+	require.Contains(t, got, "phone", "unknown enforcement_mode rows are included (pending sync)")
+}
+
+// TestStore_MaskRulesForAsset_PIIWithoutPolicyFallsBackToRedact —
+// columns with column_pii_tags.pii=true and no column_policies row receive
+// the default redact rule.
+func TestStore_MaskRulesForAsset_PIIWithoutPolicyFallsBackToRedact(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires testcontainers")
+	}
+	store, db, _, cleanup := withStore(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Seed pii=true with NO column_policy row.
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO column_pii_tags (asset, column_name, pii, source, set_at)
+		VALUES ('events', 'user_email', TRUE, 'upstream', NOW())
+	`)
+	require.NoError(t, err)
+
+	rules, err := store.MaskRulesForAsset(ctx, "events")
+	require.NoError(t, err)
+	require.Len(t, rules, 1)
+	require.Equal(t, "user_email", rules[0].Column)
+	require.Equal(t, DefaultMaskForPII(), rules[0].Mask)
+}
+
+// TestStore_MaskRulesForAsset_WarehouseNativeRowsExcluded — explicit
+// guarantee that even if every row is warehouse-native, the rule list is
+// empty and the executor will not wrap MaskingIO redundantly.
+func TestStore_MaskRulesForAsset_WarehouseNativeRowsExcluded(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires testcontainers")
+	}
+	store, db, _, cleanup := withStore(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	tx, err := db.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	require.NoError(t, store.Apply(ctx, tx, "orders", "h-1", nil, []asset.ColumnPolicy{
+		{Column: "ssn", Mask: connector.MaskHash},
+		{Column: "email", Mask: connector.MaskRedact},
+	}))
+	require.NoError(t, tx.Commit())
+
+	require.NoError(t, store.SetEnforcementMode(ctx, "orders", "ssn", "warehouse-native"))
+	require.NoError(t, store.SetEnforcementMode(ctx, "orders", "email", "warehouse-native"))
+
+	rules, err := store.MaskRulesForAsset(ctx, "orders")
+	require.NoError(t, err)
+	require.Empty(t, rules, "all rows warehouse-native → empty rule set")
+}
+
+// TestStore_MaskRulesForAsset_PIIWithExistingPolicy_NoFallback — when a
+// pii column already has an active policy, the fallback path MUST NOT
+// double-add a redact rule.
+func TestStore_MaskRulesForAsset_PIIWithExistingPolicy_NoFallback(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires testcontainers")
+	}
+	store, db, _, cleanup := withStore(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	tx, err := db.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	require.NoError(t, store.Apply(ctx, tx, "events", "h-1", nil, []asset.ColumnPolicy{
+		{Column: "user_email", Mask: connector.MaskHash},
+	}))
+	require.NoError(t, tx.Commit())
+	require.NoError(t, store.SetEnforcementMode(ctx, "events", "user_email", "in-pipeline"))
+
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO column_pii_tags (asset, column_name, pii, source, set_at)
+		VALUES ('events', 'user_email', TRUE, 'upstream', NOW())
+	`)
+	require.NoError(t, err)
+
+	rules, err := store.MaskRulesForAsset(ctx, "events")
+	require.NoError(t, err)
+	require.Len(t, rules, 1)
+	require.Equal(t, connector.MaskHash, rules[0].Mask,
+		"existing policy wins; no double-rule from pii fallback")
+}
+
+// TestStore_MaskRulesForAsset_EmptyAsset — empty assetName surfaces an error.
+func TestStore_MaskRulesForAsset_EmptyAsset(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires testcontainers")
+	}
+	store, _, _, cleanup := withStore(t)
+	defer cleanup()
+	_, err := store.MaskRulesForAsset(context.Background(), "")
+	require.Error(t, err)
+}
