@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"embed"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -22,6 +23,9 @@ import (
 	"github.com/kanpon/data-governance/internal/platform"
 	"github.com/kanpon/data-governance/internal/storage"
 )
+
+//go:embed web_dist
+var staticAssets embed.FS
 
 var version = "0.1.0-phase1"
 
@@ -169,6 +173,9 @@ func runStart() error {
 		Ent:          store.Ent(),
 		LineageDB:    pool,
 		OLTranslator: olTranslator,
+		// Phase 6 (CORE-04): Embedded React SPA for production.
+		StaticAssets: staticAssets,
+		ServeSPA:     true,
 	}
 
 	return api.Run(ctx, cfg, deps)

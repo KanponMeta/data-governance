@@ -53,6 +53,7 @@ type Deps struct {
 
 	// Phase 6 (CORE-04): Embedded React SPA for production.
 	StaticAssets embed.FS
+	ServeSPA     bool
 }
 
 // ToMountDeps converts api.Deps to platform.MountDeps for route mounting.
