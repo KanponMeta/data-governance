@@ -523,6 +523,55 @@ func (s *Service) RevokeRole(ctx context.Context, actor, user uuid.UUID, role st
 	return nil
 }
 
+// SessionInfo contains the current user info returned by GET /v1/me.
+type SessionInfo struct {
+	ID          uuid.UUID       `json:"id"`
+	Email       string          `json:"email"`
+	Name        string          `json:"name"` // display name, empty if not set
+	Roles       []string        `json:"roles"`
+	Permissions PermissionFlags `json:"permissions"`
+}
+
+// PermissionFlags captures role-derived UI permissions.
+type PermissionFlags struct {
+	CanApprove      bool `json:"canApprove"`
+	CanEditPolicies bool `json:"canEditPolicies"`
+	CanManageUsers  bool `json:"canManageUsers"`
+}
+
+// GetSessionInfo returns session info for the authenticated user.
+func (s *Service) GetSessionInfo(ctx context.Context, userID uuid.UUID) (*SessionInfo, error) {
+	u, err := s.store.Ent().User.Query().Where(user.ID(userID)).Only(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get session info: %w", err)
+	}
+
+	roles, err := s.RolesForUser(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get roles: %w", err)
+	}
+
+	// Compute permissions from roles.
+	var perms PermissionFlags
+	for _, r := range roles {
+		switch r {
+		case "governance":
+			perms.CanApprove = true
+		case "admin":
+			perms.CanEditPolicies = true
+			perms.CanManageUsers = true
+		}
+	}
+
+	return &SessionInfo{
+		ID:          u.ID,
+		Email:       u.Email,
+		Name:        "", // User entity has no name field yet
+		Roles:       roles,
+		Permissions: perms,
+	}, nil
+}
+
 // RolesForUser returns the list of active (non-revoked) roles for a user.
 func (s *Service) RolesForUser(ctx context.Context, user uuid.UUID) ([]string, error) {
 	rows, err := s.store.DB().QueryContext(ctx, `

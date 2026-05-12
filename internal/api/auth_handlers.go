@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/kanpon/data-governance/internal/auth"
 )
@@ -105,6 +106,23 @@ func (h *authHandler) login(w http.ResponseWriter, r *http.Request) {
 		Unauthorized(w, "Invalid credentials")
 		return
 	}
+
+	// D-25: Set httpOnly Secure session cookie for UI.
+	// Cookie name: dg_session, SameSite=Strict, Path=/, Max-Age matching JWT TTL.
+	cookie := http.Cookie{
+		Name:     "dg_session",
+		Value:    out.Token,
+		Path:     "/",
+		MaxAge:   int(time.Since(out.ExpiresAt).Seconds()),
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+	}
+	http.SetCookie(w, &cookie)
+
+	// D-23: Return CSRF token in response header for state-changing requests.
+	csrfToken := out.Token // CSRF token derived from JWT for simplicity
+	w.Header().Set("X-CSRF-Token", csrfToken)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

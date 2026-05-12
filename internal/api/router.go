@@ -91,6 +91,10 @@ func NewRouter(deps Deps) http.Handler {
 	r.Group(func(r chi.Router) {
 		r.Use(auth.Middleware(deps.Issuer, deps.Events))
 
+		// D-25: CSRF validation for state-changing requests (T-06-02).
+		// Applied to all /v1/* routes; skips non-state-changing methods in middleware.
+		r.Use(auth.CSRFValidation(auth.DefaultCSRFConfig()))
+
 		// Admin-only: POST /v1/auth/invites
 		r.Route("/v1/auth/invites", func(r chi.Router) {
 			r.Use(auth.RequireRole("admin"))
@@ -102,6 +106,9 @@ func NewRouter(deps Deps) http.Handler {
 
 		// Phase 4 (D-18, LINE-01): OpenLineage export (any authenticated user).
 		r.Get("/v1/lineage/export", exportLineageHandler(deps))
+
+		// Phase 6 (D-22): current user info for UI.
+		r.Get("/v1/me", meHandler(deps))
 
 		// Phase 4 (META-05, D-12): schema-change timeline (any authenticated user).
 		r.Get("/v1/schema/changes", listSchemaChanges(deps))
