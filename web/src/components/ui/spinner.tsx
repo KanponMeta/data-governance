@@ -6,10 +6,14 @@ function cn(...inputs: (string | undefined | null | false)[]) {
   return twMerge(clsx(inputs))
 }
 
-export function Spinner({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+interface SpinnerProps extends React.HTMLAttributes<HTMLDivElement> {
+  size?: string
+}
+
+export function Spinner({ className, size = "h-6 w-6", ...props }: SpinnerProps) {
   return (
     <div
-      className={cn("animate-spin h-6 w-6 border-2 border-primary border-t-transparent rounded-full", className)}
+      className={cn("animate-spin border-2 border-primary border-t-transparent rounded-full", size, className)}
       {...props}
     />
   )
