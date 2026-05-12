@@ -10,9 +10,11 @@ import (
 	"github.com/casbin/casbin/v2"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/kanpon/data-governance/internal/auth"
 	"github.com/kanpon/data-governance/internal/event"
 	"github.com/kanpon/data-governance/internal/governance"
+	lineageq "github.com/kanpon/data-governance/internal/lineage/queries"
 	"github.com/kanpon/data-governance/internal/storage/ent"
 	"github.com/kanpon/data-governance/internal/storage/ent/assetversion"
 	"github.com/kanpon/data-governance/internal/storage/ent/run"
@@ -39,6 +41,7 @@ type ConnectDeps struct {
 	Issuer              *auth.TokenIssuer
 	Events              event.Writer
 	Ent                 *ent.Client
+	LineageDB           lineageq.DBTX // raw DB for lineage queries
 }
 
 // AuthServiceServer is the interface implemented by the auth connect handler.
@@ -363,7 +366,113 @@ type lineageConnectServer struct {
 }
 
 func (s *lineageConnectServer) Neighborhood(ctx context.Context, req *connect.Request[v1.NeighborhoodRequest]) (*connect.Response[v1.NeighborhoodResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, nil)
+	assetID := req.Msg.AssetId
+	if assetID == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, nil)
+	}
+
+	depth := int(req.Msg.Depth)
+	if depth <= 0 {
+		depth = 2 // default 2-hop neighborhood
+	}
+	if depth > 5 {
+		depth = 5 // cap at 5 to limit query scope
+	}
+
+	// Check if LineageDB is available
+	if s.deps.LineageDB == nil {
+		return nil, connect.NewError(connect.CodeInternal, nil)
+	}
+
+	db := s.deps.LineageDB
+
+	// Fetch neighborhood assets (downstream only)
+	rows, err := lineageq.New().TraverseAssetLineage(ctx, db, lineageq.TraverseAssetLineageParams{
+		Direction: "downstream",
+		Asset:     assetID,
+		UseAsOf:   false,
+		AsOf:      pgtype.Timestamptz{},
+		MaxDepth:  int32(depth),
+	})
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	// Build nodes list (include the focus asset + neighbors)
+	assetSet := make(map[string]bool)
+	assetSet[assetID] = true
+	for _, row := range rows {
+		if a, ok := row.Asset.(string); ok {
+			assetSet[a] = true
+		}
+	}
+
+	// Convert to AssetNode list
+	nodes := make([]*v1.AssetNode, 0, len(assetSet))
+	for asset := range assetSet {
+		nodes = append(nodes, &v1.AssetNode{
+			Id:   asset,
+			Name: asset,
+			Type: "asset",
+		})
+	}
+
+	// Build edges list from TraverseAssetLineage results
+	// For each row, the asset is a downstream neighbor of the focus
+	edges := make([]*v1.LineageEdge, 0)
+
+	// Get asset list for edges query
+	assetList := make([]string, 0, len(assetSet))
+	for asset := range assetSet {
+		assetList = append(assetList, asset)
+	}
+
+	// Fetch edges between neighborhood assets
+	edgeRows, err := lineageq.New().TraverseAssetLineage(ctx, db, lineageq.TraverseAssetLineageParams{
+		Direction: "downstream",
+		Asset:     assetID,
+		UseAsOf:   false,
+		AsOf:      pgtype.Timestamptz{},
+		MaxDepth:  int32(depth),
+	})
+	if err == nil {
+		// Build edge map for quick lookup
+		edgeMap := make(map[string]map[string]bool)
+		for _, row := range edgeRows {
+			if fromAsset, ok := row.Asset.(string); ok {
+				if edgeMap[assetID] == nil {
+					edgeMap[assetID] = make(map[string]bool)
+				}
+				edgeMap[assetID][fromAsset] = true
+			}
+		}
+
+		for from, toMap := range edgeMap {
+			for to := range toMap {
+				edges = append(edges, &v1.LineageEdge{
+					FromId: from,
+					ToId:   to,
+					Type:   "asset_lineage",
+				})
+			}
+		}
+	}
+
+	// Add edges for the neighborhood query results
+	for _, row := range rows {
+		if toAsset, ok := row.Asset.(string); ok {
+			edges = append(edges, &v1.LineageEdge{
+				FromId: assetID,
+				ToId:   toAsset,
+				Type:   "asset_lineage",
+			})
+		}
+	}
+
+	return connect.NewResponse(&v1.NeighborhoodResponse{
+		Nodes: nodes,
+		Edges: edges,
+	}), nil
 }
 
 func (s *lineageConnectServer) Impact(ctx context.Context, req *connect.Request[v1.ImpactRequest]) (*connect.Response[v1.ImpactResponse], error) {

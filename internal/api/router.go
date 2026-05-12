@@ -160,6 +160,7 @@ func NewRouter(deps Deps) http.Handler {
 		Issuer:              deps.Issuer,
 		Events:              deps.Events,
 		Ent:                 deps.Ent,
+		LineageDB:           deps.LineageDB,
 	}, r)
 
 	// Health, readiness, and metrics endpoints.
