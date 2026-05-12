@@ -108,7 +108,7 @@ function ReviewModal({
       // Get CSRF token from cookie
       const csrfToken = document.cookie
         .split('; ')
-        .find(row => row.startsWith('dg_csrf='))
+        .find(row => row.startsWith('dg_session='))
         ?.split('=')[1] || ''
 
       const endpoint = action === 'approve'
