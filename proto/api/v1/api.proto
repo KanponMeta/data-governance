@@ -190,3 +190,156 @@ message RejectReviewRequest {
   string id = 1;
   string comment = 2;
 }
+
+// ============ Admin Service ============
+service AdminService {
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+  rpc AssignRole(AssignRoleRequest) returns (UserResponse);
+  rpc RemoveRole(RemoveRoleRequest) returns (UserResponse);
+  rpc ListRoles(ListRolesRequest) returns (ListRolesResponse);
+  rpc CreateRole(CreateRoleRequest) returns (RoleResponse);
+  rpc DeleteRole(DeleteRoleRequest) returns (google.protobuf.Empty);
+  rpc ListPolicies(ListPoliciesRequest) returns (ListPoliciesResponse);
+  rpc CreatePolicy(CreatePolicyRequest) returns (ColumnPolicyResponse);
+  rpc UpdatePolicy(UpdatePolicyRequest) returns (ColumnPolicyResponse);
+  rpc DeletePolicy(DeletePolicyRequest) returns (google.protobuf.Empty);
+}
+
+message ListUsersRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+}
+message ListUsersResponse {
+  repeated UserResponse users = 1;
+  int32 total = 2;
+}
+
+message AssignRoleRequest {
+  string user_id = 1;
+  string role = 2;
+}
+message RemoveRoleRequest {
+  string user_id = 1;
+  string role = 2;
+}
+
+message ListRolesRequest {}
+message ListRolesResponse {
+  repeated RoleResponse roles = 1;
+}
+message RoleResponse {
+  string name = 1;
+  string description = 2;
+}
+
+message CreateRoleRequest {
+  string name = 1;
+  string description = 2;
+}
+message DeleteRoleRequest {
+  string name = 1;
+}
+
+message ListPoliciesRequest {}
+message ListPoliciesResponse {
+  repeated ColumnPolicyResponse policies = 1;
+}
+message ColumnPolicyResponse {
+  string id = 1;
+  string role = 2;
+  string asset = 3;
+  string column = 4;
+  string action = 5;
+}
+message CreatePolicyRequest {
+  string role = 1;
+  string asset = 2;
+  string column = 3;
+  string action = 4;
+}
+message UpdatePolicyRequest {
+  string id = 1;
+  string role = 2;
+  string asset = 3;
+  string column = 4;
+  string action = 5;
+}
+message DeletePolicyRequest {
+  string id = 1;
+}
+
+// ============ Search Service ============
+service SearchService {
+  rpc Search(SearchRequest) returns (SearchResponse);
+}
+
+message SearchRequest {
+  string query = 1;
+  string type = 2; // asset, column, or empty (all)
+  string tag = 3;
+  string owner = 4;
+  int32 page = 5;
+}
+message SearchResult {
+  string type = 1;       // "asset" or "column"
+  string name = 2;
+  string description = 3;
+  string owner = 4;
+  repeated string tags = 5;
+  string asset_name = 6; // for columns: parent asset
+  string highlight = 7;
+}
+message SearchResponse {
+  repeated SearchResult results = 1;
+  int32 total = 2;
+  int32 page = 3;
+  string query = 4;
+  repeated string tags = 5;
+  repeated string owners = 6;
+}
+
+// ============ Quality Service ============
+service QualityService {
+  rpc QualityTrend(QualityTrendRequest) returns (QualityTrendResponse);
+  rpc ListAlerts(ListAlertsRequest) returns (ListAlertsResponse);
+  rpc AcknowledgeAlert(AcknowledgeAlertRequest) returns (AcknowledgeAlertResponse);
+}
+
+message QualityTrendRequest {
+  string asset_name = 1;
+  int32 runs = 2;
+}
+message QualityTrendPoint {
+  string run_id = 1;
+  google.protobuf.Timestamp finished_at = 2;
+  double score = 3;
+  string state = 4;
+  repeated RuleResult rule_results = 5;
+}
+message RuleResult {
+  string rule_name = 1;
+  bool passed = 2;
+  string value = 3;
+  string threshold = 4;
+}
+message QualityTrendResponse {
+  repeated QualityTrendPoint points = 1;
+  double avg_score = 2;
+}
+
+message ListAlertsRequest {}
+message QualityAlert {
+  string id = 1;
+  string asset_name = 2;
+  string rule_name = 3;
+  string severity = 4;
+  string message = 5;
+  google.protobuf.Timestamp created_at = 6;
+  bool acknowledged = 7;
+}
+message ListAlertsResponse {
+  repeated QualityAlert alerts = 1;
+}
+
+message AcknowledgeAlertRequest { string id = 1; }
+message AcknowledgeAlertResponse { bool acknowledged = 1; }

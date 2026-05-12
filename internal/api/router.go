@@ -42,10 +42,11 @@ type Deps struct {
 	AuthMW func(http.Handler) http.Handler
 
 	// Phase 6 (06-01): ConnectRPC service dependencies.
-	ConnectAuth   AuthServiceServer
-	ConnectAsset  AssetServiceServer
-	ConnectLineage LineageServiceServer
+	ConnectAuth       AuthServiceServer
+	ConnectAsset      AssetServiceServer
+	ConnectLineage    LineageServiceServer
 	ConnectGovernance GovernanceServiceServer
+	ConnectAdmin      AdminServiceServer
 }
 
 // ToMountDeps converts api.Deps to platform.MountDeps for route mounting.
@@ -110,6 +111,9 @@ func NewRouter(deps Deps) http.Handler {
 		// Phase 6 (D-22): current user info for UI.
 		r.Get("/v1/me", meHandler(deps))
 
+		// Phase 6 (META-04, UI-03): catalog search with FTS + tag/owner filters.
+		r.Get("/v1/catalog/search", searchHandler(deps))
+
 		// Phase 4 (META-05, D-12): schema-change timeline (any authenticated user).
 		r.Get("/v1/schema/changes", listSchemaChanges(deps))
 
@@ -126,21 +130,27 @@ func NewRouter(deps Deps) http.Handler {
 				r.Patch("/v1/assets/{name}/columns/{col}/metadata", mh.PatchColumn)
 			})
 		}
+
+		// Phase 6 (QUAL-06): quality trend and alerts (chi handlers; ConnectRPC handler pending proto regeneration).
+		r.Get("/v1/quality/trend", qualityTrendHandler(deps))
+		r.Get("/v1/quality/alerts", listAlertsHandler(deps))
+		r.Post("/v1/quality/alerts/{id}/acknowledge", acknowledgeAlertHandler(deps))
 	})
 
 	// ConnectRPC handlers (Phase 6 D-01).
 	// Both chi and ConnectRPC routes coexist during transition period.
 	// End state (Plan 06-07) will migrate all chi handlers to ConnectRPC.
 	mountConnectRPC(ConnectDeps{
-		AuthService:      deps.ConnectAuth,
-		AssetService:    deps.ConnectAsset,
-		LineageService:  deps.ConnectLineage,
+		AuthService:       deps.ConnectAuth,
+		AssetService:     deps.ConnectAsset,
+		LineageService:   deps.ConnectLineage,
 		GovernanceService: deps.ConnectGovernance,
-		AuthMW:          deps.AuthMW,
-		Enforcer:        deps.Enforcer,
-		Issuer:          deps.Issuer,
-		Events:          deps.Events,
-		Ent:             deps.Ent,
+		AdminService:     deps.ConnectAdmin,
+		AuthMW:           deps.AuthMW,
+		Enforcer:         deps.Enforcer,
+		Issuer:           deps.Issuer,
+		Events:           deps.Events,
+		Ent:              deps.Ent,
 	}, r)
 
 	// Health, readiness, and metrics endpoints.
