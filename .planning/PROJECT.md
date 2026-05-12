@@ -1,5 +1,18 @@
 # 数据治理平台
 
+## 当前状态
+
+**v1.0 MVP 已发布** — 2026-05-12
+
+完整的数据治理平台，可通过 Docker Compose 启动，具备资产执行引擎、字段级血缘、Schema 演化追踪、RBAC + 列级访问控制、治理审批工作流和质量规则引擎。前端 React SPA 通过 ConnectRPC API 访问，已嵌入 Go 二进制。
+
+**技术栈:** Go 1.22 | ent | Atlas | chi | ConnectRPC | React 19 | TanStack Router/Query | ReactFlow
+
+**已知技术债:**
+- main.go 依赖注入未完成（GovernanceWorkflow、Enforcer、AuthMW、QualityEvaluator 未 wiring）
+- Phase 6 stubs: 质量趋势/alerts（QUAL-06/UI-05）ent 查询未实现，AdminService（UI-07）返回 Unimplemented
+- 详情见 [.planning/v1.0-MILESTONE-AUDIT.md](./v1.0-MILESTONE-AUDIT.md)
+
 ## 项目简介
 
 这是一个用 Go 编写的开源数据治理平台，灵感来源于 Dagster 的资产中心架构。平台将数据编排（软件定义资产、pipeline 调度、执行引擎）与企业级治理能力（字段级血缘、数据质量规则、元数据目录、列级访问控制、审批工作流）融为一体。面向三类用户：构建 pipeline 的数据工程师、探索数据的分析师，以及制定和执行数据策略的治理团队——一个平台满足所有需求。
@@ -20,7 +33,13 @@
 - [x] 用户可为资产、表和字段添加描述和标签（META-03）
 - [x] 平台追踪 Schema 演化（各版本差异 + 破坏性变更分类）（META-02 + META-05）
 
-未结清的人工 UAT：EXPLAIN ANALYZE 递归 CTE 性能容量验证（`scripts/explain_analyze_lineage.sh`）—— 已构建但本地无活跃 Postgres 实例时延后捕获（详见 `.planning/phases/04-schema/04-HUMAN-UAT.md`）。
+**Phase 5: 治理引擎 (2026-05-10)**
+- [x] Casbin RBAC + 角色/用户分配 + 列级策略（RBAC-01, 02, 03）
+- [x] 哈希链审计日志 + RLS 保护（RBAC-06）
+- [x] Snowflake DDM + BigQuery CLS 策略同步（RBAC-04）
+- [x] 治理审批工作流 + 自动审批（GOv-01, 02, 03, 04, 05）
+- [x] 质量规则（NullCheck/RangeCheck/SQLAssertion）+ 告警分发（QUAL-01, 02, 03, 04, 05）
+- [x] 数据保留策略 TTL（GOV-07）
 
 **Phase 6: Web UI & API (2026-05-12)**
 - [x] ConnectRPC API 协议层（proto IDL + chi 路由集成）
@@ -31,7 +50,22 @@
 - [x] 治理收件箱（UI-06）
 - [x] Web UI 基础完成（CORE-04, CORE-05, AUTH-04）
 
-部分完成（支架阶段）：质量趋势图表（QUAL-06）和告警（UI-05）—— 处理函数为 stub；管理员策略管理（UI-07）—— AdminService 返回 Unimplemented，需要 ColumnPolicy ent schema。
+部分完成（支架阶段）：质量趋势图表（QUAL-06）和告警（UI-05）—— 处理函数为 stub；管理员策略管理（UI-07）—— AdminService 返回 Unimplemented。
+
+<details>
+<summary>v1.0 开发期间的项目状态</summary>
+
+### Phase 4 后状态 (2026-05-09)
+
+**已验证:**
+- [x] 平台自动从资产定义中捕获表级血缘（LINE-01）
+- [x] 平台捕获字段级血缘（输出列由哪些输入列派生）（LINE-02）
+- [x] 用户可追踪字段变更对下游的影响（影响分析）（LINE-03 + LINE-06）
+- [x] 资产物化时，平台自动发现并注册 Schema 元数据（META-01）
+- [x] 用户可为资产、表和字段添加描述和标签（META-03）
+- [x] 平台追踪 Schema 演化（各版本差异 + 破坏性变更分类）（META-02 + META-05）
+
+未结清的人工 UAT：EXPLAIN ANALYZE 递归 CTE 性能容量验证（`scripts/explain_analyze_lineage.sh`）—— 已构建但本地无活跃 Postgres 实例时延后捕获（详见 `.planning/phases/04-schema/04-HUMAN-UAT.md`）。
 
 ### 进行中
 
@@ -89,18 +123,28 @@
 - [x] 用户可查看包含字段级下钻的完整血缘图 — Phase 6
 - [ ] 用户可查看质量分数和告警仪表盘（质量处理为 stub 待后续阶段）
 
+</details>
+
+### 进行中
+
+**v1.1 技术债清理:**
+- [ ] 修复 main.go 依赖注入（GovernanceWorkflow, Enforcer, AuthMW, QualityEvaluator）
+- [ ] 启用 GovernanceGatingEnabled
+- [ ] 实现 Phase 6 stubs（质量趋势/alerts/admin policies）
+
 ### 超出范围
 
 - Python SDK — Go 优先；Python 绑定推迟到 API 稳定后
 - 行级安全 — 初始范围为列级；行级是未来扩展
 - 内置计算执行（Spark、dbt 运行）— 平台负责编排和追踪；实际执行委托给外部系统
 - 多租户 SaaS 托管 — v1 仅支持开源自托管
+- 实时流资产（Kafka、Flink）— v1 采用批处理模型
 
 ## 背景
 
 - **灵感来源**：Dagster（Python）—— 资产中心模型、丰富的 UI、强大的可观测性。本项目以 Go 原生实现进行复制和扩展，并增强治理原语。
 - **Dagster 未覆盖的关键缺口**：字段级血缘、审批工作流、列级访问控制和合规审计链。
-- **语言**：Go 后端。前端技术栈待定（UI 可能采用 React + TypeScript）。
+- **语言**：Go 后端 + React 19 + TypeScript 前端。
 - **部署目标**：开源，自托管（Docker Compose / Kubernetes）。
 - **参考资料**：Dagster 源码 https://github.com/dagster-io/dagster，文档 https://docs.dagster.io/
 
@@ -115,10 +159,13 @@
 
 | 决策 | 理由 | 结果 |
 |------|------|------|
-| 资产中心模型（非任务中心） | Dagster 已证明资产是数据工作比任意任务更好的心智模型 —— 血缘和治理能自然映射到资产 | — 待定 |
-| 纯 Go 核心，无 Python 运行时 | 消除运维人员的 Python 依赖；API 稳定后可再添加 SDK | — 待定 |
-| 字段级血缘作为一等特性 | Dagster 仅停留在资产级；字段级是治理场景的主要差异化点 | — 待定 |
-| v1 开源（自托管） | 在商业化之前最大化社区采用率和信任度 | — 待定 |
+| 资产中心模型（非任务中心） | Dagster 已证明资产是数据工作比任意任务更好的心智模型 —— 血缘和治理能自然映射到资产 | ✅ v1.0 验证 |
+| 纯 Go 核心，无 Python 运行时 | 消除运维人员的 Python 依赖；API 稳定后可再添加 SDK | ✅ v1.0 验证 |
+| 字段级血缘作为一等特性 | Dagster 仅停留在资产级；字段级是治理场景的主要差异化点 | ✅ v1.0 验证 |
+| v1 开源（自托管） | 在商业化之前最大化社区采用率和信任度 | ✅ v1.0 验证 |
+| ConnectRPC 而非原生 gRPC | HTTP/1.1 兼容，curl 可测试，浏览器调用无需代理 | ✅ v1.0 验证 |
+| ReactFlow 用于血缘可视化 | 专为节点图 UI 构建，原生 dagre 布局支持 | ✅ v1.0 验证 |
+| hashicorp/go-plugin 用于连接器 | 进程隔离、语言无关、生产验证 | ✅ v1.0 验证 |
 
 ## 演化
 
@@ -138,4 +185,4 @@
 4. 用当前状态更新背景
 
 ---
-*最后更新：2026-05-09，Phase 4（血缘与 Schema）完成后*
+*最后更新：2026-05-12 after v1.0 milestone*

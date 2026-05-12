@@ -1,150 +1,52 @@
-# 路线图：数据治理平台
+# Roadmap: 数据治理平台
 
-## 概述
+## Milestones
 
-六个阶段将平台从一个裸的 Go 模块演进为完整可用的数据治理与编排系统。阶段 1 奠定存储和认证骨架，后续所有组件都依赖于此。阶段 2 交付核心执行引擎 —— 平台存在的理由 —— 包含所有一方连接器。阶段 3 增加调度、传感器和分区，支撑生产用途。阶段 4 捕获字段级血缘和 Schema 演化，这是相较 Dagster 的主要技术差异化点。阶段 5 构建治理引擎：RBAC、列掩码、审批工作流、防篡改审计和数据质量。阶段 6 在所有后端模型稳定后组装 Web UI 并完善 API 接口。
+- ✅ **v1.0 MVP** — Phases 1-6 (shipped 2026-05-12)
+- 🚧 **v1.1 Wiring Fixes** — Fix main.go dependency injection gaps (planned)
+- 📋 **v2.0 SDK Ecosystem** — Python SDK, dbt integration (planned)
 
-## 阶段列表
+## Phases
 
-**阶段编号规则：**
-- 整数阶段（1、2、3）：计划内里程碑工作
-- 小数阶段（2.1、2.2）：紧急插入（标记为 INSERTED）
+<details>
+<summary>✅ v1.0 MVP (Phases 1-6) — SHIPPED 2026-05-12</summary>
 
-小数阶段按数字顺序出现在相邻整数阶段之间。
+- [x] Phase 1: 基础设施 (5/5 plans) — completed 2026-05-06
+- [x] Phase 2: 执行引擎 (5/5 plans) — completed 2026-05-08
+- [x] Phase 3: 调度、传感器与分区 (7/7 plans) — completed 2026-05-08
+- [x] Phase 4: 血缘与 Schema (8/8 plans) — completed 2026-05-09
+- [x] Phase 5: 治理引擎 (5/5 plans) — completed 2026-05-10
+- [x] Phase 6: Web UI 与 API (7/7 plans) — completed 2026-05-12
 
-- [ ] **Phase 1: 基础设施** - 存储、迁移、事件日志、认证、连接器接口、单二进制 + API 桩
-- [ ] **Phase 2: 执行引擎** - 资产定义、DAG 执行、重试、并发 token 池、所有一方连接器
-- [ ] **Phase 3: 调度、传感器与分区** - cron 守护进程、事件传感器、时间/类别分区、回填
-- [ ] **Phase 4: 血缘与 Schema** - 资产 + 字段级血缘、Schema 自动发现、Schema 演化、影响分析
-- [ ] **Phase 5: 治理引擎** - RBAC、列掩码、审批工作流、哈希链审计日志、数据质量规则
-- [ ] **Phase 6: Web UI 与 API** - 完整 REST/gRPC API、React SPA、资产仪表盘、血缘 DAG、治理收件箱
+See [.planning/milestones/v1.0-ROADMAP.md](./milestones/v1.0-ROADMAP.md) for full phase details.
 
-## 阶段详情
+</details>
 
-### Phase 1: 基础设施
-**目标**：平台以单二进制运行，具备健康的 PostgreSQL 存储层、版本化迁移、追加式事件日志、用户认证和稳定版本化的连接器接口 —— 所有下游阶段均构建在此基础之上
-**依赖**：无（首个阶段）
-**需求**：CORE-01, CORE-02, CORE-03, CORE-04, CORE-05, AUTH-01, AUTH-02, AUTH-03, AUTH-04, CONN-08
-**验收标准**（必须为 TRUE）：
-  1. 平台通过 `docker compose up` 启动并通过健康检查接口
-  2. 用户可注册账号、获取 JWT，会话过期后请求被拒绝
-  3. 管理员可通过邮件邀请新用户，被邀请用户可完成注册
-  4. 事件日志为每个平台生命周期事件记录结构化条目，条目写入后永不修改
-  5. 第三方作者可在独立模块中实现 Go 连接器接口并向平台注册，无需修改平台源码
-**计划**：待定
-**UI 提示**：否
+### 🚧 v1.1 Wiring Fixes (In Progress)
 
-### Phase 2: 执行引擎
-**目标**：数据工程师可在 Go 代码中定义带显式上游依赖的资产，触发物化，平台按依赖顺序执行并支持重试，同时七个一方连接器可靠读写资产
-**依赖**：阶段 1
-**需求**：ORCH-01, ORCH-02, ORCH-03, ORCH-04, ORCH-09, ORCH-10, CONN-01, CONN-02, CONN-03, CONN-04, CONN-05, CONN-06, CONN-07
-**验收标准**（必须为 TRUE）：
-  1. 数据工程师可在 Go 中定义带上游依赖的资产，触发物化后所有上游按正确拓扑顺序先行执行
-  2. 资产物化失败后按配置的最大次数以指数退避重试，重试次数和时间戳在事件日志中可见
-  3. 50 个并发 goroutine 同时争抢同一个排队运行，结果只有一个执行 —— 不能发生并发重复运行
-  4. 通过 CLI 命令可按需触发资产物化，使用 PostgreSQL 连接器针对本地数据库完整运行成功
-  5. 七个一方连接器（PostgreSQL、MySQL、BigQuery、Snowflake、S3、GCS、HDFS）在集成测试中均可无错误读写资产
-**Plans:** 5 plans
-Plans:
-- [x] 02-01-PLAN.md — Asset DSL + DefinitionRegistry + AssetIO contract (Wave 1)
-- [x] 02-02-PLAN.md — DAG executor + run lifecycle state machine + atomic claim with 50-goroutine test (Wave 1)
-- [x] 02-03-PLAN.md — Retry engine + global concurrency token pool + connector config + executor (Wave 2)
-- [x] 02-04-PLAN.md — PostgreSQL connector + worker / materialize CLI subcommands + e2e (Wave 3)
-- [x] 02-05-PLAN.md — Six remaining first-party connectors (MySQL, BigQuery, Snowflake, S3, GCS, HDFS) (Wave 4)
-**UI 提示**：否
+- [ ] Phase 7: Fix main.go dependency injection (GovernanceWorkflow, Enforcer, AuthMW, QualityEvaluator, GovernanceGatingEnabled)
+- [ ] Phase 8: Wire Phase 6 stubs (quality trend, alerts, admin policies)
 
-### Phase 3: 调度、传感器与分区
-**目标**：资产按计划或响应外部事件自动物化，分区资产支持逐分区执行和回填，调度守护进程在进程重启后不丢失已调度状态
-**依赖**：阶段 2
-**需求**：ORCH-05, ORCH-06, ORCH-07, ORCH-08
-**验收标准**（必须为 TRUE）：
-  1. 附有 cron 表达式的资产在守护进程启动后于下一个计划时间自动物化，无需手动触发
-  2. 带事件传感器的资产在配置的外部条件变为真时于传感器轮询间隔内触发物化
-  3. 基于时间的分区资产可对历史日期范围回填，每个分区作为独立运行执行并有各自的事件日志条目
-  4. 类别分区资产按类别独立运行，一个类别失败不阻塞其他类别
-**Plans:** 7 plans
-Plans:
-- [ ] 03-01-PLAN.md — Phase 3 schema migration + ent entities + event_type extensions (Wave 1)
-- [ ] 03-02-PLAN.md — Asset DSL extensions (.Schedule/.Sensor/.Partitions) + AssetIO.PartitionKey + partition keygen (Wave 1)
-- [ ] 03-03-PLAN.md — Priority-aware claim ORDER BY + ClaimedRun struct extension + 1000-backfill+50-normal load test (Wave 2)
-- [ ] 03-04-PLAN.md — Scheduler tick loop (schedules table fire + missed-window LatestOnly + partition unique constraint test) (Wave 2)
-- [ ] 03-05-PLAN.md — Sensor evaluator (safe Sense + RunKey/cooldown dedup + auto-disable) (Wave 2)
-- [ ] 03-06-PLAN.md — ./platform scheduler subcommand (wires schedule + sensor daemons + graceful shutdown) (Wave 3)
-- [ ] 03-07-PLAN.md — ./platform backfill CLI (submission + status + max-partitions guard + per-partition independence test) (Wave 4)
-**UI 提示**：否
+### 📋 v2.0 SDK Ecosystem (Planned)
 
-### Phase 4: 血缘与 Schema
-**目标**：每次资产物化自动记录资产依赖图、捕获输出 Schema，并呈现字段级血缘和 Schema 演化，使工程师和治理团队可追溯任意列的完整来源
-**依赖**：阶段 3
-**需求**：LINE-01, LINE-02, LINE-03, LINE-06, META-01, META-02, META-03, META-05
-**验收标准**（必须为 TRUE）：
-  1. 资产物化后，其上游资产边自动被记录，无需任何手动注册步骤即可通过血缘 API 遍历
-  2. 数据工程师可声明输出列 A 来源于上游资产 Z 的输入列 B，该声明可查询并与资产代码哈希绑定版本
-  3. 给定任意资产上的任意列，影响分析 API 返回所有依赖它的下游资产和列，遍历完整血缘图
-  4. 平台在每次物化时捕获表和列的 Schema，与上一版本做 diff，并在 Schema 演化时间线中记录破坏性变更（列删除、类型变更）
-  5. 用户可通过 API 为资产、表或列添加描述、负责人和标签，并在后续查询中检索到
-**Plans:** 8 plans
-Plans:
-- [x] 04-01-PLAN.md — Wave 0: test fixtures + DAG seeder + executor testcontainers helper + migration stub (Wave 1)
-- [x] 04-02-PLAN.md — Phase 4 schema migration + 6 ent entities + connector.Schema/Column types + D-21 event types (Wave 2)
-- [x] 04-03-PLAN.md — Builder DSL extensions + code-hash fingerprint + MaterializeResult typed fields + SchemaDescriber capability (Wave 3)
-- [x] 04-04-PLAN.md — Lineage writer + Schema writer + executor transactional integration (Wave 4)
-- [x] 04-05-PLAN.md — Schema diff classifier + breaking-change writer (Wave 5)
-- [x] 04-06-PLAN.md — sqlc recursive CTE traversal + impact.Analyze library + sqlc tooling setup (Wave 6)
-- [x] 04-07-PLAN.md — Metadata + Lineage + Schema-ack REST API + OpenLineage export translator (Wave 7)
-- [x] 04-08-PLAN.md — CLI subcommands (impact, schema, lineage) + EXPLAIN ANALYZE harness + phase E2E tests (Wave 8)
-**UI 提示**：否
+- [ ] Phase 9: Python SDK — Python asset definitions registered to Go platform
+- [ ] Phase 10: dbt integration — dbt models as first-class assets
 
-### Phase 5: 治理引擎
-**目标**：管理员可执行同步到 Snowflake 和 BigQuery 的列级访问策略，数据工程师通过有记录的工作流提交资产审批，所有治理操作记录在防篡改的哈希链审计日志中，质量规则在每次物化时自动运行
-**依赖**：阶段 4
-**需求**：RBAC-01, RBAC-02, RBAC-03, RBAC-04, RBAC-05, RBAC-06, GOV-01, GOV-02, GOV-03, GOV-04, GOV-05, GOV-06, GOV-07, QUAL-01, QUAL-02, QUAL-03, QUAL-04, QUAL-05
-**验收标准**（必须为 TRUE）：
-  1. 管理员可定义角色、分配用户并设置列级访问策略；平台无需手动配置数仓即可将策略同步到 Snowflake 动态数据掩码和 BigQuery 列级安全 API
-  2. 数据工程师提交资产治理审核；审核者携带必填评论批准或驳回；提交者收到通知；批准后资产转为 Active，驳回后返回 Draft
-  3. 每个治理操作（策略变更、审批决策、用户分配）产生一个通过哈希与上一条目链接的审计日志条目；应用数据库用户无法修改或删除任何现有条目
-  4. 管理员可将完整审计日志导出为 JSON 或 CSV，导出内容包含每条记录（含审核者身份和时间戳）
-  5. 数据工程师在资产上定义空值率质量规则；物化后平台评估该规则，若超过阈值则将运行标记为质量失败并发送 webhook 或邮件告警
-**Plans:** 5 plans
-Plans:
-- [x] 05-01-PLAN.md — RBAC foundation: Casbin enforcer + roles/role_assignments + hash-chain audit log + Wave 0 testharness (Wave 1)
-- [x] 05-02-PLAN.md — Column policies + Snowflake DDM / BigQuery CLS sync + River sync worker + Reconciler (Wave 2)
-- [x] 05-03-PLAN.md — Synchronous PII propagation through lineage + TagOverride DSL + in-pipeline MaskingIO for non-warehouse connectors (Wave 3)
-- [x] 05-04-PLAN.md — Governance workflow: state machine + 3-source reviewer pool + 5-check auto-approval + REST/CLI + executor gate + SLA scanner (Wave 2)
-- [x] 05-05-PLAN.md — Quality rules (NullCheck/RangeCheck/SQLAssertion) + executor hook + FreshnessSLA + notification subsystem (webhook+SMTP+River) (Wave 2)
-**UI 提示**：否
+## Progress
 
-### Phase 6: Web UI 与 API
-**目标**：所有平台能力均可通过完整的 REST 和 gRPC API（含 OpenAPI 文档）访问，以及通过 React Web UI 访问，包含资产仪表盘、交互式血缘 DAG、质量趋势、治理收件箱、目录搜索和管理面板
-**依赖**：阶段 5
-**需求**：UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, LINE-04, LINE-05, META-04, QUAL-06
-**验收标准**（必须为 TRUE）：
-  1. 用户打开资产仪表盘，无需手动调用 API 即可看到每个资产的当前状态、最近物化时间和质量状态
-  2. 用户可在血缘 DAG 中导航到某资产，展开查看列级血缘，并下钻到任意相邻节点 —— 全程通过交互式 UI 完成
-  3. 用户可按资产名称、列名、标签、负责人或描述搜索数据目录并获得相关结果
-  4. 治理团队成员可在治理收件箱中查看所有待审批请求并执行批准或驳回操作，无需离开 UI
-  5. 管理员可完全在管理面板中管理用户、角色和列级访问策略
-**计划**：7 plans
-Plans:
-- [x] 06-01-PLAN.md — ConnectRPC foundation + React SPA scaffold + /v1/me + cookie auth (Wave 1)
-- [x] 06-02-PLAN.md — Asset dashboard (UI-01) + run history (UI-02) + React pages (Wave 2)
-- [x] 06-03-PLAN.md — Catalog search (META-04) with Postgres FTS + React search page (Wave 2)
-- [x] 06-04-PLAN.md — Lineage DAG visualization (LINE-04, LINE-05) with ReactFlow + dagre (Wave 2)
-- [x] 06-05-PLAN.md — Quality dashboard (QUAL-06) with Recharts trend chart + alert list (Wave 3)
-- [x] 06-06-PLAN.md — Governance inbox (UI-06) with approve/reject workflow (Wave 3)
-- [x] 06-07-PLAN.md — Admin panel (UI-07) + go:embed SPA in Go binary (Wave 3)
-**UI 提示**：是
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|-----------------|--------|-----------|
+| 1. 基础设施 | v1.0 | 5/5 | Complete | 2026-05-06 |
+| 2. 执行引擎 | v1.0 | 5/5 | Complete | 2026-05-08 |
+| 3. 调度、传感器与分区 | v1.0 | 7/7 | Complete | 2026-05-08 |
+| 4. 血缘与 Schema | v1.0 | 8/8 | Complete | 2026-05-09 |
+| 5. 治理引擎 | v1.0 | 5/5 | Complete | 2026-05-10 |
+| 6. Web UI 与 API | v1.0 | 7/7 | Complete | 2026-05-12 |
+| 7. Wiring Fixes | v1.1 | 0/? | Not started | - |
+| 8. Stub Wiring | v1.1 | 0/? | Not started | - |
+| 9. Python SDK | v2.0 | 0/? | Not started | - |
+| 10. dbt Integration | v2.0 | 0/? | Not started | - |
 
-## 进度
+---
 
-**执行顺序：**
-阶段按数字顺序执行：1 → 2 → 3 → 4 → 5 → 6
-
-| 阶段 | 已完成计划 | 状态 | 完成时间 |
-|------|-----------|------|---------|
-| 1. 基础设施 | 0/? | 未开始 | - |
-| 2. 执行引擎 | 0/? | 未开始 | - |
-| 3. 调度、传感器与分区 | 0/? | 未开始 | - |
-| 4. 血缘与 Schema | 0/? | 未开始 | - |
-| 5. 治理引擎 | 0/? | 未开始 | - |
-| 6. Web UI 与 API | 0/? | 未开始 | - |
+*Last updated: 2026-05-12 after v1.0 milestone*
