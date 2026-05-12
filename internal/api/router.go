@@ -40,6 +40,12 @@ type Deps struct {
 	Enforcer *casbin.Enforcer
 	// AuthMW is the chi middleware for JWT authentication (from auth.Middleware).
 	AuthMW func(http.Handler) http.Handler
+
+	// Phase 6 (06-01): ConnectRPC service dependencies.
+	ConnectAuth   AuthServiceServer
+	ConnectAsset  AssetServiceServer
+	ConnectLineage LineageServiceServer
+	ConnectGovernance GovernanceServiceServer
 }
 
 // ToMountDeps converts api.Deps to platform.MountDeps for route mounting.
@@ -114,6 +120,21 @@ func NewRouter(deps Deps) http.Handler {
 			})
 		}
 	})
+
+	// ConnectRPC handlers (Phase 6 D-01).
+	// Both chi and ConnectRPC routes coexist during transition period.
+	// End state (Plan 06-07) will migrate all chi handlers to ConnectRPC.
+	mountConnectRPC(ConnectDeps{
+		AuthService:      deps.ConnectAuth,
+		AssetService:    deps.ConnectAsset,
+		LineageService:  deps.ConnectLineage,
+		GovernanceService: deps.ConnectGovernance,
+		AuthMW:          deps.AuthMW,
+		Enforcer:        deps.Enforcer,
+		Issuer:          deps.Issuer,
+		Events:          deps.Events,
+		Ent:             deps.Ent,
+	}, r)
 
 	// Health, readiness, and metrics endpoints.
 	r.Get("/health", Health(deps.Version))
