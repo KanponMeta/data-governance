@@ -9,6 +9,8 @@ import (
 )
 
 type Querier interface {
+	// internal/lineage/queries/neighborhood.sql
+	NeighborhoodAssets(ctx context.Context, db DBTX, fromAsset string) ([]NeighborhoodAssetsRow, error)
 	// internal/lineage/queries/lineage.sql
 	// TraverseAssetLineage walks the asset_edges graph from @asset in the requested
 	// direction (downstream | upstream), returning each visited (asset, depth) up to

@@ -16,3 +16,4 @@ dist/
 migrations/migrations.sum.lock
 
 .claude/worktrees
+cmd/platform/web_dist/

@@ -33,15 +33,36 @@ type AssetMetadatum struct {
 }
 
 type AssetVersion struct {
-	ID            pgtype.UUID
-	Asset         string
-	CodeHash      string
-	Description   *string
-	Owner         *string
-	Tags          []byte
-	ColumnLineage []byte
-	DriftStatus   string
-	CreatedAt     pgtype.Timestamptz
+	ID              pgtype.UUID
+	Asset           string
+	CodeHash        string
+	Description     *string
+	Owner           *string
+	Tags            []byte
+	ColumnLineage   []byte
+	DriftStatus     string
+	CreatedAt       pgtype.Timestamptz
+	GovernanceState string
+	SearchVector    interface{}
+}
+
+type AuditAuditLog struct {
+	Seq          int64
+	PrevHash     []byte
+	SelfHash     []byte
+	OccurredAt   pgtype.Timestamptz
+	EventType    string
+	ActorID      pgtype.UUID
+	ResourceType string
+	ResourceID   string
+	Payload      []byte
+	ExpiresAt    pgtype.Timestamptz
+}
+
+type AuditAuditSentinel struct {
+	ID       int16
+	Seq      int64
+	SelfHash []byte
 }
 
 type Backfill struct {
@@ -52,6 +73,17 @@ type Backfill struct {
 	TotalPartitions int64
 	SubmittedAt     pgtype.Timestamptz
 	CompletedAt     pgtype.Timestamptz
+}
+
+type CasbinRule struct {
+	ID    int32
+	Ptype string
+	V0    *string
+	V1    *string
+	V2    *string
+	V3    *string
+	V4    *string
+	V5    *string
 }
 
 type ColumnEdge struct {
@@ -68,6 +100,40 @@ type ColumnEdge struct {
 	LastSeenAt     pgtype.Timestamptz
 	SupersededAt   pgtype.Timestamptz
 	PartitionKey   *string
+	SearchVector   interface{}
+}
+
+type ColumnPiiTag struct {
+	Asset               string
+	ColumnName          string
+	Pii                 bool
+	Source              string
+	SourceRunID         pgtype.UUID
+	OverrideReason      *string
+	OverrideActorID     pgtype.UUID
+	PiiOverrideAuditSeq *int64
+	PropagatedFrom      []byte
+	SetAt               pgtype.Timestamptz
+	SetBy               pgtype.UUID
+}
+
+type ColumnPolicy struct {
+	ID              pgtype.UUID
+	Asset           string
+	ColumnName      string
+	MaskType        string
+	AllowRoles      []byte
+	CodeHashFirst   string
+	CodeHashLatest  string
+	FirstSeenRunID  pgtype.UUID
+	FirstSeenAt     pgtype.Timestamptz
+	LastSeenAt      pgtype.Timestamptz
+	SupersededAt    pgtype.Timestamptz
+	Source          string
+	Reason          string
+	EnforcementMode string
+	SyncStatus      string
+	CreatedByID     pgtype.UUID
 }
 
 type ConcurrencyToken struct {
@@ -89,6 +155,24 @@ type EventLog struct {
 	Payload      []byte
 }
 
+type GovernanceReview struct {
+	ID                   pgtype.UUID
+	AssetVersionID       pgtype.UUID
+	Asset                string
+	CodeHash             string
+	SubmitterID          pgtype.UUID
+	SubmittedAt          pgtype.Timestamptz
+	ReviewerPoolSnapshot []byte
+	Quorum               int32
+	RequireHumanReview   bool
+	EscalationRoles      []byte
+	Status               string
+	DecidedAt            pgtype.Timestamptz
+	DecidedByID          pgtype.UUID
+	Comment              *string
+	SlaBreachEmittedAt   pgtype.Timestamptz
+}
+
 type InviteToken struct {
 	ID         pgtype.UUID
 	TokenHash  string
@@ -97,6 +181,45 @@ type InviteToken struct {
 	ExpiresAt  pgtype.Timestamptz
 	AcceptedAt pgtype.Timestamptz
 	CreatedAt  pgtype.Timestamptz
+}
+
+type QualityResult struct {
+	ID            pgtype.UUID
+	RunID         pgtype.UUID
+	RuleName      string
+	RuleType      string
+	Status        string
+	MeasuredValue *float64
+	Threshold     *float64
+	EvaluatedAt   pgtype.Timestamptz
+	ErrorMessage  *string
+}
+
+type QualityRule struct {
+	ID         pgtype.UUID
+	Asset      string
+	CodeHash   string
+	RuleName   string
+	RuleType   string
+	ConfigJson []byte
+	CreatedAt  pgtype.Timestamptz
+}
+
+type Role struct {
+	Name        string
+	Description string
+	CreatedAt   pgtype.Timestamptz
+	CreatedByID pgtype.UUID
+}
+
+type RoleAssignment struct {
+	ID          pgtype.UUID
+	UserID      pgtype.UUID
+	RoleName    string
+	GrantedAt   pgtype.Timestamptz
+	GrantedByID pgtype.UUID
+	RevokedAt   pgtype.Timestamptz
+	RevokedByID pgtype.UUID
 }
 
 type Run struct {
@@ -111,12 +234,13 @@ type Run struct {
 	StartedAt   pgtype.Timestamptz
 	FinishedAt  pgtype.Timestamptz
 	// Set on claim, ticked every ~30s by executor. Reaper resets stale rows (>5m old) to queued.
-	LastHeartbeat pgtype.Timestamptz
-	ErrorMessage  *string
-	Metadata      []byte
-	PartitionKey  *string
-	Priority      string
-	BackfillID    pgtype.UUID
+	LastHeartbeat    pgtype.Timestamptz
+	ErrorMessage     *string
+	Metadata         []byte
+	PartitionKey     *string
+	Priority         string
+	BackfillID       pgtype.UUID
+	RunQualityStatus *string
 }
 
 type RunStep struct {
@@ -134,14 +258,17 @@ type RunStep struct {
 }
 
 type Schedule struct {
-	ID         pgtype.UUID
-	AssetName  string
-	CronExpr   string
-	LastFireAt pgtype.Timestamptz
-	NextFireAt pgtype.Timestamptz
-	PausedAt   pgtype.Timestamptz
-	CreatedAt  pgtype.Timestamptz
-	UpdatedAt  pgtype.Timestamptz
+	ID                       pgtype.UUID
+	AssetName                string
+	CronExpr                 string
+	LastFireAt               pgtype.Timestamptz
+	NextFireAt               pgtype.Timestamptz
+	PausedAt                 pgtype.Timestamptz
+	CreatedAt                pgtype.Timestamptz
+	UpdatedAt                pgtype.Timestamptz
+	LastSucceededAt          pgtype.Timestamptz
+	FreshnessMaxLagSeconds   *int32
+	FreshnessBreachEmittedAt pgtype.Timestamptz
 }
 
 type SchemaChange struct {
@@ -188,6 +315,12 @@ type Sensor struct {
 	DisabledAt          pgtype.Timestamptz
 	CreatedAt           pgtype.Timestamptz
 	UpdatedAt           pgtype.Timestamptz
+}
+
+type TeamOwner struct {
+	OwnerEmail string
+	Roles      []byte
+	UpdatedAt  pgtype.Timestamptz
 }
 
 type User struct {

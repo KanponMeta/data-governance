@@ -69,6 +69,12 @@ const catalogLayoutRoute = new Route({
   path: '/catalog',
 })
 
+// Lineage layout route at '/lineage'
+const lineageLayoutRoute = new Route({
+  getParentRoute: () => rootRoute,
+  path: '/lineage',
+})
+
 // Asset dashboard page at '/assets'
 const AssetDashboardPage = () => {
   const [search, setSearch] = useState('')
@@ -330,6 +336,13 @@ const routeTree = rootRoute.addChildren([
       getParentRoute: () => catalogLayoutRoute,
       path: '/',
       component: () => import('./pages/catalog/index').then(m => m.CatalogPage),
+    }),
+  ]),
+  lineageLayoutRoute.addChildren([
+    new Route({
+      getParentRoute: () => lineageLayoutRoute,
+      path: '/$id',
+      component: () => import('./pages/lineage/[id]').then(m => m.LineagePage),
     }),
   ]),
 ])
