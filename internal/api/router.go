@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/kanpon/data-governance/internal/auth"
 	"github.com/kanpon/data-governance/internal/event"
+	"github.com/kanpon/data-governance/internal/governance"
 	"github.com/kanpon/data-governance/internal/lineage/openlineage"
 	lineageq "github.com/kanpon/data-governance/internal/lineage/queries"
 	"github.com/kanpon/data-governance/internal/platform"
@@ -142,17 +143,18 @@ func NewRouter(deps Deps) http.Handler {
 	// Both chi and ConnectRPC routes coexist during transition period.
 	// End state (Plan 06-07) will migrate all chi handlers to ConnectRPC.
 	mountConnectRPC(ConnectDeps{
-		AuthSvc:            deps.Auth,
-		AuthServiceServer:  deps.ConnectAuth,
-		AssetService:      deps.ConnectAsset,
-		LineageService:    deps.ConnectLineage,
-		GovernanceService: deps.ConnectGovernance,
-		AdminService:      deps.ConnectAdmin,
-		AuthMW:            deps.AuthMW,
-		Enforcer:          deps.Enforcer,
-		Issuer:            deps.Issuer,
-		Events:            deps.Events,
-		Ent:               deps.Ent,
+		AuthSvc:              deps.Auth,
+		AuthServiceServer:    deps.ConnectAuth,
+		AssetService:        deps.ConnectAsset,
+		LineageService:      deps.ConnectLineage,
+		GovernanceService:   deps.ConnectGovernance,
+		GovernanceWorkflow:  deps.ConnectGovernanceWorkflow,
+		AdminService:        deps.ConnectAdmin,
+		AuthMW:              deps.AuthMW,
+		Enforcer:            deps.Enforcer,
+		Issuer:              deps.Issuer,
+		Events:              deps.Events,
+		Ent:                 deps.Ent,
 	}, r)
 
 	// Health, readiness, and metrics endpoints.
