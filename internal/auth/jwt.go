@@ -18,6 +18,12 @@ var ErrInvalidToken = errors.New("auth: invalid token")
 // auth.token_expired event.
 var ErrTokenExpired = errors.New("auth: token expired")
 
+// ErrUnauthenticated is returned when no valid authentication is present.
+var ErrUnauthenticated = errors.New("auth: unauthenticated")
+
+// ErrForbidden is returned when the authenticated user lacks permission.
+var ErrForbidden = errors.New("auth: forbidden")
+
 const (
 	jwtIssuer    = "data-governance-platform"
 	jwtAlgorithm = "HS256"

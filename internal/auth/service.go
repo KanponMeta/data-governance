@@ -417,6 +417,25 @@ func (s *Service) DeleteRole(ctx context.Context, actor uuid.UUID, name string) 
 	return nil
 }
 
+// ListRoles returns all roles from the roles table.
+func (s *Service) ListRoles(ctx context.Context) ([]map[string]string, error) {
+	rows, err := s.store.DB().QueryContext(ctx, `SELECT name, description FROM roles ORDER BY name`)
+	if err != nil {
+		return nil, fmt.Errorf("list_roles: query: %w", err)
+	}
+	defer rows.Close()
+
+	var roles []map[string]string
+	for rows.Next() {
+		var name, description string
+		if err := rows.Scan(&name, &description); err != nil {
+			return nil, fmt.Errorf("list_roles: scan: %w", err)
+		}
+		roles = append(roles, map[string]string{"name": name, "description": description})
+	}
+	return roles, rows.Err()
+}
+
 // AssignRole assigns a role to a user. The caller must have admin role.
 // Emits role.assigned audit entry and updates Casbin policy in same transaction.
 // Note: the Casbin adapter writes to casbin_rule through its own connection,

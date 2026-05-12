@@ -42,11 +42,12 @@ type Deps struct {
 	AuthMW func(http.Handler) http.Handler
 
 	// Phase 6 (06-01): ConnectRPC service dependencies.
-	ConnectAuth       AuthServiceServer
-	ConnectAsset      AssetServiceServer
-	ConnectLineage    LineageServiceServer
-	ConnectGovernance GovernanceServiceServer
-	ConnectAdmin      AdminServiceServer
+	ConnectAuth              AuthServiceServer
+	ConnectAsset             AssetServiceServer
+	ConnectLineage           LineageServiceServer
+	ConnectGovernance        GovernanceServiceServer
+	ConnectGovernanceWorkflow *governance.Workflow // Phase 5 workflow for ConnectRPC handlers
+	ConnectAdmin             AdminServiceServer
 }
 
 // ToMountDeps converts api.Deps to platform.MountDeps for route mounting.
@@ -141,16 +142,17 @@ func NewRouter(deps Deps) http.Handler {
 	// Both chi and ConnectRPC routes coexist during transition period.
 	// End state (Plan 06-07) will migrate all chi handlers to ConnectRPC.
 	mountConnectRPC(ConnectDeps{
-		AuthService:       deps.ConnectAuth,
-		AssetService:     deps.ConnectAsset,
-		LineageService:   deps.ConnectLineage,
+		AuthSvc:            deps.Auth,
+		AuthServiceServer:  deps.ConnectAuth,
+		AssetService:      deps.ConnectAsset,
+		LineageService:    deps.ConnectLineage,
 		GovernanceService: deps.ConnectGovernance,
-		AdminService:     deps.ConnectAdmin,
-		AuthMW:           deps.AuthMW,
-		Enforcer:         deps.Enforcer,
-		Issuer:           deps.Issuer,
-		Events:           deps.Events,
-		Ent:              deps.Ent,
+		AdminService:      deps.ConnectAdmin,
+		AuthMW:            deps.AuthMW,
+		Enforcer:          deps.Enforcer,
+		Issuer:            deps.Issuer,
+		Events:            deps.Events,
+		Ent:               deps.Ent,
 	}, r)
 
 	// Health, readiness, and metrics endpoints.

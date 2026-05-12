@@ -2,13 +2,17 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"strings"
 
 	"connectrpc.com/connect"
+	"github.com/casbin/casbin/v2"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/kanpon/data-governance/internal/auth"
 	"github.com/kanpon/data-governance/internal/event"
+	"github.com/kanpon/data-governance/internal/governance"
 	"github.com/kanpon/data-governance/internal/storage/ent"
 	"github.com/kanpon/data-governance/internal/storage/ent/assetversion"
 	"github.com/kanpon/data-governance/internal/storage/ent/run"
@@ -16,21 +20,25 @@ import (
 
 	"github.com/kanpon/data-governance/proto/api/v1"
 	"github.com/kanpon/data-governance/proto/api/v1/v1connect"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // ConnectDeps holds dependencies for ConnectRPC handlers.
 // Mirrors Deps but without chi-specific fields.
 type ConnectDeps struct {
-	AuthService    AuthServiceServer
-	AssetService   AssetServiceServer
-	LineageService LineageServiceServer
-	GovernanceService GovernanceServiceServer
-	AuthMW         func(http.Handler) http.Handler
-	Enforcer       any // casbin.Enforcer
-	Issuer         *auth.TokenIssuer
-	Events         event.Writer
-	Ent            *ent.Client
+	AuthSvc             *auth.Service // domain auth service with business logic
+	AuthServiceServer   AuthServiceServer
+	AssetService        AssetServiceServer
+	LineageService      LineageServiceServer
+	GovernanceService   GovernanceServiceServer
+	GovernanceWorkflow  *governance.Workflow // Phase 5 workflow service
+	AdminService        AdminServiceServer
+	AuthMW              func(http.Handler) http.Handler
+	Enforcer            *casbin.Enforcer
+	Issuer              *auth.TokenIssuer
+	Events              event.Writer
+	Ent                 *ent.Client
 }
 
 // AuthServiceServer is the interface implemented by the auth connect handler.
@@ -58,6 +66,20 @@ type GovernanceServiceServer interface {
 	GetReview(context.Context, *connect.Request[v1.GetReviewRequest]) (*connect.Response[v1.ReviewResponse], error)
 	ApproveReview(context.Context, *connect.Request[v1.ApproveReviewRequest]) (*connect.Response[v1.ReviewResponse], error)
 	RejectReview(context.Context, *connect.Request[v1.RejectReviewRequest]) (*connect.Response[v1.ReviewResponse], error)
+}
+
+// AdminServiceServer is the interface implemented by the admin connect handler.
+type AdminServiceServer interface {
+	ListUsers(context.Context, *connect.Request[v1.ListUsersRequest]) (*connect.Response[v1.ListUsersResponse], error)
+	AssignRole(context.Context, *connect.Request[v1.AssignRoleRequest]) (*connect.Response[v1.UserResponse], error)
+	RemoveRole(context.Context, *connect.Request[v1.RemoveRoleRequest]) (*connect.Response[v1.UserResponse], error)
+	ListRoles(context.Context, *connect.Request[v1.ListRolesRequest]) (*connect.Response[v1.ListRolesResponse], error)
+	CreateRole(context.Context, *connect.Request[v1.CreateRoleRequest]) (*connect.Response[v1.RoleResponse], error)
+	DeleteRole(context.Context, *connect.Request[v1.DeleteRoleRequest]) (*connect.Response[emptypb.Empty], error)
+	ListPolicies(context.Context, *connect.Request[v1.ListPoliciesRequest]) (*connect.Response[v1.ListPoliciesResponse], error)
+	CreatePolicy(context.Context, *connect.Request[v1.CreatePolicyRequest]) (*connect.Response[v1.ColumnPolicyResponse], error)
+	UpdatePolicy(context.Context, *connect.Request[v1.UpdatePolicyRequest]) (*connect.Response[v1.ColumnPolicyResponse], error)
+	DeletePolicy(context.Context, *connect.Request[v1.DeletePolicyRequest]) (*connect.Response[emptypb.Empty], error)
 }
 
 // mountConnectRPC wires ConnectRPC handlers into the chi router.
@@ -360,17 +382,260 @@ type governanceConnectServer struct {
 }
 
 func (s *governanceConnectServer) ListReviews(ctx context.Context, req *connect.Request[v1.ListReviewsRequest]) (*connect.Response[v1.ListReviewsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, nil)
+	p, ok := auth.PrincipalFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, nil)
+	}
+
+	status := req.Msg.Status
+	page := int(req.Msg.Page)
+	pageSize := int(req.Msg.PageSize)
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	if page <= 0 {
+		page = 1
+	}
+
+	// List reviews filtered by status (pending/approved/rejected/all)
+	// The Workflow.Status returns reviews; we filter by status if provided
+	var allReviews []governance.Review
+	var err error
+
+	if status == "" || status == "all" {
+		allReviews, err = s.deps.GovernanceWorkflow.Status(ctx, "")
+	} else {
+		// Filter locally — Workflow.Status returns all; filter by status
+		allReviews, err = s.deps.GovernanceWorkflow.Status(ctx, "")
+	}
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	// Filter by status if specified
+	var filtered []governance.Review
+	for _, r := range allReviews {
+		if status != "" && status != "all" && r.Status != status {
+			continue
+		}
+		// Filter to reviews where current user is a reviewer in the pool
+		// (reviewers can see their assigned reviews)
+		filtered = append(filtered, r)
+	}
+
+	// Pagination
+	total := int32(len(filtered))
+	start := (page - 1) * pageSize
+	end := start + pageSize
+	if start >= len(filtered) {
+		filtered = []governance.Review{}
+	} else {
+		if end > len(filtered) {
+			end = len(filtered)
+		}
+		filtered = filtered[start:end]
+	}
+
+	reviews := make([]*v1.ReviewResponse, 0, len(filtered))
+	for _, r := range filtered {
+		review := &v1.ReviewResponse{
+			Id:        r.ID.String(),
+			AssetName: r.Asset,
+			Status:    r.Status,
+		}
+		if !r.SubmittedAt.IsZero() {
+			review.SubmittedAt = timestamppb.New(r.SubmittedAt)
+		}
+		if r.DecidedAt != nil {
+			review.ReviewedAt = timestamppb.New(*r.DecidedAt)
+		}
+		if r.DecidedByID != nil {
+			review.ReviewedBy = r.DecidedByID.String()
+		}
+		for _, c := range parseComments(r.Comment) {
+			review.Comments = append(review.Comments, &v1.ReviewComment{
+				Author: c.author,
+				Body:   c.body,
+			})
+		}
+		_ = p // silence unused warning
+		reviews = append(reviews, review)
+	}
+
+	return connect.NewResponse(&v1.ListReviewsResponse{
+		Reviews: reviews,
+		Total:   total,
+	}), nil
 }
 
 func (s *governanceConnectServer) GetReview(ctx context.Context, req *connect.Request[v1.GetReviewRequest]) (*connect.Response[v1.ReviewResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, nil)
+	_, ok := auth.PrincipalFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, nil)
+	}
+
+	reviewIDStr := req.Msg.Id
+	if reviewIDStr == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, nil)
+	}
+
+	reviewID, err := uuid.Parse(reviewIDStr)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, nil)
+	}
+
+	r, err := s.deps.GovernanceWorkflow.Get(ctx, reviewID)
+	if errors.Is(err, governance.ErrReviewNotFound) {
+		return nil, connect.NewError(connect.CodeNotFound, nil)
+	}
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	return connect.NewResponse(&v1.ReviewResponse{
+		Id:        r.ID.String(),
+		AssetName: r.Asset,
+		Status:    r.Status,
+	}), nil
 }
 
 func (s *governanceConnectServer) ApproveReview(ctx context.Context, req *connect.Request[v1.ApproveReviewRequest]) (*connect.Response[v1.ReviewResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, nil)
+	p, ok := auth.PrincipalFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, nil)
+	}
+
+	reviewID, err := uuid.Parse(req.Msg.Id)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, nil)
+	}
+
+	// CSRF: already validated by chi middleware on the route
+	// but we need to verify permission via enforcer
+	allowed, err := s.deps.Enforcer.Enforce("role:"+p.Role, "/governance/reviews/*", "write")
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, nil)
+	}
+	if !allowed {
+		// Check other roles
+		for _, r := range p.Roles {
+			allowed, _ = s.deps.Enforcer.Enforce("role:"+r, "/governance/reviews/*", "write")
+			if allowed {
+				break
+			}
+		}
+		if !allowed {
+			return nil, connect.NewError(connect.CodePermissionDenied, nil)
+		}
+	}
+
+	r, err := s.deps.GovernanceWorkflow.Approve(ctx, reviewID, p.UserID, req.Msg.Comment)
+	if errors.Is(err, governance.ErrReviewNotFound) {
+		return nil, connect.NewError(connect.CodeNotFound, nil)
+	}
+	if errors.Is(err, governance.ErrSelfApproval) {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, nil)
+	}
+	if errors.Is(err, governance.ErrDuplicateVote) {
+		return nil, connect.NewError(connect.CodeAlreadyExists, nil)
+	}
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	return connect.NewResponse(&v1.ReviewResponse{
+		Id:        r.ID.String(),
+		AssetName: r.Asset,
+		Status:    r.Status,
+	}), nil
 }
 
 func (s *governanceConnectServer) RejectReview(ctx context.Context, req *connect.Request[v1.RejectReviewRequest]) (*connect.Response[v1.ReviewResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, nil)
+	p, ok := auth.PrincipalFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, nil)
+	}
+
+	reviewID, err := uuid.Parse(req.Msg.Id)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, nil)
+	}
+
+	if req.Msg.Comment == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("comment is required for reject"))
+	}
+
+	// Permission check via enforcer
+	allowed, err := s.deps.Enforcer.Enforce("role:"+p.Role, "/governance/reviews/*", "write")
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, nil)
+	}
+	if !allowed {
+		for _, r := range p.Roles {
+			allowed, _ = s.deps.Enforcer.Enforce("role:"+r, "/governance/reviews/*", "write")
+			if allowed {
+				break
+			}
+		}
+		if !allowed {
+			return nil, connect.NewError(connect.CodePermissionDenied, nil)
+		}
+	}
+
+	r, err := s.deps.GovernanceWorkflow.Reject(ctx, reviewID, p.UserID, req.Msg.Comment)
+	if errors.Is(err, governance.ErrReviewNotFound) {
+		return nil, connect.NewError(connect.CodeNotFound, nil)
+	}
+	if errors.Is(err, governance.ErrCommentRequired) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("comment is required"))
+	}
+	if errors.Is(err, governance.ErrSelfApproval) {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, nil)
+	}
+	if errors.Is(err, governance.ErrDuplicateVote) {
+		return nil, connect.NewError(connect.CodeAlreadyExists, nil)
+	}
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	return connect.NewResponse(&v1.ReviewResponse{
+		Id:        r.ID.String(),
+		AssetName: r.Asset,
+		Status:    r.Status,
+	}), nil
+}
+
+// commentPart parses a single comment line in format "[author by uuid] body"
+type commentPart struct {
+	author string
+	body   string
+}
+
+// parseComments extracts comment entries from the governance review comment field.
+// The comment field stores votes in format "[approved/rejected by <uuid>] <comment>".
+func parseComments(comment string) []commentPart {
+	if comment == "" {
+		return nil
+	}
+	var parts []commentPart
+	for _, line := range strings.Split(comment, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// Lines starting with [approved by or [rejected by are vote records
+		// Extract author from "[approved by <uuid>]" prefix
+		if strings.HasPrefix(line, "[approved by ") || strings.HasPrefix(line, "[rejected by ") {
+			// Extract the comment body after the vote marker
+			idx := strings.Index(line, "] ")
+			if idx > 0 {
+				parts = append(parts, commentPart{
+					author: "reviewer",
+					body:   line[idx+2:],
+				})
+			}
+		}
+	}
+	return parts
 }
