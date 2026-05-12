@@ -14,6 +14,7 @@ function ScaffoldApp() {
           <nav className="flex gap-4 text-sm">
             <a href="/" className="text-muted-foreground hover:text-foreground">Home</a>
             <a href="/assets" className="text-muted-foreground hover:text-foreground">Assets</a>
+            <a href="/catalog" className="text-muted-foreground hover:text-foreground">Catalog</a>
           </nav>
         </div>
       </header>
@@ -54,6 +55,18 @@ const assetsLayoutRoute = new Route({
 const adminLayoutRoute = new Route({
   getParentRoute: () => rootRoute,
   path: '/admin',
+})
+
+// Governance layout route at '/governance'
+const governanceLayoutRoute = new Route({
+  getParentRoute: () => rootRoute,
+  path: '/governance',
+})
+
+// Catalog layout route at '/catalog'
+const catalogLayoutRoute = new Route({
+  getParentRoute: () => rootRoute,
+  path: '/catalog',
 })
 
 // Asset dashboard page at '/assets'
@@ -310,6 +323,13 @@ const routeTree = rootRoute.addChildren([
       getParentRoute: () => governanceLayoutRoute,
       path: '/',
       component: () => import('./pages/governance/index').then(m => m.GovernancePage),
+    }),
+  ]),
+  catalogLayoutRoute.addChildren([
+    new Route({
+      getParentRoute: () => catalogLayoutRoute,
+      path: '/',
+      component: () => import('./pages/catalog/index').then(m => m.CatalogPage),
     }),
   ]),
 ])

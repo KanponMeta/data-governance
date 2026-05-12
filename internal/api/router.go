@@ -1,6 +1,7 @@
 package api
 
 import (
+	"embed"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -49,6 +50,9 @@ type Deps struct {
 	ConnectGovernance        GovernanceServiceServer
 	ConnectGovernanceWorkflow *governance.Workflow // Phase 5 workflow for ConnectRPC handlers
 	ConnectAdmin             AdminServiceServer
+
+	// Phase 6 (CORE-04): Embedded React SPA for production.
+	StaticAssets embed.FS
 }
 
 // ToMountDeps converts api.Deps to platform.MountDeps for route mounting.
