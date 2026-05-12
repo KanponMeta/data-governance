@@ -50,6 +50,12 @@ const assetsLayoutRoute = new Route({
   path: '/assets',
 })
 
+// Admin layout route at '/admin'
+const adminLayoutRoute = new Route({
+  getParentRoute: () => rootRoute,
+  path: '/admin',
+})
+
 // Asset dashboard page at '/assets'
 const AssetDashboardPage = () => {
   const [search, setSearch] = useState('')
@@ -292,6 +298,20 @@ const assetDetailRoute = new Route({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   assetsLayoutRoute.addChildren([assetsIndexRoute, assetDetailRoute]),
+  adminLayoutRoute.addChildren([
+    new Route({
+      getParentRoute: () => adminLayoutRoute,
+      path: '/',
+      component: () => import('./pages/admin/index').then(m => m.AdminPage),
+    }),
+  ]),
+  governanceLayoutRoute.addChildren([
+    new Route({
+      getParentRoute: () => governanceLayoutRoute,
+      path: '/',
+      component: () => import('./pages/governance/index').then(m => m.GovernancePage),
+    }),
+  ]),
 ])
 
 const router = createRouter({
