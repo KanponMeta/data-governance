@@ -22,6 +22,17 @@
 
 未结清的人工 UAT：EXPLAIN ANALYZE 递归 CTE 性能容量验证（`scripts/explain_analyze_lineage.sh`）—— 已构建但本地无活跃 Postgres 实例时延后捕获（详见 `.planning/phases/04-schema/04-HUMAN-UAT.md`）。
 
+**Phase 6: Web UI & API (2026-05-12)**
+- [x] ConnectRPC API 协议层（proto IDL + chi 路由集成）
+- [x] React SPA 嵌入 Go 二进制（go:embed）
+- [x] 资产仪表板 + 运行历史（UI-01, UI-02）
+- [x] 目录搜索 + 浏览（名称/tag/owner 过滤）（META-04, UI-03）
+- [x] 交互式血缘 DAG + 列下钻（LINE-04, LINE-05）
+- [x] 治理收件箱（UI-06）
+- [x] Web UI 基础完成（CORE-04, CORE-05, AUTH-04）
+
+部分完成（支架阶段）：质量趋势图表（QUAL-06）和告警（UI-05）—— 处理函数为 stub；管理员策略管理（UI-07）—— AdminService 返回 Unimplemented，需要 ColumnPolicy ent schema。
+
 ### 进行中
 
 **编排引擎**
@@ -73,10 +84,10 @@
 - [ ] 连接器接口可扩展（用户可用 Go 实现自定义连接器）
 
 **可观测性 UI**
-- [ ] 用户可查看所有资产、其状态和最近物化时间
-- [ ] 用户可查看每个资产的执行运行历史和日志
-- [ ] 用户可查看包含字段级下钻的完整血缘图
-- [ ] 用户可查看质量分数和告警仪表盘
+- [x] 用户可查看所有资产、其状态和最近物化时间 — Phase 6
+- [x] 用户可查看每个资产的执行运行历史和日志 — Phase 6
+- [x] 用户可查看包含字段级下钻的完整血缘图 — Phase 6
+- [ ] 用户可查看质量分数和告警仪表盘（质量处理为 stub 待后续阶段）
 
 ### 超出范围
 
