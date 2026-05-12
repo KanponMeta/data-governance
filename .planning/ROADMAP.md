@@ -126,13 +126,13 @@ Plans:
   5. 管理员可完全在管理面板中管理用户、角色和列级访问策略
 **计划**：7 plans
 Plans:
-- [ ] 06-01-PLAN.md — ConnectRPC foundation + React SPA scaffold + /v1/me + cookie auth (Wave 1)
-- [ ] 06-02-PLAN.md — Asset dashboard (UI-01) + run history (UI-02) + React pages (Wave 2)
-- [ ] 06-03-PLAN.md — Catalog search (META-04) with Postgres FTS + React search page (Wave 2)
-- [ ] 06-04-PLAN.md — Lineage DAG visualization (LINE-04, LINE-05) with ReactFlow + dagre (Wave 2)
-- [ ] 06-05-PLAN.md — Quality dashboard (QUAL-06) with Recharts trend chart + alert list (Wave 3)
-- [ ] 06-06-PLAN.md — Governance inbox (UI-06) with approve/reject workflow (Wave 3)
-- [ ] 06-07-PLAN.md — Admin panel (UI-07) + go:embed SPA in Go binary (Wave 3)
+- [x] 06-01-PLAN.md — ConnectRPC foundation + React SPA scaffold + /v1/me + cookie auth (Wave 1)
+- [x] 06-02-PLAN.md — Asset dashboard (UI-01) + run history (UI-02) + React pages (Wave 2)
+- [x] 06-03-PLAN.md — Catalog search (META-04) with Postgres FTS + React search page (Wave 2)
+- [x] 06-04-PLAN.md — Lineage DAG visualization (LINE-04, LINE-05) with ReactFlow + dagre (Wave 2)
+- [x] 06-05-PLAN.md — Quality dashboard (QUAL-06) with Recharts trend chart + alert list (Wave 3)
+- [x] 06-06-PLAN.md — Governance inbox (UI-06) with approve/reject workflow (Wave 3)
+- [x] 06-07-PLAN.md — Admin panel (UI-07) + go:embed SPA in Go binary (Wave 3)
 **UI 提示**：是
 
 ## 进度
