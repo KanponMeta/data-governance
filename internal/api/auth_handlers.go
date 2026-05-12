@@ -63,6 +63,17 @@ type AcceptInviteResponse struct {
 	UserID string `json:"user_id"`
 }
 
+// registerHandler handles POST /v1/auth/register.
+// @Summary Register new user
+// @Description Create a new user account. The first user becomes admin, subsequent users become member.
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body RegisterRequest true "registration credentials"
+// @Success 201 {object} RegisterResponse
+// @Failure 400 {object} APIError
+// @Failure 409 {object} APIError
+// @Router /v1/auth/register [post]
 func (h *authHandler) register(w http.ResponseWriter, r *http.Request) {
 	var body RegisterRequest
 	if !decodeJSON(w, r, &body) {
@@ -93,6 +104,17 @@ func (h *authHandler) register(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// loginHandler handles POST /v1/auth/login.
+// @Summary User login
+// @Description Authenticate user with email and password. Returns JWT token, sets session cookie, and returns CSRF token header.
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body LoginRequest true "login credentials"
+// @Success 200 {object} LoginResponse
+// @Failure 400 {object} APIError
+// @Failure 401 {object} APIError
+// @Router /v1/auth/login [post]
 func (h *authHandler) login(w http.ResponseWriter, r *http.Request) {
 	var body LoginRequest
 	if !decodeJSON(w, r, &body) {
@@ -135,6 +157,19 @@ func (h *authHandler) login(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// inviteHandler handles POST /v1/auth/invites (admin only).
+// @Summary Generate invite token
+// @Description Create a single-use invite token for a new user. Requires admin role.
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body InviteRequest true "invite email"
+// @Success 201 {object} InviteResponse
+// @Failure 400 {object} APIError
+// @Failure 401 {object} APIError
+// @Failure 403 {object} APIError
+// @Failure 500 {object} APIError
+// @Router /v1/auth/invites [post]
 func (h *authHandler) invite(w http.ResponseWriter, r *http.Request) {
 	p, ok := auth.PrincipalFromContext(r.Context())
 	if !ok {
@@ -162,6 +197,19 @@ func (h *authHandler) invite(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// acceptInviteHandler handles POST /v1/auth/accept-invite.
+// @Summary Accept invite
+// @Description Consume an invite token to create a new member account.
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body AcceptInviteRequest true "invite token and password"
+// @Success 201 {object} AcceptInviteResponse
+// @Failure 400 {object} APIError
+// @Failure 404 {object} APIError
+// @Failure 410 {object} APIError
+// @Failure 409 {object} APIError
+// @Router /v1/auth/accept-invite [post]
 func (h *authHandler) acceptInvite(w http.ResponseWriter, r *http.Request) {
 	var body AcceptInviteRequest
 	if !decodeJSON(w, r, &body) {
