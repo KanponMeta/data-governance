@@ -156,9 +156,137 @@ const assetsIndexRoute = new Route({
 })
 
 // Asset detail route at '/assets/:name'
+const AssetDetailPage = () => {
+  const params = useParams({ from: '/assets/$name' })
+  const assetName = params.name
+
+  // Fetch asset metadata
+  const { data: asset, isLoading: assetLoading } = useQuery({
+    queryKey: ['assets', assetName],
+    queryFn: async () => {
+      const res = await fetch(`/v1/connect/api.v1.AssetService/GetAsset?name=${encodeURIComponent(assetName)}`)
+      if (!res.ok) throw new Error('Asset not found')
+      return res.json()
+    },
+    staleTime: 30 * 1000,
+  })
+
+  // D-17: hot screen (asset with active runs) = 4s polling, cold = 60s
+  const latestRunState = asset?.last_materialize_state
+  const isHot = latestRunState === 'running' || latestRunState === 'queued'
+  const pollingInterval = isHot ? 4 * 1000 : 60 * 1000
+
+  const { data: runsData, isLoading: runsLoading } = useQuery({
+    queryKey: ['assets', assetName, 'runs'],
+    queryFn: async () => {
+      const res = await fetch(`/v1/connect/api.v1.AssetService/ListRuns?asset_name=${encodeURIComponent(assetName)}`)
+      if (!res.ok) throw new Error('Failed to fetch runs')
+      return res.json()
+    },
+    staleTime: 30 * 1000,
+    refetchInterval: pollingInterval,
+  })
+
+  if (assetLoading || runsLoading) {
+    return <div className="flex items-center justify-center h-64"><div className="animate-spin h-6 w-6 border-2 border-primary border-t-transparent rounded-full" /></div>
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">{assetName}</h1>
+          <div className="flex items-center gap-2 mt-1">
+            <span className={`inline-flex items-center rounded-md px-2.5 py-0.5 text-xs font-semibold ${asset?.state === 'active' ? 'bg-primary text-primary-foreground' : 'bg-secondary'}`}>
+              {asset?.state || 'unknown'}
+            </span>
+            <QualityBadge state={asset?.last_materialize_state} />
+          </div>
+        </div>
+        <button onClick={() => history.back()} className="px-4 py-2 border rounded text-sm">Back</button>
+      </div>
+      <div>
+        <h2 className="text-lg font-semibold mb-3">Run History</h2>
+        <RunHistoryPage runs={runsData?.runs || []} />
+      </div>
+    </div>
+  )
+}
+
+// Run history with step expansion
+function RunHistoryPage({ runs }: { runs: any[] }) {
+  const [expandedRunId, setExpandedRunId] = useState<string | null>(null)
+
+  if (!runs || runs.length === 0) {
+    return <div className="text-muted-foreground py-8 text-center">No runs yet.</div>
+  }
+
+  return (
+    <div className="space-y-3">
+      {runs.map(run => (
+        <div key={run.id}>
+          <div
+            className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-muted/50"
+            onClick={() => setExpandedRunId(expandedRunId === run.id ? null : run.id)}
+          >
+            <RunStatusBadgeInline state={run.state} />
+            <span className="font-mono text-sm">{run.id?.slice(0, 8)}</span>
+            <span className="text-sm text-muted-foreground">{run.asset_name}</span>
+            <span className="text-sm text-muted-foreground ml-auto">
+              {run.started_at ? new Date(run.started_at).toLocaleString() : '—'}
+            </span>
+          </div>
+          {expandedRunId === run.id && run.steps?.length > 0 && (
+            <div className="ml-8 mt-2 space-y-2">
+              {run.steps.map((step: any, i: number) => (
+                <div key={i} className="flex items-center gap-3 p-2 bg-muted/30 rounded border">
+                  <RunStatusBadgeInline state={step.state} />
+                  <span className="text-sm font-medium">{step.name}</span>
+                  <span className="text-xs text-muted-foreground ml-auto">
+                    {step.started_at && new Date(step.started_at).toLocaleString()}
+                    {step.error && <span className="text-destructive ml-2">{step.error}</span>}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function RunStatusBadgeInline({ state }: { state: string }) {
+  const variant = {
+    success: 'bg-primary text-primary-foreground',
+    failed: 'bg-destructive text-destructive-foreground',
+    quality_failed: 'bg-destructive text-destructive-foreground',
+    running: 'bg-secondary text-secondary-foreground',
+    queued: 'border border-input',
+    pending: 'border border-input',
+    skipped: 'bg-secondary text-secondary-foreground',
+  }[state] || 'border border-input'
+
+  const label = {
+    success: 'Success',
+    failed: 'Failed',
+    quality_failed: 'Q-Failed',
+    running: 'Running',
+    queued: 'Queued',
+    pending: 'Pending',
+    skipped: 'Skipped',
+  }[state] || state
+
+  return <span className={`inline-flex items-center rounded-md px-2.5 py-0.5 text-xs font-semibold ${variant}`}>{label}</span>
+}
+
+// Use useParams hook
+import { useParams } from '@tanstack/react-router'
+
 const assetDetailRoute = new Route({
   getParentRoute: () => assetsLayoutRoute,
   path: '/$name',
+  component: AssetDetailPage,
 })
 
 const routeTree = rootRoute.addChildren([
