@@ -107,11 +107,11 @@ Plans:
   5. 数据工程师在资产上定义空值率质量规则；物化后平台评估该规则，若超过阈值则将运行标记为质量失败并发送 webhook 或邮件告警
 **Plans:** 5 plans
 Plans:
-- [ ] 05-01-PLAN.md — RBAC foundation: Casbin enforcer + roles/role_assignments + hash-chain audit log + Wave 0 testharness (Wave 1)
-- [ ] 05-02-PLAN.md — Column policies + Snowflake DDM / BigQuery CLS sync + River sync worker + Reconciler (Wave 2)
-- [ ] 05-03-PLAN.md — Synchronous PII propagation through lineage + TagOverride DSL + in-pipeline MaskingIO for non-warehouse connectors (Wave 3)
-- [ ] 05-04-PLAN.md — Governance workflow: state machine + 3-source reviewer pool + 5-check auto-approval + REST/CLI + executor gate + SLA scanner (Wave 2)
-- [ ] 05-05-PLAN.md — Quality rules (NullCheck/RangeCheck/SQLAssertion) + executor hook + FreshnessSLA + notification subsystem (webhook+SMTP+River) (Wave 2)
+- [x] 05-01-PLAN.md — RBAC foundation: Casbin enforcer + roles/role_assignments + hash-chain audit log + Wave 0 testharness (Wave 1)
+- [x] 05-02-PLAN.md — Column policies + Snowflake DDM / BigQuery CLS sync + River sync worker + Reconciler (Wave 2)
+- [x] 05-03-PLAN.md — Synchronous PII propagation through lineage + TagOverride DSL + in-pipeline MaskingIO for non-warehouse connectors (Wave 3)
+- [x] 05-04-PLAN.md — Governance workflow: state machine + 3-source reviewer pool + 5-check auto-approval + REST/CLI + executor gate + SLA scanner (Wave 2)
+- [x] 05-05-PLAN.md — Quality rules (NullCheck/RangeCheck/SQLAssertion) + executor hook + FreshnessSLA + notification subsystem (webhook+SMTP+River) (Wave 2)
 **UI 提示**：否
 
 ### Phase 6: Web UI 与 API
@@ -124,7 +124,15 @@ Plans:
   3. 用户可按资产名称、列名、标签、负责人或描述搜索数据目录并获得相关结果
   4. 治理团队成员可在治理收件箱中查看所有待审批请求并执行批准或驳回操作，无需离开 UI
   5. 管理员可完全在管理面板中管理用户、角色和列级访问策略
-**计划**：待定
+**计划**：7 plans
+Plans:
+- [ ] 06-01-PLAN.md — ConnectRPC foundation + React SPA scaffold + /v1/me + cookie auth (Wave 1)
+- [ ] 06-02-PLAN.md — Asset dashboard (UI-01) + run history (UI-02) + React pages (Wave 2)
+- [ ] 06-03-PLAN.md — Catalog search (META-04) with Postgres FTS + React search page (Wave 2)
+- [ ] 06-04-PLAN.md — Lineage DAG visualization (LINE-04, LINE-05) with ReactFlow + dagre (Wave 2)
+- [ ] 06-05-PLAN.md — Quality dashboard (QUAL-06) with Recharts trend chart + alert list (Wave 3)
+- [ ] 06-06-PLAN.md — Governance inbox (UI-06) with approve/reject workflow (Wave 3)
+- [ ] 06-07-PLAN.md — Admin panel (UI-07) + go:embed SPA in Go binary (Wave 3)
 **UI 提示**：是
 
 ## 进度
