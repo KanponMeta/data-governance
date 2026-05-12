@@ -1,12 +1,7 @@
 name: ci
 
 on:
-  push:
-    branches:
-      - master
-  pull_request:
-    branches:
-      - master
+  workflow_dispatch:
 
 env:
   GO_VERSION: '1.25'
