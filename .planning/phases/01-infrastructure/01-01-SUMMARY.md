@@ -65,58 +65,58 @@ metrics:
   files_created: 14
 ---
 
-# Phase 01 Plan 01: Infrastructure Bootstrap Summary
+# Phase 01 Plan 01: 基础设施引导总结
 
-## One-liner
+## 一句话总结
 
-Go module initialized, dependency manifest pinned, Docker Compose dev stack with healthchecks, single-binary platform skeleton builds successfully.
+Go 模块已初始化，依赖清单已锁定，带健康检查的 Docker Compose 开发栈，单二进制平台框架构建成功。
 
-## What Was Built
+## 已构建内容
 
-Plan 01 bootstraps the entire data governance platform by establishing the project shape that every downstream plan depends on:
+Plan 01 通过建立每个下游计划所依赖的项目形状来引导整个数据治理平台:
 
-1. **Go module + directory layout** - `github.com/kanpon/data-governance` with exact D-04 layout (cmd/platform, internal/{storage,auth,connector,event}, no top-level pkg/)
-2. **Phase 1 dependency manifest** - All runtime dependencies declared and pinned in go.mod
-3. **Makefile** - 9 targets covering build, test, lint, generate, migrate, run, docker-build, tidy, clean
-4. **Docker Compose dev stack** - postgres:16-alpine + platform service with healthchecks and service_healthy dependency condition
-5. **Dockerfile** - Multi-stage build (golang:1.22-alpine -> gcr.io/distroless/static-debian12:nonroot) with VERSION linker flag
-6. **.env.example** - All required environment variables documented
+1. **Go 模块 + 目录布局** - `github.com/kanpon/data-governance` 与精确的 D-04 布局 (cmd/platform, internal/{storage,auth,connector,event}, 无顶层 pkg/)
+2. **Phase 1 依赖清单** - 所有运行时依赖在 go.mod 中声明并锁定
+3. **Makefile** - 9 个目标覆盖 build、test、lint、generate、migrate、run、docker-build、tidy、clean
+4. **Docker Compose 开发栈** - postgres:16-alpine + 带健康检查和服务健康依赖条件的 platform 服务
+5. **Dockerfile** - 多阶段构建 (golang:1.22-alpine -> gcr.io/distroless/static-debian12:nonroot)，带 VERSION 链接器标志
+6. **.env.example** - 所有所需环境变量已记录
 
-## Commits
+## 提交
 
-| Commit | Description |
+| 提交 | 描述 |
 |--------|-------------|
 | 28e97d1 | feat(01-01): initialize Go module and directory layout per D-04 |
 | b453537 | feat(01-01): add Phase 1 runtime dependencies and Makefile |
 | 6d13285 | feat(01-01): add Dockerfile and Docker Compose dev stack with healthchecks |
 
-## Deviations from Plan
+## 与计划的偏差
 
-None - plan executed exactly as written.
+无 — 计划完全按书面执行。
 
-## Gotchas for Plan 02
+## Plan 02 的注意事项
 
-1. **Go version constraint**: golang.org/x/crypto v0.50.0 requires Go 1.25; used v0.31.0 for Go 1.22 compatibility. When upgrading Go, check crypto version.
-2. **protobuf version constraint**: google.golang.org/protobuf v1.36.11 requires Go 1.23; used v1.36.1 for compatibility.
-3. **Docker build network**: ariga.io/atlas has had transient download timeouts in this environment; docker compose build may need retry on first run.
-4. **Platform healthcheck placeholder**: The healthcheck command `/app/platform healthcheck` will fail until Plan 03 implements it (the plan notes this explicitly as expected).
-5. **No system Go installed**: Go was installed to /home/developer/go; ensure PATH includes /home/developer/go/bin for local builds.
+1. **Go 版本约束**: golang.org/x/crypto v0.50.0 需要 Go 1.25；使用 v0.31.0 以兼容 Go 1.22。升级 Go 时请检查 crypto 版本。
+2. **protobuf 版本约束**: google.golang.org/protobuf v1.36.11 需要 Go 1.23；使用 v1.36.1 以兼容。
+3. **Docker 构建网络**: ariga.io/atlas 在此环境中有过短暂的下载超时；docker compose build 可能在首次运行时需要重试。
+4. **平台健康检查占位符**: 健康检查命令 `/app/platform healthcheck` 在 Plan 03 实现之前会失败 (计划明确说明这是预期的)。
+5. **无系统 Go**: Go 已安装到 /home/developer/go；确保 PATH 包含 /home/developer/go/bin 用于本地构建。
 
-## Verification Results
+## 验证结果
 
-| Check | Result |
+| 检查 | 结果 |
 |-------|--------|
 | `go build ./cmd/platform/...` | PASS |
 | `make build` produces `bin/platform` | PASS |
 | `docker compose config` | PASS |
-| `docker compose build platform` | STRUCTURAL OK (transient network timeout during atls download in container) |
+| `docker compose build platform` | STRUCTURAL OK (容器中 atls 下载期间出现短暂网络超时) |
 | Directory tree matches D-04 | PASS |
 | No top-level pkg/ directory | PASS |
 | .env not in git (gitignore + dockerignore) | PASS |
 
-## Self-Check
+## 自我检查
 
-All claims verified:
-- Commits exist: 28e97d1, b453537, 6d13285
-- Files exist: go.mod, cmd/platform/main.go, Makefile, Dockerfile, docker-compose.yml, .env.example, .gitignore, .dockerignore
-- Binary builds: `go build -o bin/platform ./cmd/platform` exits 0
+所有声明已验证:
+- 提交存在: 28e97d1, b453537, 6d13285
+- 文件存在: go.mod, cmd/platform/main.go, Makefile, Dockerfile, docker-compose.yml, .env.example, .gitignore, .dockerignore
+- 二进制构建: `go build -o bin/platform ./cmd/platform` 退出 0

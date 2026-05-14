@@ -1,147 +1,33 @@
----
-phase: 04-schema
-reviewed: 2026-05-09T13:30:00Z
-depth: standard
-files_reviewed: 76
-files_reviewed_list:
-  - cmd/platform/impact.go
-  - cmd/platform/impact_test.go
-  - cmd/platform/lineage.go
-  - cmd/platform/lineage_test.go
-  - cmd/platform/main.go
-  - cmd/platform/schema.go
-  - cmd/platform/schema_test.go
-  - internal/api/lineage_handlers.go
-  - internal/api/lineage_handlers_test.go
-  - internal/api/metadata_handlers.go
-  - internal/api/schema_handlers.go
-  - internal/api/schema_handlers_test.go
-  - internal/asset/fingerprint.go
-  - internal/asset/fingerprint_test.go
-  - internal/asset/io_tracking.go
-  - internal/asset/io_tracking_test.go
-  - internal/asset/types.go
-  - internal/connector/capability.go
-  - internal/connector/firstparty/postgres/types_normalize.go
-  - internal/connector/firstparty/postgres/types_normalize_test.go
-  - internal/connector/schema_types.go
-  - internal/connector/schema_types_test.go
-  - internal/lineage/capture.go
-  - internal/lineage/capture_test.go
-  - internal/lineage/impact/analyze.go
-  - internal/lineage/impact/analyze_test.go
-  - internal/lineage/lineagetest/doc.go
-  - internal/lineage/lineagetest/fixtures.go
-  - internal/lineage/lineagetest/fixtures_smoke_test.go
-  - internal/lineage/lineagetest/recursive_cte_seed.go
-  - internal/lineage/openlineage/translate.go
-  - internal/lineage/openlineage/translate_test.go
-  - internal/lineage/queries/db.go
-  - internal/lineage/queries/lineage_integration_test.go
-  - internal/lineage/queries/lineage.sql
-  - internal/lineage/queries/lineage.sql.go
-  - internal/lineage/queries/models.go
-  - internal/lineage/queries/querier.go
-  - internal/lineage/queries/queries_smoke_test.go
-  - internal/metadata/handler.go
-  - internal/metadata/handler_test.go
-  - internal/metadata/store.go
-  - internal/metadata/store_test.go
-  - internal/runtime/executortest/doc.go
-  - internal/runtime/executortest/lineage_helpers.go
-  - internal/runtime/executortest/lineage_helpers_smoke_test.go
-  - internal/schema/capture.go
-  - internal/schema/capture_test.go
-  - internal/schema/classify.go
-  - internal/schema/classify_test.go
-  - internal/schema/diff.go
-  - internal/schema/diff_test.go
-  - internal/schema/hash.go
-  - internal/schema/hash_test.go
-  - internal/schema/lattice_postgres.go
-  - internal/schema/lattice_postgres_test.go
-  - internal/schema/schematest/doc.go
-  - internal/schema/schematest/fixtures.go
-  - internal/schema/schematest/fixtures_smoke_test.go
-  - internal/schema/writer_diff.go
-  - internal/schema/writer_diff_integration_test.go
-  - internal/schema/writer_diff_test.go
-  - internal/storage/ent/schema/asset_edge.go
-  - internal/storage/ent/schema/asset_metadata.go
-  - internal/storage/ent/schema/asset_version.go
-  - internal/storage/ent/schema/column_edge.go
-  - internal/storage/ent/schema/schema_change.go
-  - internal/storage/ent/schema/schema_version.go
-  - migrations/20260509120000_phase4_lineage_schema.sql
-  - migrations/atlas.sum
-  - scripts/explain_analyze_lineage.sh
-  - scripts/seed_lineage_10k.sql
-  - scripts/sqlc-verify.sh
-  - sqlc.yaml
-  - test/integration/phase4_e2e_test.go
-findings:
-  critical: 0
-  warning: 8
-  info: 7
-  total: 15
-status: issues_found
----
+# Phase 4: 代码审查报告
 
-# Phase 4: Code Review Report
+**审查时间：** 2026-05-09T13:30:00Z
+**深度：** standard
+**文件审查数：** 76
+**状态：** issues_found
 
-**Reviewed:** 2026-05-09T13:30:00Z
-**Depth:** standard
-**Files Reviewed:** 76
-**Status:** issues_found
+## 概述
 
-## Summary
+Phase 4 引入了 schema 和 lineage 子系统（capture writers、递归 CTE 遍历、schema diff/classify、OpenLineage translator、metadata store 和 CLI/REST 端点）。整体质量很高：参数化查询被一致使用、三层防御深度cap（Go 层 `MaxDepth`、SQL `LEAST(@max_depth::int, 25)`、HTTP 层）都已到位、手动管理的部分索引与 writers 中的 WHERE 子句对齐、migration 是幂等的（使用 `DROP ... IF EXISTS` + `ALTER TABLE ... DROP CONSTRAINT IF EXISTS` 模式）。
 
-Phase 4 introduces the schema and lineage subsystem (capture writers, recursive CTE traversal,
-schema diff/classify, OpenLineage translator, metadata store, and CLI/REST endpoints). Overall
-quality is high: parameterized queries are used consistently, depth-cap defense-in-depth is in
-place at all three layers (Go-level `MaxDepth`, SQL `LEAST(@max_depth::int, 25)`, HTTP layer),
-hand-managed partial indices align with the WHERE clauses in the writers, and the migration is
-idempotent (uses `DROP ... IF EXISTS` + `ALTER TABLE ... DROP CONSTRAINT IF EXISTS` patterns).
+未发现 SQL 注入 — 每个动态 SQL 位置都使用绑定参数和精心生成的占位符。无硬编码密钥。无直接命令注入风险（唯一的 `exec.CommandContext` 调用是 `runMigrate` 调用 `atlas migrate apply --env <env>`，其中 `atlasEnv` 被验证为默认值并作为单个参数传入，而非插值）。
 
-No SQL injection was found — every dynamic SQL location uses bind parameters with carefully
-generated placeholders. No hardcoded secrets. No direct command injection risks (the only
-`exec.CommandContext` call is `runMigrate` invoking `atlas migrate apply --env <env>` with
-`atlasEnv` validated to a default and fed in as a single argument, not interpolated).
+以下发现集中在三个领域：
 
-The findings below are concentrated in three areas:
+1. **并发/原子性缺口** — `ackSchemaChange` 进行无保护的 check-then-update（TOCTOU）；`CaptureRun` 步骤 3 为**所有**活跃边更新 `last_seen_*`（不限于声明的上游），因此不同资产并发运行会相互踩踏；`lineage.drift_detected` 事件在 run-update 事务内的 `event.Writer`（独立连接）上发出 — drift 状态是原子的，但审计事件不是。
+2. **防御检查被丢弃** — `PrincipalFromContext` 的 `ok` 标志在 `ackSchemaChange` 中被丢弃，因此配置错误的路由仍会写入 `uuid.Nil` 作为 actor；CLI helper `runImpact` 参数拆分将任何以 `-` 开头的 token 视为 flag（会将 `-` 开头的位置参数错误分类）。
+3. **测试脆弱性/假信心模式** — `cmd/platform/impact_test.go` 用有 bug 的 substring helper 重新实现了 `strings.Contains`；`containsAt` helper 有冗余条件，会在边缘情况下处理错误，尽管此文件中的调用从未触及这些边缘。
 
-1. **Concurrency / atomicity gaps** — `ackSchemaChange` does an unprotected check-then-update
-   (TOCTOU); `CaptureRun` step 3 updates `last_seen_*` for **all** active edges into the asset
-   without restricting to the declared upstreams (so concurrent runs of *different* assets that
-   share an upstream pattern stomp each other), and the `lineage.drift_detected` event is emitted
-   on `event.Writer` (separate connection) inside the run-update transaction — drift state is
-   atomic but the audit event is not.
-2. **Defensive checks dropped** — `PrincipalFromContext` `ok` flag is discarded in
-   `ackSchemaChange`, so a misconfigured route would still write `uuid.Nil` as actor; CLI helper
-   `runImpact` argument-splitting treats any leading-`-` token as a flag (would mis-classify a
-   positional starting with `-`).
-3. **Test fragility / false-confidence patterns** — `cmd/platform/impact_test.go` reimplements
-   `strings.Contains` with a buggy substring helper; the `containsAt` helper has redundant
-   conditions and would mis-handle some inputs in edge cases, though the calls in this file
-   never exercise those edges.
-
-No Critical issues were found. The 8 Warnings are real correctness concerns worth fixing; the 7
-Info items are quality/maintainability improvements.
+未发现 Critical 问题。8 个 Warning 是值得修复的真实正确性问题；7 个 Info 项目是质量/可维护性改进。
 
 ## Warnings
 
-### WR-01: TOCTOU race in `ackSchemaChange` between existence check and update
+### WR-01: `ackSchemaChange` 中存在 Check 和 Update 之间的 TOCTOU 竞争
 
-**File:** `internal/api/schema_handlers.go:41-57`
+**文件：** `internal/api/schema_handlers.go:41-57`
 
-**Issue:** The handler `Get`s the schema_change row, checks `existing.AcknowledgedAt != nil`,
-then issues a separate `UpdateOneID` to set the ack columns. There is no transaction wrapping
-these two operations. Two concurrent governance-role callers can both pass the
-`AcknowledgedAt == nil` check, then both succeed — the second `UpdateOneID` overwrites the
-first ack's `acknowledged_by`/`reason`. D-10 documents this as "ack-once" but the handler
-permits a last-writer-wins race, which violates that invariant.
+**问题：** handler `Get` 了 schema_change 行，检查 `existing.AcknowledgedAt != nil`，然后发出单独的 `UpdateOneID` 来设置 ack 列。这两个操作没有事务包装。两个并发 governance-role 调用者都可能通过 `AcknowledgedAt == nil` 检查，然后都成功 — 第二个 `UpdateOneID` 会覆盖第一个 ack 的 `acknowledged_by`/`reason`。D-10 记录为 "ack-once"，但 handler 允许最后写入者胜出的竞争，违反了该不变量。
 
-**Fix:** Wrap in a transaction with conditional update, or use a SQL-level guarded UPDATE:
+**修复：** 在事务中包装条件更新，或使用 SQL 级别的守卫 UPDATE：
 
 ```go
 // Option A: conditional UPDATE (returns 0 rows on conflict).
@@ -159,23 +45,17 @@ if n == 0 {
 }
 ```
 
-The CLI runSchemaAckBreak in `cmd/platform/schema.go:85-104` has the same TOCTOU pattern and
-should be fixed the same way.
+CLI runSchemaAckBreak 在 `cmd/platform/schema.go:85-104` 中有相同的 TOCTOU 模式，应该以相同方式修复。
 
-### WR-02: `PrincipalFromContext` ok flag dropped — `uuid.Nil` actor on misconfigured route
+### WR-02: `PrincipalFromContext` ok 标志被丢弃 — 错误配置的路由上 `uuid.Nil` actor
 
-**File:** `internal/api/schema_handlers.go:38`
+**文件：** `internal/api/schema_handlers.go:38`
 
-**Issue:** `principal, _ := auth.PrincipalFromContext(r.Context())` discards the `ok` flag.
-The current router wires `auth.Middleware` + `RequireRole("governance")` ahead of this handler,
-so principals are guaranteed in the deployed pipeline. But:
-- A future refactor that drops or reorders middleware will silently start writing
-  `uuid.Nil` into `acknowledged_by`, `event_log.actor_id`, and the event payload's
-  `acknowledged_by` field — a serious audit-trail integrity hole that would not surface in
-  unit tests.
-- D-10 documents that the ack identity is the canonical accountability record.
+**问题：** `principal, _ := auth.PrincipalFromContext(r.Context())` 丢弃了 `ok` 标志。当前路由器在处理程序前接入 `auth.Middleware` + `RequireRole("governance")`，因此在部署的管道中 principal 是有保证的。但：
+- 未来重构如果删除或重新排序中间件，将静默开始写入 `uuid.Nil` 到 `acknowledged_by`、`event_log.actor_id` 和事件 payload 的 `acknowledged_by` 字段 — 这是一个严重的审计跟踪完整性漏洞，不会出现在单元测试中。
+- D-10 记录 ack 身份是规范的问责记录。
 
-**Fix:** Treat missing principal as a programming bug and 401:
+**修复：** 将缺失的 principal 视为编程错误和 401：
 
 ```go
 principal, ok := auth.PrincipalFromContext(r.Context())
@@ -186,25 +66,17 @@ if !ok {
 }
 ```
 
-This matches the `metadata.Handler.patch` pattern in `internal/metadata/handler.go:85-89`.
+这匹配了 `internal/metadata/handler.go:85-89` 中的 `metadata.Handler.patch` 模式。
 
-### WR-03: `CaptureRun` updates `last_seen_*` for *every* active edge into the asset, not just declared upstreams
+### WR-03: `CaptureRun` 为资产的**所有**活跃边更新 `last_seen_*`，而不仅仅是声明的上游
 
-**File:** `internal/lineage/capture.go:184-200`
+**文件：** `internal/lineage/capture.go:184-200`
 
-**Issue:** Step 3's UPDATE only filters by `to_asset = $3 AND superseded_at IS NULL`. It rewrites
-`last_seen_run_id`, `last_seen_at`, and (when `first_seen_run_id = uuid.Nil`) `first_seen_run_id`
-and `first_seen_at` for *all* active edges pointing at the asset, including edges that were
-**not** declared in the current run. If the asset is partway through a partial migration where
-a stale upstream edge has not yet been retired by `SyncStaticEdges`, this step attributes a
-run to an edge the run did not actually consume — corrupting the audit trail and the D-15
-point-in-time view.
+**问题：** 步骤 3 的 UPDATE 仅按 `to_asset = $3 AND superseded_at IS NULL` 过滤。它重写**所有**指向资产的活跃边的 `last_seen_run_id`、`last_seen_at`（以及 `first_seen_run_id = uuid.Nil` 时的 `first_seen_run_id` 和 `first_seen_at`），包括当前运行**未声明**的边。如果资产处于部分迁移过程中，其中陈旧的上游边尚未被 `SyncStaticEdges` 停用，此步骤会将运行归因于运行实际未使用的边 — 污染了审计跟踪和 D-15 时间点视图。
 
-In particular, the `uuid.Nil` sentinel promotion will set `first_seen_run_id` on a stale edge
-on its first observation, which is wrong: the run did not produce that edge.
+特别是，`uuid.Nil` 哨兵提升会在第一次观察时在陈旧边上设置 `first_seen_run_id`，这是错误的：运行没有产生该边。
 
-**Fix:** Restrict the UPDATE to the run's actual contributing set (intersection of declared
-upstreams and observed upstreams, or just declared upstreams):
+**修复：** 将 UPDATE 限制为运行的实际贡献集（声明上游和观察上游的交集，或仅声明上游）：
 
 ```go
 // Only update edges that the run actually attributes to.
@@ -220,31 +92,21 @@ if len(ups) > 0 {
 }
 ```
 
-### WR-04: `lineage.drift_detected` event emission inside run-tx breaks atomicity
+### WR-04: `lineage.drift_detected` 事件在 run-tx 内发出破坏了原子性
 
-**File:** `internal/lineage/capture.go:235-250`
+**文件：** `internal/lineage/capture.go:235-250`
 
-**Issue:** `CaptureRun` runs inside the executor's run-update transaction (`tx *sql.Tx`), but
-`w.events.Append(...)` writes via `event.Writer` which uses a *separate* `*sql.DB` connection
-(see Phase 1 `event.NewWriter(store)` precedent). The code comment acknowledges this: "The
-event.Writer uses its own DB connection (not in our tx)." The implication is that if the
-caller's transaction rolls back after `CaptureRun` succeeds, the `lineage.drift_detected`
-event remains in `event_log` even though `asset_versions.drift_status` was rolled back to
-`'clean'` — a divergence between event log and canonical state.
+**问题：** `CaptureRun` 在执行器的 run-update 事务（`tx *sql.Tx`）内运行，但 `w.events.Append(...)` 通过 `event.Writer` 写入，后者使用*独立*的 `*sql.DB` 连接（参见 Phase 1 `event.NewWriter(store)` 先例）。代码注释承认这一点："The event.Writer uses its own DB connection (not in our tx)." 含义是如果调用者的事务在 `CaptureRun` 成功后回滚，`lineage.drift_detected` 事件仍留在 `event_log` 中，即使 `asset_versions.drift_status` 已回滚到 `'clean'` — 事件日志和规范状态之间的分歧。
 
-This is a pre-existing pattern (Phase 1 uses it for `auth.token_expired`), but D-21 explicitly
-calls for atomicity between state changes and audit events for Phase 4. The Phase 4 capture
-tests are passing only because the transaction commits in the happy path.
+这是一个既有的模式（Phase 1 对 `auth.token_expired` 使用它），但 D-21 明确要求状态变更和审计事件之间的原子性。Phase 4 capture 测试仅在 happy path 中事务提交时通过。
 
-**Fix:** Inject an `event.Writer` variant that accepts `tx *sql.Tx`, or buffer events and
-emit them after `tx.Commit()` from the executor side. The `schema.Capture` writer at
-`internal/schema/capture.go:73-80` has the same pattern — same fix applies.
+**修复：** 注入接受 `tx *sql.Tx` 的 `event.Writer` 变体，或在 `tx.Commit()` 后从执行器侧缓冲事件并发出。`internal/schema/capture.go:73-80` 处的 `schema.Capture` writer 有相同的模式 — 相同的修复适用。
 
-### WR-05: CLI `runImpact` mis-classifies positional args starting with `-`
+### WR-05: CLI `runImpact` 错误分类以 `-` 开头的位置参数
 
-**File:** `cmd/platform/impact.go:29-35`
+**文件：** `cmd/platform/impact.go:29-35`
 
-**Issue:** The argument splitter treats any token starting with `-` as a flag:
+**问题：** 参数拆分器将任何以 `-` 开头的 token 视为 flag：
 
 ```go
 for _, a := range args {
@@ -256,14 +118,9 @@ for _, a := range args {
 }
 ```
 
-An asset name that happens to begin with `-` (e.g. an asset literally named `-foo` or a
-deliberate adversarial name) would be silently shifted into `flagArgs` and rejected by
-`fs.Parse`. The asset name validator on the REST side (`assetNameRE` allows `[a-zA-Z0-9_.-]`,
-which permits leading `-`) is more permissive than this splitter — they disagree.
+如果资产名称恰好以 `-` 开头（例如 literally 名为 `-foo` 的资产或故意的对抗性名称），它会被静默移入 `flagArgs` 并被 `fs.Parse` 拒绝。REST 端的资产名称验证器（`assetNameRE` 允许 `[a-zA-Z0-9_.-]`，允许前导 `-`）比此拆分器更宽松 — 两者不一致。
 
-**Fix:** Stop splitting on the first non-flag token (the standard `--` convention works), or
-require the asset name to be the *first* positional argument and treat everything else as
-flags:
+**修复：** 在第一个非 flag token 处停止拆分（标准 `--` 约定），或要求资产名称是*第一个*位置参数，其余视为 flag：
 
 ```go
 if len(args) == 0 || (len(args[0]) > 0 && args[0][0] == '-') {
@@ -273,27 +130,17 @@ assetName := args[0]
 if err := fs.Parse(args[1:]); err != nil { ... }
 ```
 
-The same splitting pattern is used in the existing `runBackfill`; consider unifying.
+相同的拆分模式用于现有的 `runBackfill`；考虑统一。
 
-### WR-06: `column_edges_active_unique` index does not cover non-NULL `partition_key`
+### WR-06: `column_edges_active_unique` 索引不覆盖非 NULL `partition_key`
 
-**File:** `migrations/20260509120000_phase4_lineage_schema.sql:241-244`
+**文件：** `migrations/20260509120000_phase4_lineage_schema.sql:241-244`
 
-**Issue:** The unique index used as the `ON CONFLICT` target in `CaptureRun`'s column-edge
-upsert has the predicate `WHERE superseded_at IS NULL AND partition_key IS NULL`. Any column
-edge with a non-NULL `partition_key` is **not covered** by this index, so the upsert's
-`ON CONFLICT ON CONSTRAINT column_edges_active_unique` clause will fail with
-`there is no unique or exclusion constraint matching the ON CONFLICT specification` for
-partition-keyed column edges.
+**问题：** 用作 `CaptureRun` 列边 upsert 的 `ON CONFLICT` 目标的唯一索引有谓词 `WHERE superseded_at IS NULL AND partition_key IS NULL`。任何带有非 NULL `partition_key` 的列边**不被**此索引覆盖，因此 upsert 的 `ON CONFLICT ON CONSTRAINT column_edges_active_unique` 子句将失败，错误为 `there is no unique or exclusion constraint matching the ON CONFLICT specification`。
 
-The migration comment acknowledges this: "Partition-aware uniqueness (partition_key IS NOT
-NULL case) is a deferred concern". But the writer at `internal/lineage/capture.go:158-179`
-has no guard preventing partition-keyed edges from being attempted; if the runtime ever sets
-a non-NULL `partition_key` on a `ColumnRef` (the field exists on `ent.ColumnEdge` and on
-`asset.MaterializeResult`), the upsert will hard-fail.
+migration 注释承认这一点："Partition-aware uniqueness (partition_key IS NOT NULL case) is a deferred concern"。但 `internal/lineage/capture.go:158-179` 中的 writer 没有guard 阻止 partition-keyed 边被尝试；如果运行时在 `ColumnRef` 上设置非 NULL `partition_key`（字段存在于 `ent.ColumnEdge` 和 `asset.MaterializeResult`），upsert 将硬失败。
 
-**Fix:** Either (a) add a second partial unique index for `partition_key IS NOT NULL`, or (b)
-have `CaptureRun` reject column edges with non-nil partition keys until that index lands:
+**修复：** (a) 为 `partition_key IS NOT NULL` 添加第二个部分唯一索引，或 (b) 让 `CaptureRun` 拒绝带有非 nil partition key 的列边，直到该索引落地：
 
 ```go
 if len(cl) > 0 && /* any ref has partition_key */ {
@@ -301,42 +148,24 @@ if len(cl) > 0 && /* any ref has partition_key */ {
 }
 ```
 
-### WR-07: `unmarshalSchemaFromMap` round-trip stores schema_data with Go-field-name keys
+### WR-07: `unmarshalSchemaFromMap` 往返以 Go 字段名密钥存储 schema_data
 
-**File:** `internal/connector/schema_types.go:13-37` and `cmd/platform/schema.go:244-254`
+**文件：** `internal/connector/schema_types.go:13-37` 和 `cmd/platform/schema.go:244-254`
 
-**Issue:** `connector.Schema` and `connector.SchemaColumn` have **no JSON struct tags**.
-`schema/capture.go` writes the snapshot via `json.Marshal(connector.Schema)`, producing
-`{"Columns":[...],"PrimaryKey":[...],"Name":"...","Type":"...","Nullable":true,"Default":null,"IsPrimaryKey":false,"Comment":""}`
-with capitalized keys. Reading back via `unmarshalSchemaFromMap` round-trips through the same
-type, so it works *internally*. But:
-- The migration calls `schema_data` "the full Schema JSON snapshot (connector.Schema serialized)"
-  — third-party tooling (Marquez ingestion, dashboards, debugging via `psql`) will see the
-  unconventional CamelCase keys.
-- A future change that adds JSON tags to `connector.Schema` would silently break reading
-  back of historical schema_versions rows.
-- The OpenLineage translator at `internal/lineage/openlineage/translate.go:25-57` defines its
-  *own* shape with snake_case-style JSON tags — consistent with the OL spec — confirming the
-  inconsistency is internal-only.
+**问题：** `connector.Schema` 和 `connector.SchemaColumn` **没有 JSON 结构标签**。`schema/capture.go` 通过 `json.Marshal(connector.Schema)` 写入快照，产生 `{"Columns":[...],"PrimaryKey":[...],"Name":"...","Type":"...","Nullable":true,"Default":null,"IsPrimaryKey":false,"Comment":""}` 带有大写密钥。通过 `unmarshalSchemaFromMap` 往返读取会通过相同类型回传，因此*内部*工作正常。但：
+- migration 调用 `schema_data` "full Schema JSON snapshot (connector.Schema serialized)" — 第三方工具（Marquez 导入、仪表板、通过 `psql` 调试）会看到非传统 CamelCase 密钥。
+- 未来为 `connector.Schema` 添加 JSON 标签的更改会静默破坏历史 schema_versions 行的回读。
+- `internal/lineage/openlineage/translate.go:25-57` 中的 OpenLineage translator 定义了*自己的*带 snake_case 风格 JSON 标签的形状 — 与 OL 规范一致 — 确认不一致是内部问题。
 
-**Fix:** Add JSON tags to `connector.Schema` and `connector.SchemaColumn` matching the
-schema_data documentation, write a migration to convert existing rows (or pin the wire format
-to current Go-name keys via tag aliases), and add a regression test asserting the wire shape.
+**修复：** 为 `connector.Schema` 和 `connector.SchemaColumn` 添加与 schema_data 文档匹配的 JSON 标签，编写迁移以转换现有行（或通过标签别名将线格式固定到当前 Go 名称密钥），并添加回归测试断言线形状。
 
-### WR-08: `runImpact` CLI lacks asset-name validation, REST handler enforces regex
+### WR-08: `runImpact` CLI 缺少资产名称验证，REST handler 执行 regex
 
-**File:** `cmd/platform/impact.go:58` versus `internal/api/lineage_handlers.go:35-39`
+**文件：** `cmd/platform/impact.go:58` vs `internal/api/lineage_handlers.go:35-39`
 
-**Issue:** The HTTP handler validates `asset` against `^[a-zA-Z0-9_.\-]{1,256}$`
-(`assetNameRE`), and the comment says: "Defense-in-depth: sqlc parameterized queries already
-prevent SQL injection, but the regex provides an additional layer of input validation." The
-CLI path does **not** apply the same regex — it passes the raw `assetName` directly into
-`impact.Analyze`. Any user with shell access can bypass the input validation. This is mostly
-defensible (CLI already implies trust), but the asymmetry is surprising and `assetNameRE`
-should be exported and reused by the CLI for consistency.
+**问题：** HTTP handler 根据 `^[a-zA-Z0-9_.\-]{1,256}$`（`assetNameRE`）验证 `asset`，注释说："Defense-in-depth: sqlc parameterized queries already prevent SQL injection, but the regex provides an additional layer of input validation." CLI 路径**不**应用相同的 regex — 它将原始 `assetName` 直接传入 `impact.Analyze`。任何拥有 shell 访问权限的用户都可以绕过输入验证。这在大多数情况下是合理的（CLI 已经意味着信任），但不对称令人惊讶，`assetNameRE` 应该被导出并在 CLI 中重用以保持一致性。
 
-**Fix:** Export `assetNameRE` (e.g. into `internal/lineage/impact` or `internal/asset`) and
-apply it in `runImpact` and `runLineageExport`:
+**修复：** 导出 `assetNameRE`（例如到 `internal/lineage/impact` 或 `internal/asset`）并在 `runImpact` 和 `runLineageExport` 中应用：
 
 ```go
 if !asset.NameRE.MatchString(assetName) {
@@ -346,12 +175,11 @@ if !asset.NameRE.MatchString(assetName) {
 
 ## Info
 
-### IN-01: Test helper `containsAt` reinvents `strings.Contains` poorly
+### IN-01: 测试辅助 `containsAt` 糟糕地重新发明了 `strings.Contains`
 
-**File:** `cmd/platform/impact_test.go:57-67`
+**文件：** `cmd/platform/impact_test.go:57-67`
 
-**Issue:** The test file deliberately avoids importing `strings` and rolls its own
-`contains`/`containsAt`. The implementation has redundant conditions:
+**问题：** 测试文件故意避免导入 `strings` 并滚动自己的 `contains`/`containsAt`。实现有冗余条件：
 
 ```go
 func contains(s, substr string) bool {
@@ -359,13 +187,9 @@ func contains(s, substr string) bool {
 }
 ```
 
-The first check `len(s) >= len(substr)` already covers the empty-`s` case for non-empty
-`substr`; the `s == substr` short-circuit is correct but redundant with `containsAt`.
-For an empty `substr`, `containsAt` loops `i=0..len(s)` checking `s[0:0] == ""` which would
-correctly return true on the first iteration, but the `len(s) > 0` guard would short-circuit
-*incorrectly* for the case `s="" substr=""` (returns false; `strings.Contains("", "")` returns true).
+第一个检查 `len(s) >= len(substr)` 已经覆盖了非空 `substr` 的空 `s` 情况；`s == substr` 短路是正确的但与 `containsAt` 冗余。对于空 `substr`，`containsAt` 循环 `i=0..len(s)` 检查 `s[0:0] == ""`，这会在第一次迭代中正确返回 true，但 `len(s) > 0` guard 会在情况 `s="" substr=""` 上错误地短路（返回 false；`strings.Contains("", "")` 返回 true）。
 
-**Fix:** Just import `strings` — there's no policy reason to avoid it in a test file:
+**修复：** 只需导入 `strings` — 在测试文件中没有政策原因避免它：
 
 ```go
 import "strings"
@@ -373,18 +197,15 @@ import "strings"
 if !strings.Contains(msg, "depth") { ... }
 ```
 
-### IN-02: Empty-arg branches always rejected by integration tests via panic recovery
+### IN-02: 空参数分支通过 panic recovery 被集成测试始终拒绝
 
-**File:** `internal/lineage/impact/analyze_test.go:62-89, 119-134, 138-169, 197-211`
+**文件：** `internal/lineage/impact/analyze_test.go:62-89, 119-134, 138-169, 197-211`
 
-**Issue:** Several tests use `defer recover()` to catch the `nopDB` panic as a *success*
-indicator that validation passed. This pattern is hard to read and fragile:
-- If the DB layer is later updated to return a typed error instead of panicking, the tests
-  would silently start passing without ever verifying validation.
-- `TestAnalyzeValidDirections` accepts both panic and no-error as success — it cannot
-  distinguish a working validator from a missing one.
+**问题：** 多个测试使用 `defer recover()` 来将 `nopDB` panic 作为*成功*指标，即验证通过。这种模式难以阅读且脆弱：
+- 如果 DB 层后来被更新为返回类型化错误而非 panic，测试将静默开始通过而永远不验证验证。
+- `TestAnalyzeValidDirections` 接受 panic 和无错误两种情况作为成功 — 无法区分工作验证器和缺失的验证器。
 
-**Fix:** Use a proper test double that returns a sentinel error, then assert:
+**修复：** 使用返回哨兵错误的适当测试 double，然后断言：
 
 ```go
 type sentinelDB struct{}
@@ -395,17 +216,13 @@ _, err := impact.Analyze(ctx, sentinelDB{}, ...)
 require.ErrorIs(t, err, errSentinel) // proves validation passed
 ```
 
-### IN-03: `runMigrate` doesn't validate `ATLAS_ENV` value
+### IN-03: `runMigrate` 不验证 `ATLAS_ENV` 值
 
-**File:** `cmd/platform/main.go:212-214`
+**文件：** `cmd/platform/main.go:212-214`
 
-**Issue:** `os.Getenv("ATLAS_ENV")` is passed unchecked into `exec.CommandContext("atlas",
-"migrate", "apply", "--env", atlasEnv)`. While `--env <name>` is a single argument and not
-interpolated into a shell, an attacker who controls the env can still trigger Atlas behaviors
-by selecting any env name from atlas.hcl. Defense in depth: validate against an allowlist
-(`local`, `ci`, `prod`) before passing.
+**问题：** `os.Getenv("ATLAS_ENV")` 被未经检查地传入 `exec.CommandContext("atlas", "migrate", "apply", "--env", atlasEnv)`。虽然 `--env <name>` 是单个参数且不会插值到 shell，但控制环境的攻击者仍可通过选择 atlas.hcl 中的任何 env 名称来触发 Atlas 行为。防御深度：在传递前根据允许列表（`local`、`ci`、`prod`）验证。
 
-**Fix:**
+**修复：**
 
 ```go
 var allowed = map[string]struct{}{"local": {}, "ci": {}, "staging": {}, "prod": {}}
@@ -414,65 +231,47 @@ if _, ok := allowed[atlasEnv]; !ok {
 }
 ```
 
-### IN-04: `recursive_cte_seed.go` `SeedDAG` ON CONFLICT clause is incorrect for Postgres index syntax
+### IN-04: `recursive_cte_seed.go` `SeedDAG` ON CONFLICT 子句对 Postgres 索引语法不正确
 
-**File:** `internal/lineage/lineagetest/recursive_cte_seed.go:172-173`
+**文件：** `internal/lineage/lineagetest/recursive_cte_seed.go:172-173`
 
-**Issue:** `ON CONFLICT (from_asset, to_asset) WHERE superseded_at IS NULL DO NOTHING` —
-the `WHERE` clause attached to `ON CONFLICT` is the *index_predicate* (must match a partial
-unique index). The migration creates `asset_edges_active_unique` as a partial unique index
-on `(from_asset, to_asset) WHERE superseded_at IS NULL`, which matches. So the syntax works
-*today*. However, the seeder relies on the existence of that named partial index and would
-silently start failing if the migration is changed to use a different unique constraint
-(e.g. `ON CONFLICT ON CONSTRAINT asset_edges_active_unique`).
+**问题：** `ON CONFLICT (from_asset, to_asset) WHERE superseded_at IS NULL DO NOTHING` — 附加到 `ON CONFLICT` 的 `WHERE` 子句是*index_predicate*（必须匹配部分唯一索引）。migration 创建 `asset_edges_active_unique` 作为 `(from_asset, to_asset) WHERE superseded_at IS NULL` 上的部分唯一索引，是匹配的。因此语法在*今天*工作。但 seeder 依赖该命名部分索引的存在，如果 migration 改为使用不同的唯一约束（例如 `ON CONFLICT ON CONSTRAINT asset_edges_active_unique`），将静默开始失败。
 
-**Fix:** Use the explicit constraint name to align with `lineage.Writer.SyncStaticEdges`
-(`ON CONFLICT ON CONSTRAINT asset_edges_active_unique`) so the seeder breaks loudly on
-constraint rename:
+**修复：** 使用显式约束名称与 `lineage.Writer.SyncStaticEdges` 对齐（`ON CONFLICT ON CONSTRAINT asset_edges_active_unique DO NOTHING`），以便 seeder 在约束重命名时大声中断：
 
 ```go
-const stmt = `INSERT INTO asset_edges (...) VALUES (...) 
+const stmt = `INSERT INTO asset_edges (...) VALUES (...)
               ON CONFLICT ON CONSTRAINT asset_edges_active_unique DO NOTHING`
 ```
 
-### IN-05: `prevPtr any` could shadow nil semantics — minor
+### IN-05: `prevPtr any` 可能隐藏 nil 语义 — 次要
 
-**File:** `internal/schema/writer_diff.go:47-50`
+**文件：** `internal/schema/writer_diff.go:47-50`
 
-**Issue:** The pattern works correctly:
+**问题：** 模式工作正确：
 ```go
 var prevPtr any
 if prevVersionID != nil {
     prevPtr = *prevVersionID
 }
 ```
-A `var x any` not assigned is the nil interface, which `database/sql` correctly translates to
-SQL `NULL`. But future readers may not know this idiom — adding a comment ("nil interface
-maps to SQL NULL via database/sql") or using `sql.NullString`/`uuid.NullUUID` for explicit
-nullability would make the intent clearer.
+未分配的 `var x any` 是 nil 接口，`database/sql` 正确地将其转换为 SQL `NULL`。但未来读者可能不知道这个习惯 — 添加注释（"nil interface 通过 database/sql 映射到 SQL NULL"）或使用 `sql.NullString`/`uuid.NullUUID` 来获得明确的可空性会使意图更清晰。
 
-### IN-06: `ackSchemaChange` test simulates non-governance role but doesn't assert middleware behavior
+### IN-06: `ackSchemaChange` 测试模拟非 governance 角色但不断言中间件行为
 
-**File:** `internal/api/schema_handlers_test.go:146-169`
+**文件：** `internal/api/schema_handlers_test.go:146-169`
 
-**Issue:** `TestAck_RequiresGovernanceRole` notes "Handler itself doesn't enforce role;
-RequireRole middleware does" and only asserts `rec.Code != 0` (no panic). This test
-provides no actual coverage of the role check — it would still pass if the handler accepted
-any role. The router-level enforcement should be tested at the router level (a separate
-test that builds the full chain and asserts a 403).
+**问题：** `TestAck_RequiresGovernanceRole` 注释 "Handler itself doesn't enforce role; RequireRole middleware does" 并且仅断言 `rec.Code != 0`（无 panic）。此测试不提供对角色检查的实际覆盖 — 如果 handler 接受任何角色，它仍会通过。路由器级别的 enforcement 应在路由器级别测试（构建完整链并断言 403 的单独测试）。
 
-**Fix:** Either remove the test (it provides false confidence) or move it to
-`router_test.go` and exercise the actual middleware chain.
+**修复：** 删除测试（它提供假信心）或将其移至 `router_test.go` 并执行实际的中间件链。
 
-### IN-07: `seedSchemaChange` and other test helpers swallow context
+### IN-07: `seedSchemaChange` 和其他测试辅助函数吞掉 context
 
-**File:** `internal/api/schema_handlers_test.go:45-75`, `internal/lineage/openlineage/translate_test.go:23-78`
+**文件：** `internal/api/schema_handlers_test.go:45-75`, `internal/lineage/openlineage/translate_test.go:23-78`
 
-**Issue:** Several test seeders call `context.Background()` instead of `t.Context()`
-(Go 1.22+) or accept a `ctx` arg. If the test times out, the seed query continues to run on
-the test DB. Low impact for unit tests against in-memory SQLite, but worth standardizing.
+**问题：** 多个测试 seeders 调用 `context.Background()` 而非 `t.Context()`（Go 1.22+）或接受 `ctx` 参数。如果测试超时，seed 查询继续在测试 DB 上运行。对内存 SQLite 的单元测试影响低，但值得标准化。
 
-**Fix:** Accept `ctx context.Context` explicitly or use `t.Context()`:
+**修复：** 显式接受 `ctx context.Context` 或使用 `t.Context()`：
 
 ```go
 func seedSchemaChange(t *testing.T, ctx context.Context, deps Deps, ...) uuid.UUID { ... }
@@ -480,6 +279,6 @@ func seedSchemaChange(t *testing.T, ctx context.Context, deps Deps, ...) uuid.UU
 
 ---
 
-_Reviewed: 2026-05-09T13:30:00Z_
-_Reviewer: Claude (gsd-code-reviewer)_
-_Depth: standard_
+_审查时间：2026-05-09T13:30:00Z_
+_审查者：Claude (gsd-code-reviewer)_
+_深度：standard_

@@ -81,37 +81,37 @@ requirements:
   D-06: "HTTP error responses use application/problem+json content type"
 ---
 
-# Phase 01 Plan 05: HTTP API Surface — Summary
+# Phase 01 Plan 05: HTTP API Surface — 总结
 
-## One-liner
+## 一句话总结
 
-JWT auth with bootstrap admin, bcrypt passwords, sha256 invite tokens, chi router, RFC 7807 problem+json errors, prometheus metrics, health/ready endpoints, and a Phase 2 gRPC stub placeholder.
+带引导管理员的 JWT 认证，bcrypt 密码，sha256 邀请令牌，chi 路由器，RFC 7807 problem+json 错误，prometheus 指标，health/ready 端点，以及 Phase 2 gRPC 桩占位符。
 
-## Route Map
+## 路由映射
 
-| Method | Path | Auth | Status Codes | Response Body |
+| 方法 | 路径 | 认证 | 状态码 | 响应体 |
 |--------|------|------|--------------|----------------|
-| POST | /v1/auth/register | None | 201, 400, 409 | `{user_id, role}` |
-| POST | /v1/auth/login | None | 200, 400, 401 | `{access_token, token_type, expires_at, user_id, role}` |
+| POST | /v1/auth/register | 无 | 201, 400, 409 | `{user_id, role}` |
+| POST | /v1/auth/login | 无 | 200, 400, 401 | `{access_token, token_type, expires_at, user_id, role}` |
 | POST | /v1/auth/invites | Bearer (admin) | 201, 400, 401, 403 | `{invite_id, token, expires_at}` |
-| POST | /v1/auth/accept-invite | None | 201, 400, 404, 409, 410 | `{user_id}` |
-| GET | /health | None | 200 | `{status:"ok", version}` |
-| GET | /ready | None | 200, 503 | `{status:"ok"}` or problem+json |
-| GET | /metrics | None | 200 | Prometheus text format |
-| GET/POST | /grpc/data_governance.v1.PlatformService/Ping | None (Phase 1) | 200 | Phase 1 placeholder JSON |
+| POST | /v1/auth/accept-invite | 无 | 201, 400, 404, 409, 410 | `{user_id}` |
+| GET | /health | 无 | 200 | `{status:"ok", version}` |
+| GET | /ready | 无 | 200, 503 | `{status:"ok"}` or problem+json |
+| GET | /metrics | 无 | 200 | Prometheus text format |
+| GET/POST | /grpc/data_governance.v1.PlatformService/Ping | 无 (Phase 1) | 200 | Phase 1 placeholder JSON |
 
-## Middleware Order
+## 中间件顺序
 
-1. `middleware.RequestID` — unique ID per request, propagated to log and context
-2. `middleware.RealIP` — real client IP from X-Forwarded-For / X-Real-IP
-3. `requestLogger` — JSON structured log (method, path, status, duration_ms, request_id, remote_ip); Authorization header redacted
-4. `middleware.Recoverer` — catches panics, returns 500 problem+json
-5. `middleware.Timeout(30s)` — request timeout
-6. Body limit middleware (`http.MaxBytesReader(w, r.Body, 1<<20)`) — 1MB max
+1. `middleware.RequestID` — 每个请求的唯一 ID，传播到日志和上下文
+2. `middleware.RealIP` — 来自 X-Forwarded-For / X-Real-IP 的真实客户端 IP
+3. `requestLogger` — JSON 结构化日志 (method, path, status, duration_ms, request_id, remote_ip)；Authorization 头被编辑
+4. `middleware.Recoverer` — 捕获 panic，返回 500 problem+json
+5. `middleware.Timeout(30s)` — 请求超时
+6. Body limit 中间件 (`http.MaxBytesReader(w, r.Body, 1<<20)`) — 最大 1MB
 
-## Error Code Map
+## 错误码映射
 
-| Auth Error | HTTP Status | problem.title |
+| 认证错误 | HTTP 状态 | problem.title |
 |------------|-------------|---------------|
 | Missing Authorization header | 401 | Unauthorized |
 | Malformed/expired/tampered token | 401 | Unauthorized |
@@ -122,36 +122,36 @@ JWT auth with bootstrap admin, bcrypt passwords, sha256 invite tokens, chi route
 | Invite token not found | 404 | Not Found |
 | Invalid JSON / unknown field | 400 | Bad Request |
 
-## Bootstrap Admin Rule
+## 引导管理员规则
 
-When `User.Query().Count(ctx)` returns zero inside the registration transaction, the new user is assigned `role=admin`. All subsequent registrations get `role=member`.
+当 `User.Query().Count(ctx)` 在注册事务中返回零时，新用户被分配 `role=admin`。所有后续注册获得 `role=member`。
 
-Recovery: If the first admin registration fails mid-transaction (e.g. email sent but response lost), the user can retry with the same email. If the DB is truly empty, the next successful registration becomes admin.
+恢复: 如果第一次管理员注册在事务中途失败 (例如邮件已发送但响应丢失)，用户可以使用相同的电子邮件重试。如果数据库确实为空，下一次成功注册将成为管理员。
 
-## Deviations from Plan
+## 与计划的偏差
 
-None — plan executed exactly as written.
+无 — 计划完全按书面执行。
 
-## Technical Debt
+## 技术债务
 
-### /grpc placeholder (T-05-07)
+### /grpc 占位符 (T-05-07)
 
-The `/grpc` sub-tree is currently served by a net/http stub returning canned JSON. Phase 2 must:
+`/grpc` 子树目前由返回罐头 JSON 的 net/http 桩提供服务。Phase 2 必须:
 
-1. Define `proto/platform/v1/platform.proto` with `PlatformService.Ping`
-2. Run `buf generate` to produce `internal/api/gen/platformv1connect/...`
-3. Replace `internal/api/grpc_stub.go` with `connectrpc.com/connect.NewPlatformServiceHandler`
-4. Add `auth.Middleware` to the `/grpc` sub-router (Phase 1 leaves it unauthenticated per T-05-07)
+1. 定义 `proto/platform/v1/platform.proto`，包含 `PlatformService.Ping`
+2. 运行 `buf generate` 生成 `internal/api/gen/platformv1connect/...`
+3. 用 `connectrpc.com/connect.NewPlatformServiceHandler` 替换 `internal/api/grpc_stub.go`
+4. 将 `auth.Middleware` 添加到 `/grpc` 子路由器 (Phase 1 按 T-05-07 使其未认证)
 
-This is documented in `internal/api/grpc_stub.go` package comment.
+这记录在 `internal/api/grpc_stub.go` 包注释中。
 
-### Plan 04 vs Platform protos
+### Plan 04 vs 平台 proto
 
-Plan 04 generates the connector ABI proto for third-party connectors. It is separate from the platform's own service surface. The platform proto in Phase 2 will live under `proto/platform/v1/` and is independent of the Plan 04 connector proto under `proto/connector/v1/`.
+Plan 04 为第三方连接器生成连接器 ABI proto。它独立于平台的自身服务 surface。Phase 2 中的平台 proto 将位于 `proto/platform/v1/`，独立于 Plan 04 连接器 proto 下的 `proto/connector/v1/`。
 
-## Threat Flags
+## 威胁标志
 
-| Flag | File | Description |
+| 标志 | 文件 | 描述 |
 |------|------|-------------|
-| threat_flag: auth_enumeration | internal/api/auth_handlers.go | Login returns identical 401 for missing email vs wrong password (T-05-01) |
-| threat_flag: unauthenticated_grpc | internal/api/router.go | /grpc sub-router has no auth.Middleware in Phase 1 (T-05-07); Phase 2 must add it |
+| threat_flag: auth_enumeration | internal/api/auth_handlers.go | Login 对缺失邮箱和错误密码返回相同的 401 (T-05-01) |
+| threat_flag: unauthenticated_grpc | internal/api/router.go | /grpc 子路由器在 Phase 1 中没有 auth.Middleware (T-05-07)；Phase 2 必须添加 |

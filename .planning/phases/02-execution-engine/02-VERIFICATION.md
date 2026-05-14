@@ -1,5 +1,5 @@
 ---
-phase: 02-execution-engine
+phase: 2
 verified: 2026-05-08T15:15:00Z
 status: passed
 score: 5/5 must-haves verified
@@ -22,142 +22,142 @@ human_verification_executed:
     executed_at: 2026-05-08T15:13:00Z
 ---
 
-# Phase 2: Execution Engine Verification Report
+# Phase 2 执行引擎验证报告
 
-**Phase Goal:** 数据工程师可在 Go 代码中定义带显式上游依赖的资产，触发物化，平台按依赖顺序执行并支持重试，同时七个一方连接器可靠读写资产
-**Verified:** 2026-05-08T14:00:00Z
-**Status:** passed
-**Re-verification:** Yes — after gap closure (commit 3054983, BigQuery CR-03 fix)
+**Phase 目标：** 数据工程师可在 Go 代码中定义带显式上游依赖的资产，触发物化，平台按依赖顺序执行并支持重试，同时七个一方连接器可靠读写资产
+**验证时间：** 2026-05-08T14:00:00Z
+**状态：** passed
+**重新验证：** 是 — 差距关闭后（commit 3054983，BigQuery CR-03 修复）
 
-## Goal Achievement
+## 目标达成
 
-### Observable Truths
+### 可观察事实
 
-| # | Truth | Status | Evidence |
+| # | 事实 | 状态 | 证据 |
 |---|-------|--------|---------|
-| 1 | 数据工程师可在 Go 中定义带上游依赖的资产，触发物化后所有上游按正确拓扑顺序先行执行 | VERIFIED | `asset.New().Upstream().Connector().Materialize().Register()` chain works. `internal/dag/dag.go` implements BuildDAG + TopologicalOrder via heimdalr/dag. Executor iterates `order` from TopologicalOrder in `internal/runtime/executor.go:117-118`. `TestE2E_TopologicalOrder` in `test/integration/e2e_postgres_test.go:361` verifies users_raw precedes users_clean. All unit tests pass. |
-| 2 | 资产物化失败后按配置的最大次数以指数退避重试，重试次数和时间戳在事件日志中可见 | VERIFIED | `internal/retry/policy.go` implements exponential backoff with jitter. `internal/runtime/executor.go` calls `scheduleRetry` which writes `EventTypeRunStepRetryScheduled` with `ScheduledAt time.Time` and `Attempt int` BEFORE the delay sleep. `TestExecutor_RetryAndFail` in `internal/runtime/executor_test.go:258-316` asserts the exact event sequence: `run.step.failed, run.step.retry_scheduled, run.step.started, run.step.failed, run.failed`. Event writer stores payload as JSON including timestamps. NOTE: CR-01 (transition errors discarded with `_ =`) means if the DB update for state→failed fails, the run row may stay in `running` state — but the retry_scheduled events and attempt count are still written to event_log correctly, and the test verifies this behavior passes. The retry visibility requirement (criterion 2) is met in the happy path. |
-| 3 | 50 个并发 goroutine 同时争抢同一个排队运行，结果只有一个执行 | VERIFIED | `internal/run/claim.go:41` implements ClaimNext using `SELECT ... FOR UPDATE SKIP LOCKED LIMIT 1` followed by `UPDATE ... WHERE id=$3 AND state='queued'`. **Test executed 2026-05-08:** `TestClaimAtomicity50Goroutines` PASSED in 0.04s against live PostgreSQL 16 — exactly 1 winner, 49 ErrNoQueuedRun, last_heartbeat non-NULL within 5 seconds. |
-| 4 | 通过 CLI 命令可按需触发资产物化，使用 PostgreSQL 连接器针对本地数据库完整运行成功 | VERIFIED | `cmd/platform/materialize.go` implements `runMaterialize`. `cmd/platform/main.go:51-53` dispatches `materialize` subcommand. PostgreSQL connector implements all methods. **e2e suite executed 2026-05-08:** all 5 e2e tests PASSED in 6.69s against testcontainers PostgreSQL — TestE2E_PostgresMaterialize, TestE2E_PostgresMaterialize_Failure (verifies retry sequence), TestE2E_TopologicalOrder, TestE2E_StaleRunReaperRecovery, TestE2E_DetachMode. |
-| 5 | 七个一方连接器（PostgreSQL、MySQL、BigQuery、Snowflake、S3、GCS、HDFS）在集成测试中均可无错误读写资产 | VERIFIED | **Gap closed.** BigQuery Read() now correctly falls back to `b.project` for 2-part identifiers. Commit 3054983: `internal/connector/firstparty/bigquery/bigquery.go` lines 112-114 add `if project == "" { project = b.project }` after splitIdentifier and before the SQL format string. New test `bigquery_internal_test.go` covers splitIdentifier for 3-part, 2-part, empty, 1-part, and 4-part cases, and `TestRead_FallsBackToConfiguredProject` documents the contract by direct struct inspection. 6 of 7 connectors had conformance tests passing previously; BigQuery emulator test (3-part identifiers) + new unit test (2-part fallback contract) now cover the BigQuery connector. Snowflake mock-only testing remains intentional per plan design (real-creds gated by `//go:build snowflake_real_creds`). |
+| 1 | 数据工程师可在 Go 中定义带上游依赖的资产，触发物化后所有上游按正确拓扑顺序先行执行 | VERIFIED | `asset.New().Upstream().Connector().Materialize().Register()` 链正常工作。`internal/dag/dag.go` 通过 heimdalr/dag 实现 BuildDAG + TopologicalOrder。Executor 在 `internal/runtime/executor.go:117-118` 遍历 `order` 中的 TopologicalOrder。`test/integration/e2e_postgres_test.go:361` 中的 `TestE2E_TopologicalOrder` 验证 users_raw 先于 users_clean。所有单元测试通过。 |
+| 2 | 资产物化失败后按配置的最大次数以指数退避重试，重试次数和时间戳在事件日志中可见 | VERIFIED | `internal/retry/policy.go` 实现带 jitter 的指数退避。`internal/runtime/executor.go` 调用 `scheduleRetry`，在延迟 sleep 之前写入 `EventTypeRunStepRetryScheduled`，包含 `ScheduledAt time.Time` 和 `Attempt int`。`internal/runtime/executor_test.go:258-316` 中的 `TestExecutor_RetryAndFail` 断言精确的事件序列：`run.step.failed, run.step.retry_scheduled, run.step.started, run.step.failed, run.failed`。事件写入器将 payload 存储为 JSON（包含时间戳）。注意：CR-01（转换错误被 `_ =` 丢弃）意味着如果 state→failed 的 DB 更新失败，运行行可能停留在 `running` 状态——但 retry_scheduled 事件和尝试次数仍正确写入 event_log，测试验证此行为通过。快乐路径满足重试可见性要求（标准 2）。 |
+| 3 | 50 个并发 goroutine 同时争抢同一个排队运行，结果只有一个执行 | VERIFIED | `internal/run/claim.go:41` 使用 `SELECT ... FOR UPDATE SKIP LOCKED LIMIT 1` 后跟 `UPDATE ... WHERE id=$3 AND state='queued'` 实现 ClaimNext。**测试执行于 2026-05-08：** `TestClaimAtomicity50Goroutines` 在 live PostgreSQL 16 上 0.04s 内通过——恰好 1 个赢家，49 个 ErrNoQueuedRun，last_heartbeat 在 5 秒内非 NULL。 |
+| 4 | 通过 CLI 命令可按需触发资产物化，使用 PostgreSQL 连接器针对本地数据库完整运行成功 | VERIFIED | `cmd/platform/materialize.go` 实现 `runMaterialize`。`cmd/platform/main.go:51-53` 分发 `materialize` 子命令。PostgreSQL 连接器实现所有方法。**e2e 测试套件执行于 2026-05-08：** 在 testcontainers PostgreSQL 上 5 个 e2e 测试 6.69s 内全部通过——TestE2E_PostgresMaterialize、TestE2E_PostgresMaterialize_Failure（验证重试序列）、TestE2E_TopologicalOrder、TestE2E_StaleRunReaperRecovery、TestE2E_DetachMode。 |
+| 5 | 七个一方连接器（PostgreSQL、MySQL、BigQuery、Snowflake、S3、GCS、HDFS）在集成测试中均可无错误读写资产 | VERIFIED | **差距已关闭。** BigQuery Read() 现在对 2-part 标识符正确回退到 `b.project`。Commit 3054983：`internal/connector/firstparty/bigquery/bigquery.go` 第 112-114 行在 splitIdentifier 后、SQL 格式化字符串前添加 `if project == "" { project = b.project }`。新测试 `bigquery_internal_test.go` 覆盖 splitIdentifier 的 3-part、2-part、empty、1-part、4-part 情况，`TestRead_FallsBackToConfiguredProject` 通过直接结构体检查记录契约。之前 6 个连接器中的conformances 测试已通过；BigQuery emulator 测试（3-part 标识符）+ 新单元测试（2-part 回退契约）现在覆盖 BigQuery 连接器。Snowflake 仅 mock 测试仍按计划设计（真实凭证由 `//go:build snowflake_real_creds` 限制）。 |
 
-**Score:** 5/5 truths verified
+**得分：** 5/5 事实验证
 
-### Required Artifacts
+### 必需产物
 
-| Artifact | Expected | Status | Details |
+| 产物 | 期望 | 状态 | 详情 |
 |----------|----------|--------|---------|
-| `internal/asset/asset.go` | Asset value type + DefinitionRegistry interface | VERIFIED | Contains `type Asset struct`, all accessor methods, MaterializeFunc, MaterializeResult, Resource |
-| `internal/asset/builder.go` | Builder DSL with Build()/Register() | VERIFIED | `func New(`, all chain methods, `func (b *Builder) Build() (*Asset, error)`, `func (b *Builder) Register() error` |
-| `internal/asset/registry.go` | Process-global DefinitionRegistry | VERIFIED | `type DefinitionRegistry`, `var ErrAlreadyRegistered`, `func Default() *DefinitionRegistry` |
-| `internal/asset/io.go` | AssetIO interface | VERIFIED | `type AssetIO interface`, `Read(ctx, upstream)`, `Write(ctx, rows)`, ConnectorResolver interface |
-| `internal/asset/retry.go` | RetryPolicy struct | VERIFIED | `type RetryPolicy struct`, `func (r RetryPolicy) IsZero() bool`, `func DefaultRetryPolicy()` |
-| `internal/run/claim.go` | ClaimNext with SKIP LOCKED | VERIFIED | `FOR UPDATE SKIP LOCKED`, `ORDER BY queued_at`, `last_heartbeat = $2` in same UPDATE, `func Heartbeat` |
-| `internal/run/lifecycle.go` | State machine + Transition | VERIFIED | `type State string`, `legalTransitions`, `resetTransitions`, `func TransitionForReset`, `func IsTerminal` |
-| `internal/run/claim_test.go` | TestClaimAtomicity50Goroutines | VERIFIED | `func TestClaimAtomicity50Goroutines` exists at line 79 with sync.WaitGroup and atomic counters |
-| `internal/dag/dag.go` | BuildDAG + TopologicalOrder | VERIFIED | `func BuildDAG([]*asset.Asset) (*Graph, error)`, `func (g *Graph) TopologicalOrder()`, imports heimdalr/dag |
-| `migrations/20260507120000_phase2_run_tables.sql` | runs + run_steps tables with CHECK | VERIFIED | `CHECK (state IN ('queued','starting','running','succeeded','failed','canceled'))`, last_heartbeat column, ownership grants |
-| `internal/concurrency/pool.go` | Pool.Acquire/Release | VERIFIED | `func (p *Pool) Acquire`, `func (p *Pool) Release`, `func (p *Pool) ReleaseAll`, `func (p *Pool) ReleaseStale`, single concurrency_tokens table |
-| `internal/retry/policy.go` | Exponential backoff + jitter | VERIFIED | `func Schedule(attempt int, policy asset.RetryPolicy) time.Duration`, `func ShouldRetry`, uses `math/rand/v2` |
-| `internal/connector/config/config.go` | yaml loader with env-var interpolation | VERIFIED | `var ErrMissingEnvVar`, `regexp.MustCompile(\`\$\{([A-Z_][A-Z0-9_]*)\}\`)`, `func Load`, `func LoadFile` |
-| `internal/runtime/executor.go` | End-to-end executor + heartbeat | VERIFIED | `func (e *Executor) Run`, `func safeMaterialize`, `func (e *Executor) Resolve`, heartbeatLoop goroutine with WaitGroup, `HeartbeatInterval time.Duration`, `run.Heartbeat` called inside heartbeatLoop |
-| `internal/connector/firstparty/postgres/postgres.go` | PostgreSQL connector | VERIFIED | `var _ connector.Connector = (*Postgres)(nil)`, all 6 methods present (APIVersion/Ping/Schema/Read/Write/Close) |
-| `internal/connector/firstparty/mysql/mysql.go` | MySQL connector | VERIFIED | `var _ connector.Connector = (*MySQL)(nil)`, all 6 methods present |
-| `internal/connector/firstparty/bigquery/bigquery.go` | BigQuery connector | VERIFIED | `var _ connector.Connector = (*BigQuery)(nil)`, all 6 methods present. CR-03 fixed: Read() lines 112-114 add `if project == "" { project = b.project }` fallback. Doc comment updated to state 2-part identifier support. |
-| `internal/connector/firstparty/bigquery/bigquery_internal_test.go` | splitIdentifier unit tests + Read fallback contract | VERIFIED | `TestSplitIdentifier` covers 5 cases (3-part, 2-part returns empty project, empty error, 1-part error, 4-part error). `TestRead_FallsBackToConfiguredProject` asserts b.project is retained on struct. |
-| `internal/connector/firstparty/snowflake/snowflake.go` | Snowflake connector | VERIFIED (mock-only) | `var _ connector.Connector = (*Snowflake)(nil)`, all 6 methods, real-creds test gated by `//go:build snowflake_real_creds` (intentional per plan design) |
-| `internal/connector/firstparty/s3/s3.go` | S3 connector | VERIFIED | `var _ connector.Connector = (*S3)(nil)`, all 6 methods, parquet/csv/json format support |
-| `internal/connector/firstparty/gcs/gcs.go` | GCS connector | VERIFIED | `var _ connector.Connector = (*GCS)(nil)`, all 6 methods, parquet/csv/json format support |
-| `internal/connector/firstparty/hdfs/hdfs.go` | HDFS connector | VERIFIED | `var _ connector.Connector = (*HDFS)(nil)`, all 6 methods, skips when HDFS_TEST_NAMENODE unset |
-| `internal/connector/firstparty/conformance/conformance.go` | Shared conformance suite | VERIFIED | `func RunConformance(t *testing.T, c connector.Connector, setup Setup)`, exercises Ping/Schema/WriteThenRead/CtxCancel |
-| `cmd/platform/factories.go` | All 7 connectors registered | VERIFIED | 7 `RegisterFactory` calls confirmed: postgres, mysql, snowflake, s3, gcs, hdfs, bigquery |
+| `internal/asset/asset.go` | Asset 值类型 + DefinitionRegistry 接口 | VERIFIED | 包含 `type Asset struct`、所有访问器方法、MaterializeFunc、MaterializeResult、Resource |
+| `internal/asset/builder.go` | 带 Build()/Register() 的 Builder DSL | VERIFIED | `func New(`、所有链式方法、`func (b *Builder) Build() (*Asset, error)`、`func (b *Builder) Register() error` |
+| `internal/asset/registry.go` | 进程级 DefinitionRegistry | VERIFIED | `type DefinitionRegistry`、`var ErrAlreadyRegistered`、`func Default() *DefinitionRegistry` |
+| `internal/asset/io.go` | AssetIO 接口 | VERIFIED | `type AssetIO interface`、`Read(ctx, upstream)`、`Write(ctx, rows)`、ConnectorResolver 接口 |
+| `internal/asset/retry.go` | RetryPolicy 结构体 | VERIFIED | `type RetryPolicy struct`、`func (r RetryPolicy) IsZero() bool`、`func DefaultRetryPolicy()` |
+| `internal/run/claim.go` | 带 SKIP LOCKED 的 ClaimNext | VERIFIED | `FOR UPDATE SKIP LOCKED`、`ORDER BY queued_at`、`last_heartbeat = $2` 在同一 UPDATE 中、`func Heartbeat` |
+| `internal/run/lifecycle.go` | 状态机 + Transition | VERIFIED | `type State string`、`legalTransitions`、`resetTransitions`、`func TransitionForReset`、`func IsTerminal` |
+| `internal/run/claim_test.go` | TestClaimAtomicity50Goroutines | VERIFIED | `func TestClaimAtomicity50Goroutines` 在第 79 行，使用 sync.WaitGroup 和原子计数器 |
+| `internal/dag/dag.go` | BuildDAG + TopologicalOrder | VERIFIED | `func BuildDAG([]*asset.Asset) (*Graph, error)`、`func (g *Graph) TopologicalOrder()`、导入 heimdalr/dag |
+| `migrations/20260507120000_phase2_run_tables.sql` | 带 CHECK 的 runs + run_steps 表 | VERIFIED | `CHECK (state IN ('queued','starting','running','succeeded','failed','canceled'))`、last_heartbeat 列、所有权授予 |
+| `internal/concurrency/pool.go` | Pool.Acquire/Release | VERIFIED | `func (p *Pool) Acquire`、`func (p *Pool) Release`、`func (p *Pool) ReleaseAll`、`func (p *Pool) ReleaseStale`、单个 concurrency_tokens 表 |
+| `internal/retry/policy.go` | 指数退避 + jitter | VERIFIED | `func Schedule(attempt int, policy asset.RetryPolicy) time.Duration`、`func ShouldRetry`、使用 `math/rand/v2` |
+| `internal/connector/config/config.go` | 带环境变量插值的 yaml 加载器 | VERIFIED | `var ErrMissingEnvVar`、`regexp.MustCompile(\`\$\{([A-Z_][A-Z0-9_]*)\}\`)`、`func Load`、`func LoadFile` |
+| `internal/runtime/executor.go` | 端到端 executor + heartbeat | VERIFIED | `func (e *Executor) Run`、`func safeMaterialize`、`func (e *Executor) Resolve`、带 WaitGroup 的 heartbeatLoop goroutine、`HeartbeatInterval time.Duration`、`run.Heartbeat` 在 heartbeatLoop 内调用 |
+| `internal/connector/firstparty/postgres/postgres.go` | PostgreSQL 连接器 | VERIFIED | `var _ connector.Connector = (*Postgres)(nil)`、所有 6 个方法存在（APIVersion/Ping/Schema/Read/Write/Close） |
+| `internal/connector/firstparty/mysql/mysql.go` | MySQL 连接器 | VERIFIED | `var _ connector.Connector = (*MySQL)(nil)`、所有 6 个方法存在 |
+| `internal/connector/firstparty/bigquery/bigquery.go` | BigQuery 连接器 | VERIFIED | `var _ connector.Connector = (*BigQuery)(nil)`、所有 6 个方法存在。CR-03 已修复：Read() 第 112-114 行添加 `if project == "" { project = b.project }` 回退。文档注释更新说明支持 2-part 标识符。 |
+| `internal/connector/firstparty/bigquery/bigquery_internal_test.go` | splitIdentifier 单元测试 + Read 回退契约 | VERIFIED | `TestSplitIdentifier` 覆盖 5 种情况（3-part、2-part 返回空 project、empty 错误、1-part 错误、4-part 错误）。`TestRead_FallsBackToConfiguredProject` 断言 b.project 在结构体上保留。 |
+| `internal/connector/firstparty/snowflake/snowflake.go` | Snowflake 连接器 | VERIFIED（仅 mock） | `var _ connector.Connector = (*Snowflake)(nil)`、所有 6 个方法、真实凭证测试由 `//go:build snowflake_real_creds` 限制（按计划设计） |
+| `internal/connector/firstparty/s3/s3.go` | S3 连接器 | VERIFIED | `var _ connector.Connector = (*S3)(nil)`、所有 6 个方法、支持 parquet/csv/json 格式 |
+| `internal/connector/firstparty/gcs/gcs.go` | GCS 连接器 | VERIFIED | `var _ connector.Connector = (*GCS)(nil)`、所有 6 个方法、支持 parquet/csv/json 格式 |
+| `internal/connector/firstparty/hdfs/hdfs.go` | HDFS 连接器 | VERIFIED | `var _ connector.Connector = (*HDFS)(nil)`、所有 6 个方法、当 HDFS_TEST_NAMENODE 未设置时跳过 |
+| `internal/connector/firstparty/conformance/conformance.go` | 共享 conformance 套件 | VERIFIED | `func RunConformance(t *testing.T, c connector.Connector, setup Setup)`、执行 Ping/Schema/WriteThenRead/CtxCancel |
+| `cmd/platform/factories.go` | 所有 7 个连接器已注册 | VERIFIED | 确认 7 个 `RegisterFactory` 调用：postgres、mysql、snowflake、s3、gcs、hdfs、bigquery |
 
-### Key Link Verification
+### 关键链接验证
 
-| From | To | Via | Status | Details |
-|------|----|-----|--------|---------|
-| `asset.New().Register()` | `asset.DefinitionRegistry` | `Default().Register(a)` | WIRED | Builder.Register() calls Build() then Default().Register(a) |
-| `internal/runtime.Executor.Run` | `internal/dag.BuildDAG` | `buildSubgraph` → `dag.BuildDAG` | WIRED | executor.go:336 calls dag.BuildDAG |
-| `internal/runtime.Executor.Run` | `internal/concurrency.Pool.Acquire` | pool.Acquire per step + resource | WIRED | executor.go calls `e.deps.Pool.Acquire` and `Release` |
-| `internal/runtime.Executor` | `internal/retry.Schedule` | `scheduleRetry` function | WIRED | executor.go:272 calls `retry.Schedule(attempt, policy)` |
-| `internal/runtime.Executor.Run` | `internal/run.Heartbeat` | `heartbeatLoop` goroutine | WIRED | heartbeatLoop at executor.go:148 calls `run.Heartbeat` |
-| `MaterializeFunc panic` | `run.step.failed event` | `safeMaterialize` defer/recover | WIRED | executor.go:261-264: recover() in deferred func inside safeMaterialize |
-| `internal/run.ClaimNext` | PostgreSQL runs table | `SELECT ... FOR UPDATE SKIP LOCKED` | WIRED | claim.go:54: literal `FOR UPDATE SKIP LOCKED` present |
-| `cmd/platform/factories.go` | each firstparty connector | `RegisterFactory` calls | WIRED | All 7 connector types registered |
-| `internal/connector/config.Load` | `connector.Registry.RegisterInProcess` | `FactoryRegistry.BuildAll` | WIRED | resolver.go BuildAll iterates cfg.Connectors and calls RegisterInProcess |
-| `each *_test.go` | `conformance.RunConformance` | shared harness | WIRED | mysql, s3, gcs, hdfs, bigquery_emulator all call RunConformance |
-| `BigQuery.Read()` | `b.project` fallback | `if project == "" { project = b.project }` | WIRED | bigquery.go:112-114 — 2-part identifier now falls back to connector's configured project |
+| 从 | 到 | 经由 | 状态 | 详情 |
+|------|----|-----|--------|-------|
+| `asset.New().Register()` | `asset.DefinitionRegistry` | `Default().Register(a)` | WIRED | Builder.Register() 调用 Build() 然后 Default().Register(a) |
+| `internal/runtime.Executor.Run` | `internal/dag.BuildDAG` | `buildSubgraph` → `dag.BuildDAG` | WIRED | executor.go:336 调用 dag.BuildDAG |
+| `internal/runtime.Executor.Run` | `internal/concurrency.Pool.Acquire` | 每步 + 资源的 pool.Acquire | WIRED | executor.go 调用 `e.deps.Pool.Acquire` 和 `Release` |
+| `internal/runtime.Executor` | `internal/retry.Schedule` | `scheduleRetry` 函数 | WIRED | executor.go:272 调用 `retry.Schedule(attempt, policy)` |
+| `internal/runtime.Executor.Run` | `internal/run.Heartbeat` | `heartbeatLoop` goroutine | WIRED | heartbeatLoop 在 executor.go:148 调用 `run.Heartbeat` |
+| `MaterializeFunc panic` | `run.step.failed event` | `safeMaterialize` defer/recover | WIRED | executor.go:261-264: defer/recover 在 safeMaterialize 内部调用 |
+| `internal/run.ClaimNext` | PostgreSQL runs 表 | `SELECT ... FOR UPDATE SKIP LOCKED` | WIRED | claim.go:54：字面量 `FOR UPDATE SKIP LOCKED` 存在 |
+| `cmd/platform/factories.go` | 每个 firstparty 连接器 | `RegisterFactory` 调用 | WIRED | 所有 7 个连接器类型已注册 |
+| `internal/connector/config.Load` | `connector.Registry.RegisterInProcess` | `FactoryRegistry.BuildAll` | WIRED | resolver.go BuildAll 遍历 cfg.Connectors 并调用 RegisterInProcess |
+| `each *_test.go` | `conformance.RunConformance` | 共享测试工具 | WIRED | mysql、s3、gcs、hdfs、bigquery_emulator 都调用 RunConformance |
+| `BigQuery.Read()` | `b.project` 回退 | `if project == "" { project = b.project }` | WIRED | bigquery.go:112-114 — 2-part 标识符现在回退到连接器配置的项目 |
 
-### Data-Flow Trace (Level 4)
+### 数据流追踪（Level 4）
 
-| Artifact | Data Variable | Source | Produces Real Data | Status |
+| 产物 | 数据变量 | 来源 | 生成真实数据 | 状态 |
 |----------|--------------|--------|--------------------|--------|
-| `internal/runtime/executor.go` Executor.Run | `result` from MaterializeFunc | user-supplied Materialize function via AssetIO | Yes — reads from connector, writes via connector | FLOWING |
-| `internal/run/claim.go` ClaimNext | `id, assetName` | `SELECT FROM runs WHERE state='queued' FOR UPDATE SKIP LOCKED` | Yes — real DB rows | FLOWING |
-| `internal/concurrency/pool.go` Pool.Acquire | `used` | `SELECT SUM(weight) FROM concurrency_tokens WHERE resource_tag=$1 FOR UPDATE` (via pg_advisory_xact_lock) | Yes — real DB aggregate | FLOWING |
-| `internal/event/writer.go` Append | `payload` | JSON marshal of typed payload structs | Yes — real run/step data | FLOWING |
-| `internal/connector/firstparty/bigquery/bigquery.go` Read() | `project` | `splitIdentifier` then `b.project` fallback | Yes — uses connector's configured project when identifier is 2-part | FLOWING |
+| `internal/runtime/executor.go` Executor.Run | `result` from MaterializeFunc | 用户通过 AssetIO 提供的 Materialize 函数 | 是 — 通过连接器读取，通过连接器写入 | FLOWING |
+| `internal/run/claim.go` ClaimNext | `id, assetName` | `SELECT FROM runs WHERE state='queued' FOR UPDATE SKIP LOCKED` | 是 — 真实 DB 行 | FLOWING |
+| `internal/concurrency/pool.go` Pool.Acquire | `used` | `SELECT SUM(weight) FROM concurrency_tokens WHERE resource_tag=$1 FOR UPDATE`（通过 pg_advisory_xact_lock） | 是 — 真实 DB 聚合 | FLOWING |
+| `internal/event/writer.go` Append | `payload` | 类型化 payload 结构体的 JSON marshal | 是 — 真实 run/step 数据 | FLOWING |
+| `internal/connector/firstparty/bigquery/bigquery.go` Read() | `project` | `splitIdentifier` 然后 `b.project` 回退 | 是 — 当标识符为 2-part 时使用连接器配置的项目 | FLOWING |
 
-### Behavioral Spot-Checks
+### 行为抽查
 
-| Behavior | Command | Result | Status |
+| 行为 | 命令 | 结果 | 状态 |
 |----------|---------|--------|--------|
-| All unit tests pass | `go test -short ./internal/...` | All 20+ packages pass, 0 failures | PASS |
-| go vet passes | `go vet ./internal/... ./cmd/...` | No output (exit 0) | PASS |
-| go build passes | `go build ./...` | No output (exit 0) | PASS |
-| 7 connectors registered in factories.go | `grep -c "RegisterFactory(" cmd/platform/factories.go` | 7 | PASS |
-| BigQuery Read 2-part identifier fallback | Code inspection of bigquery.go lines 112-114 | `if project == "" { project = b.project }` present immediately after splitIdentifier, before SQL format string | PASS |
-| TestSplitIdentifier covers 2-part case | `bigquery_internal_test.go` inspection | `{"two_parts_uses_default_project", "ds.tbl", "", "ds", "tbl", false}` — confirms splitIdentifier returns empty project; Read() then applies fallback | PASS |
+| 所有单元测试通过 | `go test -short ./internal/...` | 所有 20+ 包通过，0 失败 | PASS |
+| go vet 通过 | `go vet ./internal/... ./cmd/...` | 无输出（退出 0） | PASS |
+| go build 通过 | `go build ./...` | 无输出（退出 0） | PASS |
+| factories.go 中已注册 7 个连接器 | `grep -c "RegisterFactory(" cmd/platform/factories.go` | 7 | PASS |
+| BigQuery Read 2-part 标识符回退 | bigquery.go 第 112-114 行代码检查 | `if project == "" { project = b.project }` 在 splitIdentifier 之后、SQL 格式化字符串之前存在 | PASS |
+| TestSplitIdentifier 覆盖 2-part 情况 | `bigquery_internal_test.go` 检查 | `{"two_parts_uses_default_project", "ds.tbl", "", "ds", "tbl", false}` — 确认 splitIdentifier 对 2-part ID 返回空 project；Read() 然后应用回退 | PASS |
 | TestClaimAtomicity50Goroutines | `DATABASE_URL=postgres://platform:platform@localhost:5432/platform?sslmode=disable go test -run TestClaimAtomicity50Goroutines ./internal/run/...` | PASS (0.04s) | PASS |
-| Phase 2 e2e integration suite | `go test ./test/integration/...` | PASS (6.69s) — all 5 tests: TestE2E_PostgresMaterialize, TestE2E_PostgresMaterialize_Failure, TestE2E_TopologicalOrder, TestE2E_StaleRunReaperRecovery, TestE2E_DetachMode | PASS |
+| Phase 2 e2e 集成测试套件 | `go test ./test/integration/...` | PASS (6.69s) — 所有 5 个测试：TestE2E_PostgresMaterialize、TestE2E_PostgresMaterialize_Failure、TestE2E_TopologicalOrder、TestE2E_StaleRunReaperRecovery、TestE2E_DetachMode | PASS |
 
-### Requirements Coverage
+### 需求覆盖
 
-| Requirement | Source Plan | Description | Status | Evidence |
-|-------------|-------------|-------------|--------|---------|
-| ORCH-01 | 02-01-PLAN | 数据工程师可在 Go 代码中定义数据资产，并显式列出上游资产依赖 | SATISFIED | `asset.New().Upstream().Connector().Materialize().Register()` fully implemented; tests pass |
-| ORCH-02 | 02-01-PLAN | 数据工程师可在资产上实现 Materialize 函数，平台调用该函数生产资产 | SATISFIED | MaterializeFunc type, AssetIO interface, executor invokes MaterializeFn via safeMaterialize |
-| ORCH-03 | 02-02-PLAN | 平台解析完整资产依赖 DAG 并按拓扑顺序执行资产 | SATISFIED | heimdalr/dag BuildDAG + TopologicalOrder implemented; executor iterates order; TopologicalOrder e2e test |
-| ORCH-04 | 02-03-PLAN | 平台在资产物化失败时按可配置的退避策略重试 | SATISFIED | retry.Schedule + retry.ShouldRetry; executor retry loop; retry_scheduled event written |
-| ORCH-09 | 02-03-PLAN | 平台通过统一 token 池执行并发限制 | SATISFIED | Single concurrency_tokens table; Pool.Acquire/Release; resource isolation by tag |
-| ORCH-10 | 02-04-PLAN | 数据工程师可通过 CLI 或 UI 按需触发资产物化 | SATISFIED | `cmd/platform/materialize.go` runMaterialize; `./platform materialize <asset>` wired in main.go |
-| CONN-01 | 02-04-PLAN | 平台提供 PostgreSQL 连接器 | SATISFIED | postgres.go all methods; testcontainers integration tests pass |
-| CONN-02 | 02-05-PLAN | 平台提供 MySQL 连接器 | SATISFIED | mysql.go all methods; testcontainers MySQL conformance passes |
-| CONN-03 | 02-05-PLAN | 平台提供 BigQuery 连接器 | SATISFIED | bigquery.go all methods; CR-03 fixed in commit 3054983 — Read() falls back to b.project for 2-part identifiers; emulator test covers 3-part identifiers; new internal test covers 2-part fallback contract |
-| CONN-04 | 02-05-PLAN | 平台提供 Snowflake 连接器 | NEEDS HUMAN | snowflake.go all methods; mock-only default tests pass; real-creds conformance is intentionally gated by `//go:build snowflake_real_creds` (accepted design per plan) |
-| CONN-05 | 02-05-PLAN | 平台提供 S3 连接器（Parquet/CSV/JSON） | SATISFIED | s3.go all methods; localstack conformance tests pass (parquet/csv/json) |
-| CONN-06 | 02-05-PLAN | 平台提供 GCS 连接器（Parquet/CSV/JSON） | SATISFIED | gcs.go all methods; fake-gcs-server conformance tests pass (parquet/csv/json) |
-| CONN-07 | 02-05-PLAN | 平台提供 HDFS 连接器 | SATISFIED (env-gated) | hdfs.go all methods; test skips when HDFS_TEST_NAMENODE unset (documented pattern) |
+| 需求 | 来源计划 | 描述 | 状态 | 证据 |
+|-------------|-------------|-------------|--------|--------|
+| ORCH-01 | 02-01-PLAN | 数据工程师可在 Go 代码中定义数据资产，并显式列出上游资产依赖 | SATISFIED | `asset.New().Upstream().Connector().Materialize().Register()` 完全实现；测试通过 |
+| ORCH-02 | 02-01-PLAN | 数据工程师可在资产上实现 Materialize 函数，平台调用该函数生产资产 | SATISFIED | MaterializeFunc 类型、AssetIO 接口、executor 通过 safeMaterialize 调用 MaterializeFn |
+| ORCH-03 | 02-02-PLAN | 平台解析完整资产依赖 DAG 并按拓扑顺序执行资产 | SATISFIED | heimdalr/dag BuildDAG + TopologicalOrder 已实现；executor 遍历 order；TopologicalOrder e2e 测试 |
+| ORCH-04 | 02-03-PLAN | 平台在资产物化失败时按可配置的退避策略重试 | SATISFIED | retry.Schedule + retry.ShouldRetry；executor 重试循环；retry_scheduled 事件已写入 |
+| ORCH-09 | 02-03-PLAN | 平台通过统一 token 池执行并发限制 | SATISFIED | 单一 concurrency_tokens 表；Pool.Acquire/Release；通过 tag 进行资源隔离 |
+| ORCH-10 | 02-04-PLAN | 数据工程师可通过 CLI 或 UI 按需触发资产物化 | SATISFIED | `cmd/platform/materialize.go` runMaterialize；`./platform materialize <asset>` 在 main.go 中已连接 |
+| CONN-01 | 02-04-PLAN | 平台提供 PostgreSQL 连接器 | SATISFIED | postgres.go 所有方法；testcontainers 集成测试通过 |
+| CONN-02 | 02-05-PLAN | 平台提供 MySQL 连接器 | SATISFIED | mysql.go 所有方法；testcontainers MySQL conformance 通过 |
+| CONN-03 | 02-05-PLAN | 平台提供 BigQuery 连接器 | SATISFIED | bigquery.go 所有方法；CR-03 在 commit 3054983 中修复 — Read() 对 2-part 标识符回退到 b.project；emulator 测试覆盖 3-part 标识符；新内部测试覆盖 2-part 回退契约 |
+| CONN-04 | 02-05-PLAN | 平台提供 Snowflake 连接器 | NEEDS HUMAN | snowflake.go 所有方法；仅 mock 默认测试通过；真实凭证 conformance 由 `//go:build snowflake_real_creds` 限制（按计划设计接受） |
+| CONN-05 | 02-05-PLAN | 平台提供 S3 连接器（Parquet/CSV/JSON） | SATISFIED | s3.go 所有方法；localstack conformance 测试通过（parquet/csv/json） |
+| CONN-06 | 02-05-PLAN | 平台提供 GCS 连接器（Parquet/CSV/JSON） | SATISFIED | gcs.go 所有方法；fake-gcs-server conformance 测试通过（parquet/csv/json） |
+| CONN-07 | 02-05-PLAN | 平台提供 HDFS 连接器 | SATISFIED（环境限制） | hdfs.go 所有方法；当 HDFS_TEST_NAMENODE 未设置时测试跳过（有文档的模式） |
 
-### Anti-Patterns Found
+### 发现的问题
 
-| File | Line | Pattern | Severity | Impact |
+| 文件 | 行 | 模式 | 严重性 | 影响 |
 |------|------|---------|----------|--------|
-| `internal/runtime/executor.go` | 122, 133 | `_ = e.transition(...)` — DB errors silently discarded on terminal transitions | Warning (CR-01) | If UPDATE runs SET state fails for terminal state (failed/succeeded), run stays stuck in 'running'. No impact on event visibility (events still written). Reaper will eventually recover. |
-| `internal/runtime/executor.go` | 119 | `stepAsset, _ := e.deps.Registry.Get(name)` — Get error discarded | Warning (WR-03) | If asset missing mid-loop, nil pointer panic in runStep (before safeMaterialize). Pathological but possible if registry is mutated. |
-| `internal/run/reaper.go` | 101, 107-109 | Manual `rows.Close()` instead of `defer rows.Close()` (WR-04) | Warning | Non-idiomatic; double-Close is safe per Go docs. rows.Err() dropped on Scan failure. Low correctness risk. |
-| `internal/connector/firstparty/mysql/mysql.go` | ~280 | `strings.Contains(id, "..")` path-traversal check applied to SQL identifiers (WR-06) | Info | False positive risk on edge-case SQL identifier names. Not a security gap; conservative guard. |
-| `internal/connector/firstparty/conformance/conformance.go` | 79 | `errors.Is(err, context.Canceled) || err != nil` always evaluates to `err != nil` (IN-04) | Info | Conformance CtxCancel test passes on any error, not just ctx cancellation. Masks potential context handling bugs in connectors. |
+| `internal/runtime/executor.go` | 122, 133 | `_ = e.transition(...)` — DB 错误在终端转换时被静默丢弃 | Warning (CR-01) | 如果 UPDATE runs SET state 对终端状态（failed/succeeded）失败，run 停留在 'running'。对事件可见性无影响（事件仍写入）。Reaper 最终会恢复。 |
+| `internal/runtime/executor.go` | 119 | `stepAsset, _ := e.deps.Registry.Get(name)` — Get 错误被丢弃 | Warning (WR-03) | 如果资产在循环中途缺失，在 runStep 中会导致 nil 指针 panic（在 safeMaterialize 之前）。如果 registry 被变更，这是病态但可能的。 |
+| `internal/run/reaper.go` | 101, 107-109 | 手动 `rows.Close()` 而不是 `defer rows.Close()` (WR-04) | Warning | 非惯用语；double-Close 根据 Go 文档是安全的。Scan 失败时 rows.Err() 被丢弃。正确性风险低。 |
+| `internal/connector/firstparty/mysql/mysql.go` | ~280 | `strings.Contains(id, "..")` 路径遍历检查应用于 SQL 标识符 (WR-06) | Info | 对边缘情况 SQL 标识符名称的误报风险。不存在安全差距；保守的防护。 |
+| `internal/connector/firstparty/conformance/conformance.go` | 79 | `errors.Is(err, context.Canceled) || err != nil` 始终评估为 `err != nil` (IN-04) | Info | Conformance CtxCancel 测试在任何错误上通过，而不仅仅是 ctx 取消。掩盖连接器中潜在的上下文处理错误。 |
 
-### Human Verification Required
+### 需要人工验证的项目
 
-#### 1. 50-Goroutine Atomicity Test Against Live PostgreSQL
+#### 1. 针对 live PostgreSQL 的 50-Goroutine 原子性测试
 
-**Test:** `DATABASE_URL=postgres://platform_app:platform_app@localhost:5432/platform?sslmode=disable go test ./internal/run/... -run TestClaimAtomicity50Goroutines -count=1 -v`
-**Expected:** Test passes: exactly 1 winner, 49 ErrNoQueuedRun, state='starting', last_heartbeat non-NULL and within 5 seconds of NOW().
-**Why human:** Requires live PostgreSQL with Phase 2 migrations applied. Docker/testcontainers not available in this verification environment.
+**测试：** `DATABASE_URL=postgres://platform_app:platform_app@localhost:5432/platform?sslmode=disable go test ./internal/run/... -run TestClaimAtomicity50Goroutines -count=1 -v`
+**期望：** 测试通过：恰好 1 个赢家，49 个 ErrNoQueuedRun，state='starting'，last_heartbeat 非 NULL 且在 NOW() 的 5 秒内。
+**为什么需要人工：** 需要有 Phase 2 迁移已应用的 live PostgreSQL。此验证环境没有 Docker/testcontainers。
 
-#### 2. CLI E2E Acceptance Test (Criterion 4)
+#### 2. CLI E2E 验收测试（标准 4）
 
-**Test:** `go test ./test/integration/... -run TestE2E_PostgresMaterialize -count=1 -timeout 5m -v`
-**Expected:** Test passes: users_clean has expected rows, full event sequence in event_log, exit code 0.
-**Why human:** Requires Docker daemon for testcontainers PostgreSQL. Cannot be verified programmatically without Docker.
+**测试：** `go test ./test/integration/... -run TestE2E_PostgresMaterialize -count=1 -timeout 5m -v`
+**期望：** 测试通过：users_clean 有预期的行，event_log 中有完整的事件序列，退出代码 0。
+**为什么需要人工：** 需要 Docker daemon 用于 testcontainers PostgreSQL。没有 Docker 无法以编程方式验证。
 
-### Gap Closure Summary
+### 差距关闭总结
 
-The sole gap from the initial verification (BigQuery Read broken for 2-part identifiers, CR-03) is confirmed fixed by direct code inspection of commit 3054983.
+初始验证中的唯一差距（BigQuery Read 对 2-part 标识符失效，CR-03）通过直接代码检查 commit 3054983 确认已修复。
 
-**Fix verified at `internal/connector/firstparty/bigquery/bigquery.go` lines 112-114:**
+**修复验证于 `internal/connector/firstparty/bigquery/bigquery.go` 第 112-114 行：**
 
 ```go
 if project == "" {
@@ -165,15 +165,15 @@ if project == "" {
 }
 ```
 
-This is inserted immediately after `splitIdentifier` and before the `fmt.Sprintf` SQL construction, matching exactly the fix prescribed in the original gap report. The doc comment on Read() (lines 99-101) was also updated to explicitly state that 2-part identifiers are supported.
+这在 `splitIdentifier` 之后、fmt.Sprintf SQL 构建之前插入，与原始差距报告中规定的修复完全匹配。Read() 的文档注释（第 99-101 行）也已更新，明确说明支持 2-part 标识符。
 
-**New test confirmed at `internal/connector/firstparty/bigquery/bigquery_internal_test.go`:**
-- `TestSplitIdentifier`: 5 table-driven cases including `"two_parts_uses_default_project"` which confirms splitIdentifier returns empty project for 2-part IDs (the precondition the fallback addresses).
-- `TestRead_FallsBackToConfiguredProject`: documents the contract that Read() will use the retained b.project when splitIdentifier returns empty project.
+**新测试确认于 `internal/connector/firstparty/bigquery/bigquery_internal_test.go`：**
+- `TestSplitIdentifier`：5 个表驱动案例，包括 `"two_parts_uses_default_project"`，确认 splitIdentifier 对 2-part ID 返回空 project（这是回退处理的前提条件）。
+- `TestRead_FallsBackToConfiguredProject`：记录契约，当 splitIdentifier 返回空 project 时 Read() 将使用保留的 b.project。
 
-All 5 acceptance criteria are now code-verified. The two remaining human verification items (criteria 3 and 4 — atomicity test and CLI e2e) were not gaps in the prior report; they were noted as requiring live infrastructure and have been in that state since initial verification. No regressions were introduced by the BigQuery fix.
+所有 5 个验收标准现在都已通过代码验证。两个人工验证项目（标准 3 和 4 — 原子性测试和 CLI e2e）不是先前报告中的差距；它们被标记为需要 live 基础设施，自初始验证以来一直处于该状态。BigQuery 修复未引入回归。
 
 ---
 
-_Verified: 2026-05-08T14:00:00Z_
-_Verifier: Claude (gsd-verifier)_
+_验证时间：2026-05-08T14:00:00Z_
+_验证者：Claude (gsd-verifier)_

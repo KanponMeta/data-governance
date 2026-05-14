@@ -4,145 +4,145 @@ plan: "06"
 subsystem: "api"
 tags: ["connectrpc", "governance", "react", "tanstack-query", "workflow"]
 
-# Dependency graph
+# 依赖图
 requires: ["06-01", "05-04"]
 provides:
-  - "GovernanceService ConnectRPC handlers (ListReviews, GetReview, ApproveReview, RejectReview)"
-  - "Governance inbox React page at /governance"
-  - "ReviewCard and ReviewModal components"
-  - "20s polling for pending reviews (D-17 hot screen)"
+  - "GovernanceService ConnectRPC 处理器（ListReviews, GetReview, ApproveReview, RejectReview）"
+  - "/governance 的治理收件箱 React 页面"
+  - "ReviewCard 和 ReviewModal 组件"
+  - "待处理审查的 20s 轮询（D-17 热屏）"
 affects: []
 
-# Tech tracking
+# 技术跟踪
 tech-stack:
   added: ["lucide-react"]
-  patterns: ["ConnectRPC governance handlers calling Phase 5 Workflow service", "React tabs for pending/approved/rejected reviews", "CSRF token from cookie in fetch requests"]
+  patterns: ["调用 Phase 5 Workflow 服务的 ConnectRPC 治理处理器", "用于待批准/已批准/已拒绝审查的 React 选项卡", "从 fetch 请求的 cookie 中获取 CSRF 令牌"]
 
 key-files:
   created:
-    - "web/src/pages/governance/index.tsx — Governance inbox page with tabs and ReviewModal"
-    - "web/src/components/ui/dialog.tsx — Radix Dialog wrapper"
-    - "web/src/components/ui/textarea.tsx — Labeled textarea component"
-    - "web/src/components/ui/label.tsx — Label component"
-    - "web/src/components/ui/tabs.tsx — Tabs with state management"
+    - "web/src/pages/governance/index.tsx — 带选项卡和 ReviewModal 的治理收件箱页面"
+    - "web/src/components/ui/dialog.tsx — Radix Dialog 包装器"
+    - "web/src/components/ui/textarea.tsx — 带标签样式的 Textarea 组件"
+    - "web/src/components/ui/label.tsx — Label 组件"
+    - "web/src/components/ui/tabs.tsx — 带状态管理的选项卡"
   modified:
-    - "internal/api/connect.go — Added GovernanceWorkflow to ConnectDeps, implemented ListReviews/GetReview/ApproveReview/RejectReview"
-    - "internal/api/router.go — Added ConnectGovernanceWorkflow field, pass to mountConnectRPC"
-    - "web/src/components/ui/spinner.tsx — Added size prop support"
-    - "web/src/main.tsx — Added governanceLayoutRoute with /governance path"
+    - "internal/api/connect.go — ConnectDeps 添加 GovernanceWorkflow，实现 ListReviews/GetReview/ApproveReview/RejectReview"
+    - "internal/api/router.go — 添加 ConnectGovernanceWorkflow 字段，传递给 mountConnectRPC"
+    - "web/src/components/ui/spinner.tsx — 添加 size prop 支持"
+    - "web/src/main.tsx — 添加带 /governance 路径的 governanceLayoutRoute"
 
 patterns-established:
-  - "GovernanceService handlers call governance.Workflow.Approve/Reject directly (not via REST)"
-  - "Permission checked via Casbin enforcer.Enforce before state-changing operations"
-  - "ReviewModal sends X-CSRF-Token header extracted from dg_csrf cookie"
+  - "GovernanceService 处理器直接调用 governance.Workflow.Approve/Reject（不通过 REST）"
+  - "通过 Casbin enforcer.Enforce 在状态更改操作前检查权限"
+  - "ReviewModal 发送从 dg_csrf cookie 提取的 X-CSRF-Token 头"
 
 requirements-completed: ["UI-06"]
 
-# Metrics
+# 指标
 duration: 18min
 completed: 2026-05-12
 ---
 
-# Phase 06 Plan 06: Governance Inbox (UI-06)
+# Phase 06 Plan 06: 治理收件箱（UI-06）
 
-**Governance inbox for review requests: ConnectRPC handlers + React page with approve/reject modal**
+**审查请求的治理收件箱：ConnectRPC 处理器 + 带批准/拒绝模态框的 React 页面**
 
-## Performance
+## 性能
 
-- **Duration:** 18 min (1080 seconds)
-- **Started:** 2026-05-12T12:17:00Z
-- **Completed:** 2026-05-12T12:35:00Z
-- **Tasks:** 2
-- **Files modified:** 8
+- **时长：** 18 分钟（1080 秒）
+- **开始：** 2026-05-12T12:17:00Z
+- **完成：** 2026-05-12T12:35:00Z
+- **任务：** 2
+- **修改文件：** 8
 
-## Accomplishments
+## 成就
 
-- Implemented GovernanceService ConnectRPC handlers: ListReviews, GetReview, ApproveReview, RejectReview
-- Added GovernanceWorkflow field to ConnectDeps to access Phase 5 workflow service directly
-- Created governance inbox React page at /governance with pending/approved/rejected tabs
-- ReviewCard shows asset name, submitter, submitted_at, status badge
-- ReviewModal provides approve/reject actions with required comment field
-- 20s polling interval for pending reviews (D-17 hot screen optimization)
-- canApprove permission check from GET /v1/me gates inbox visibility
-- X-CSRF-Token header sent with approve/reject fetch requests
+- 实现了 GovernanceService ConnectRPC 处理器：ListReviews, GetReview, ApproveReview, RejectReview
+- 向 ConnectDeps 添加 GovernanceWorkflow 字段以直接访问 Phase 5 工作流服务
+- 在 /governance 创建了带待批准/已批准/已拒绝选项卡的治理收件箱 React 页面
+- ReviewCard 显示资产名称、提交者、submitted_at、状态徽章
+- ReviewModal 提供带必需评论字段的批准/拒绝操作
+- 待处理审查的 20s 轮询间隔（D-17 热屏优化）
+- 从 GET /v1/me 的 canApprove 权限检查限制收件箱可见性
+- 批准/拒绝 fetch 请求中发送 X-CSRF-Token 头
 
-## Task Commits
+## 任务提交
 
-1. **Task 1: Governance review ConnectRPC handlers** - `d21dd83` (feat)
-2. **Task 2: Governance inbox React page** - `38c968d` (feat)
+1. **Task 1: 治理审查 ConnectRPC 处理器** - `d21dd83` (feat)
+2. **Task 2: 治理收件箱 React 页面** - `38c968d` (feat)
 
-**Plan metadata:** `38c968d` (feat: add governance inbox React page with approve/reject modal)
+**计划元数据：** `38c968d` (feat: 添加带批准/拒绝模态框的治理收件箱 React 页面)
 
-## Files Created/Modified
+## 文件创建/修改
 
-- `internal/api/connect.go` — Added GovernanceWorkflow to ConnectDeps; ListReviews/GetReview/ApproveReview/RejectReview implementations
-- `internal/api/router.go` — Added ConnectGovernanceWorkflow field, pass to mountConnectRPC
-- `web/src/pages/governance/index.tsx` — Full governance inbox page with tabs and ReviewModal
-- `web/src/main.tsx` — Added governanceLayoutRoute with /governance path
-- `web/src/components/ui/dialog.tsx` — Radix Dialog wrapper
-- `web/src/components/ui/textarea.tsx` — Textarea with label styling
-- `web/src/components/ui/label.tsx` — Label component
-- `web/src/components/ui/tabs.tsx` — Tabs with active state management
-- `web/src/components/ui/spinner.tsx` — Added size prop
+- `internal/api/connect.go` — 向 ConnectDeps 添加 GovernanceWorkflow；ListReviews/GetReview/ApproveReview/RejectReview 实现
+- `internal/api/router.go` — 添加 ConnectGovernanceWorkflow 字段，传递给 mountConnectRPC
+- `web/src/pages/governance/index.tsx` — 带选项卡和 ReviewModal 的完整治理收件箱页面
+- `web/src/main.tsx` — 添加带 /governance 路径的 governanceLayoutRoute
+- `web/src/components/ui/dialog.tsx` — Radix Dialog 包装器
+- `web/src/components/ui/textarea.tsx` — 带标签样式的 Textarea
+- `web/src/components/ui/label.tsx` — Label 组件
+- `web/src/components/ui/tabs.tsx` — 带活跃状态管理的选项卡
+- `web/src/components/ui/spinner.tsx` — 添加 size prop
 
-## Decisions Made
+## 决策
 
-- ConnectRPC handlers call governance.Workflow.Approve/Reject/Get/Status directly (not REST) for type safety
-- Permission check via Casbin enforcer.Enforce before approve/reject operations
-- Comment required for reject (D-12 from Phase 5); ErrCommentRequired mapped to CodeInvalidArgument
-- 20s polling for pending reviews (D-17); 60s for approved/rejected
-- Governance page shows "permission denied" card if canApprove=false
+- ConnectRPC 处理器直接调用 governance.Workflow.Approve/Reject/Get/Status（不通过 REST）以获得类型安全
+- 通过 Casbin enforcer.Enforce 在批准/拒绝操作前检查权限
+- 拒绝需要评论（D-12 来自 Phase 5）；ErrCommentRequired 映射到 CodeInvalidArgument
+- 待处理审查 20s 轮询（D-17）；已批准/已拒绝 60s
+- 如果 canApprove=false，治理页面显示"权限拒绝"卡片
 
-## Deviations from Plan
+## 偏离计划
 
-### Auto-fixed Issues
+### 自动修复的问题
 
-**1. [Rule 3 - Blocking] Spinner component lacked size prop**
-- **Found during:** Web build verification
-- **Issue:** `<Spinner size="sm" />` in ReviewModal failed TypeScript because spinner didn't support size prop
-- **Fix:** Updated Spinner to accept size prop with default "h-6 w-6"
-- **Files modified:** web/src/components/ui/spinner.tsx
-- **Commit:** 38c968d (part of task commit)
+**1. [Rule 3 - 阻塞] Spinner 组件缺少 size prop**
+- **发现于：** Web 构建验证
+- **问题：** `<Spinner size="sm" />` 在 ReviewModal 中因 spinner 不支持 size prop 而导致 TypeScript 失败
+- **修复：** 更新 Spinner 接受 size prop，默认 "h-6 w-6"
+- **修改文件：** web/src/components/ui/spinner.tsx
+- **提交：** 38c968d（任务提交的一部分）
 
-**2. [Rule 3 - Blocking] connect.NewErrorDetail wrong usage**
-- **Found during:** Go build verification
-- **Issue:** `connect.NewErrorDetail("comment is required")` returned (val, error) tuple; couldn't use as single arg
-- **Fix:** Changed to `errors.New("comment is required")` in RejectReview handler
-- **Files modified:** internal/api/connect.go
-- **Commit:** d21dd83 (part of task commit)
+**2. [Rule 3 - 阻塞] connect.NewErrorDetail 错误用法**
+- **发现于：** Go 构建验证
+- **问题：** `connect.NewErrorDetail("comment is required")` 返回 (val, error) 元组；不能作为单个参数使用
+- **修复：** 在 RejectReview 处理器中改为 `errors.New("comment is required")`
+- **修改文件：** internal/api/connect.go
+- **提交：** d21dd83（任务提交的一部分）
 
-**3. [Rule 3 - Blocking] GovernanceWorkflow not in Deps struct**
-- **Found during:** Go build verification
-- **Issue:** ConnectDeps had GovernanceService but not the actual Workflow service needed for handler logic
-- **Fix:** Added GovernanceWorkflow *governance.Workflow field to ConnectDeps and router.go Deps
-- **Files modified:** internal/api/connect.go, internal/api/router.go
-- **Commit:** d21dd83 (part of task commit)
+**3. [Rule 3 - 阻塞] GovernanceWorkflow 不在 Deps 结构中**
+- **发现于：** Go 构建验证
+- **问题：** ConnectDeps 有 GovernanceService 但没有处理器逻辑所需的工作流服务
+- **修复：** 向 ConnectDeps 和 router.go Deps 添加 `GovernanceWorkflow *governance.Workflow` 字段
+- **修改文件：** internal/api/connect.go, internal/api/router.go
+- **提交：** d21dd83（任务提交的一部分）
 
 ---
 
-**Total deviations:** 3 auto-fixed (all blocking)
-**Impact on plan:** All auto-fixes necessary for build to succeed. No scope creep.
+**总偏离：** 3 个自动修复（全部阻塞）
+**对计划的影响：** 所有自动修复对于构建成功必要。无范围蔓延。
 
-## Threat Model Compliance
+## 威胁模型合规
 
-| Threat ID | Mitigation | Status |
-|-----------|------------|--------|
-| T-06-11 (Review action tampering) | CSRF token + canApprove permission + comment required | Implemented |
-| T-06-12 (Elevation of Privilege) | canApprove flag from /v1/me; workflow validates reviewer pool | Implemented |
+| 威胁 ID | 缓解 | 状态 |
+|---------|------------|--------|
+| T-06-11（审查操作篡改） | CSRF 令牌 + canApprove 权限 + 必需评论 | 已实现 |
+| T-06-12（权限提升） | /v1/me 的 canApprove 标志；工作流验证审查池 | 已实现 |
 
-## Verification
+## 验证
 
-- `go build ./internal/api/...` succeeds
-- `cd web && pnpm run build` succeeds
-- Governance inbox page at /governance (when user has canApprove permission)
-- Approve/reject require comment field (validated client and server side)
+- `go build ./internal/api/...` 成功
+- `cd web && pnpm run build` 成功
+- /governance 的治理收件箱页面（用户有 canApprove 权限时）
+- 批准/拒绝需要评论字段（客户端和服务器端验证）
 
-## Next Phase Readiness
+## 下一阶段准备
 
-- GovernanceService ConnectRPC handlers are fully implemented
-- Workflow service integration complete
-- React inbox page with 20s polling ready
-- No blockers for subsequent plans
+- GovernanceService ConnectRPC 处理器已完全实现
+- 工作流服务集成完成
+- 带 20s 轮询的 React 收件箱页面已就绪
+- 后续计划无阻碍
 
 ---
 *Phase: 06-web-ui-api*

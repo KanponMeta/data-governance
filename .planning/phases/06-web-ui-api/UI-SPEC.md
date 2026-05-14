@@ -13,7 +13,7 @@ coverage:
   CORE-04: SPA embedded — implemented
 ---
 
-# Phase 6: UI Component Specification
+# Phase 6: UI 组件规范
 
 ## Tech Stack
 
@@ -25,7 +25,7 @@ coverage:
 - **DAG Viz:** ReactFlow v12 (`@xyflow/react`) with dagre layout
 - **Charts:** Recharts
 
-## Route Structure
+## 路由结构
 
 ```
 /                       → asset dashboard (AssetDashboard)
@@ -39,7 +39,7 @@ coverage:
 /admin/policies         → policy management tab
 ```
 
-## Component Inventory
+## 组件清单
 
 ### Asset Dashboard (`/`)
 - `pages/assets/index.tsx` — lazy-loaded, polls every 60s
@@ -80,7 +80,7 @@ coverage:
 - `pages/admin/roles.tsx` — role form
 - `pages/admin/policies.tsx` — policy form (non-functional — AdminService stubs)
 
-## API Integration
+## API 集成
 
 | Page | Endpoint | Protocol | Polling |
 |------|----------|----------|---------|

@@ -53,79 +53,79 @@ findings:
 status: issues_found
 ---
 
-# Phase 02: Code Review Report
+# Phase 02 代码审查报告
 
-**Reviewed:** 2026-05-08T00:00:00Z
-**Depth:** standard
-**Files Reviewed:** 41
-**Status:** issues_found
+**审查时间：** 2026-05-08T00:00:00Z
+**深度：** standard
+**审查的文件：** 41
+**状态：** issues_found
 
-## Summary
+## 总结
 
-Phase 2 introduces the execution engine: asset registry, DAG-based topological execution, concurrency token pool, per-asset retry policy, run lifecycle FSM, heartbeat/reaper for crash recovery, and seven first-party connectors (postgres, mysql, snowflake, s3, gcs, hdfs, bigquery). The overall architecture is sound and idiomatic Go. Locking is consistent across registries and connectors, and the advisory-lock approach for concurrency token acquisition is appropriate.
+Phase 2 引入了执行引擎：资产 registry、基于 DAG 的拓扑执行、并发 token 池、每个资产重试策略、运行生命周期 FSM、用于崩溃恢复的 heartbeat/reaper，以及七个第一方连接器（postgres、mysql、snowflake、s3、gcs、hdfs、bigquery）。整体架构合理且符合 Go 习惯。registry 和连接器的锁定是一致的，并发 token 获取的建议锁方法是适当的。
 
-Three critical issues require attention before merging:
+三个关键问题需要在合并前关注：
 
-1. A read-after-cancel race condition in the executor's `transition` helper silently ignores all DB write errors.
-2. The `materialize` subcommand polls inside the loop _before_ sleeping, meaning the first state check can consume the run ID it just inserted — a logical ordering bug combined with an unchecked context leak.
-3. The BigQuery `splitIdentifier` returns an empty project string for 2-part identifiers then uses it in a backtick-quoted SQL query, producing an invalid query silently.
+1. executor 的 `transition` 辅助方法中存在读后取消竞争条件，静默忽略所有 DB 写入错误。
+2. `materialize` 子命令在循环内 sleep 前轮询，意味着第一个状态检查可能消耗它刚插入的运行 ID——一个结合了未检查上下文泄漏的逻辑排序错误。
+3. BigQuery `splitIdentifier` 对 2 部分标识符返回空项目字符串，然后将其用于带反引号的 SQL 查询，产生静默的无效查询。
 
-Six warnings cover unhandled error returns, a token-release ordering issue that can starve capacity during retries, and missing goroutine lifetime guarantees in tests.
+六个警告涵盖未处理的错误返回、token 释放排序问题（在重试期间可能饥饿容量），以及测试中缺少 goroutine 生命周期保证。
 
 ---
 
-## Critical Issues
+## 关键问题
 
-### CR-01: `executor.transition` silently swallows all DB errors
+### CR-01: `executor.transition` 静默吞掉所有 DB 错误
 
-**File:** `internal/runtime/executor.go:318-319`
+**文件：** `internal/runtime/executor.go:318-319`
 
-**Issue:** `transition` is called and its error return is discarded with `_ =` at three call sites (lines 122, 133, 137). When the `UPDATE runs SET state` query fails — network error, constraint violation, or the run was already moved by the reaper — the executor continues as if the transition succeeded. For the failure path (line 122), this means the run row stays in `running` while the caller returns an error, leaving the row orphaned in a non-terminal state that the reaper will eventually re-queue as if the worker crashed.
+**问题：** `transition` 被调用，其错误返回值在三个调用点（第 122、133、137 行）用 `_ =` 丢弃。当 `UPDATE runs SET state` 查询失败时——网络错误、约束冲突，或运行已被 reaper 移动——executor 继续执行，好像转换成功了一样。对于失败路径（第 122 行），这意味着运行行停留在 `running`，而调用者返回错误，使行困在非终止状态，reaper 最终会将其重新排队，就像 worker 崩溃了一样。
 
 ```go
-// executor.go lines 122-123 (failure path)
+// executor.go 第 122-123 行（失败路径）
 _ = e.transition(ctx, runID, run.StateRunning, run.StateFailed)
 e.appendEvent(ctx, runID, event.EventTypeRunFailed, ...)
 ```
 
-The success path at line 133 has the same problem. If the DB update fails the row silently stays `running` instead of moving to `succeeded`.
+第 133 行的成功路径有相同问题。如果 DB 更新失败，行静默停留在 `running` 而不是移动到 `succeeded`。
 
-**Fix:** Propagate the error from `transition` in all call sites. For the terminal transitions (succeeded/failed), the current run cannot continue either way so wrap and return:
+**修复：** 在所有调用点传播 `transition` 的错误。对于终止转换（succeeded/failed），当前运行无论哪种方式都无法继续，所以包装并返回：
 
 ```go
-// In the step failure branch (around line 122):
+// 在步骤失败分支（约第 122 行）：
 if terr := e.transition(ctx, runID, run.StateRunning, run.StateFailed); terr != nil {
     slog.Error("executor.transition_failed", "run_id", runID, "to", "failed", "error", terr)
 }
 
-// In the success path (around line 133):
+// 在成功路径（约第 133 行）：
 if terr := e.transition(ctx, runID, run.StateRunning, run.StateSucceeded); terr != nil {
     slog.Error("executor.transition_failed", "run_id", runID, "to", "succeeded", "error", terr)
 }
 ```
 
-At a minimum, errors must be logged; ideally the run terminal transition error is returned so the worker loop can decide whether to retry the claim.
+至少必须记录错误；理想情况下返回运行终止转换错误，以便 worker 循环决定是否重试声明。
 
 ---
 
-### CR-02: `materialize` subcommand inserts run then polls immediately — ordering bug and ctx timeout mismatch
+### CR-02: `materialize` 子命令插入运行后立即轮询 — 排序错误和 ctx 超时不匹配
 
-**File:** `cmd/platform/materialize.go:34, 96-124`
+**文件：** `cmd/platform/materialize.go:34, 96-124`
 
-**Issue — timeout context created before insert:** The outer context is created with `timeout + 30s` at line 34, but the separate `waitForRun` deadline is computed from `time.Now()` at line 97. Between line 34 and line 97, `bootstrap` + the DB insert + the event write can consume several seconds. The `timeout` variable is then passed directly to `waitForRun`. In practice this is not a bug per se, but the 30-second pad on the outer context is not clearly reasoned: if `timeout` = 30 minutes and bootstrap takes 10 seconds, the poll loop runs for 30 minutes, then hits its deadline, but the outer `ctx` does not expire for another 29 minutes and 50 seconds. The extra 30s guard is therefore misleading.
+**问题 — 在插入前创建超时上下文：** 外层上下文在第 34 行用 `timeout + 30s` 创建，但单独的 `waitForRun` 截止日期在第 97 行从 `time.Now()` 计算。在第 34 行和第 97 行之间，`bootstrap` + DB 插入 + 事件写入可能消耗几秒钟。然后 `timeout` 变量直接传递给 `waitForRun`。在实践中这不是一个错误，但外层上下文的 30 秒填充不是明确合理的：如果 `timeout` = 30 分钟而 bootstrap 消耗 10 秒，轮询循环运行 30 分钟，然后达到其截止日期，但外层 `ctx` 在另外 29 分 50 秒后才过期。因此额外的 30 秒保护是误导性的。
 
-**Issue — first poll reads stale or zero state:** `waitForRun` calls `QueryRowContext` on the very first loop iteration (line 103) _before_ the `select` sleep. The run was just inserted as `'queued'`. The worker picks it up asynchronously; during the poll window the state is legitimately `queued`. The switch statement at lines 107-115 does not have a `case "queued":` or `case "starting":` or `case "running":` arm — those fall through to the `time.Now().After(deadline)` check. This is intentional but there is a subtle bug: the `deadline` check at line 116 uses `time.Now().After(deadline)` _after_ the query, meaning the very first iteration never sleeps even when the run has not finished. The loop first polls, then checks the deadline, then _waits_ in the `select`. The correct structure should: check deadline _before_ polling (to handle a zero-budget timeout), then poll, then sleep. As written, with `timeout = 0`, it issues one DB query before returning.
+**问题 — 第一次轮询读取过时或零状态：** `waitForRun` 在第一次循环迭代（第 103 行）的 `select` sleep **之前**调用 `QueryRowContext`。运行刚作为 `'queued'` 插入。Worker 异步获取它；在轮询窗口期间状态合法是 `queued`。第 107-115 行的 switch 语句没有 `case "queued":` 或 `case "starting":` 或 `case "running":` 分支——这些落入 `time.Now().After(deadline)` 检查。这是故意的，但有一个微妙错误：`deadline` 检查在第 116 行在查询之后使用 `time.Now().After(deadline)` **之后**，意味着第一次迭代即使运行未完成也不会 sleep。正确的结构应该是：在轮询**之前**检查截止日期（处理零预算超时），然后轮询，然后 sleep。按原样，`timeout = 0` 时，在返回前发出一 DB 查询。
 
 ```
 for {
-    /* poll */  ← fires on first iteration
+    /* poll */  ← 在第一次迭代时触发
     /* switch */
     if time.Now().After(deadline) { return timeout err }
     select { case <-ticker.C: /* sleep 500ms */ }
 }
 ```
 
-**Fix:** Move the deadline check before the query, or restructure so the first iteration also waits 500ms (consistent with stated "poll every 500ms" behavior). Also add explicit handling for non-terminal states to avoid misleading logs:
+**修复：** 将截止日期检查移到查询之前，或重构使第一次迭代也等待 500ms（与声明的"每 500ms 轮询"行为一致）。还添加对非终止状态的明确处理以避免误导性日志：
 
 ```go
 for {
@@ -146,45 +146,45 @@ for {
 
 ---
 
-### CR-03: BigQuery `splitIdentifier` returns empty project for 2-part identifiers, then uses it in query
+### CR-03: BigQuery `splitIdentifier` 对 2 部分标识符返回空项目，然后用于查询
 
-**File:** `internal/connector/firstparty/bigquery/bigquery.go:107-111, 198-212`
+**文件：** `internal/connector/firstparty/bigquery/bigquery.go:107-111, 198-212`
 
-**Issue:** `splitIdentifier` returns `("", dataset, table, nil)` when the identifier is `"dataset.table"` (2 parts, line 207). The `Read` method at line 111 uses the returned `project` value in a format string:
+**问题：** `splitIdentifier` 在标识符为 `"dataset.table"`（2 部分，第 207 行）时返回 `("", dataset, table, nil)`。第 111 行的 `Read` 方法将返回的 `project` 值用于格式化字符串：
 
 ```go
 q := fmt.Sprintf("SELECT * FROM `%s`.`%s`.`%s`", project, dataset, table)
 ```
 
-When `project` is empty this produces `` SELECT * FROM ``.`dataset`.`table` `` — an invalid BigQuery SQL query. The BigQuery client will return an error, but the error message will be opaque (a BigQuery API error about invalid SQL), not a clear "project required" message.
+当 `project` 为空时，这产生 `` SELECT * FROM ``.`dataset`.`table` `` — 一个无效的 BigQuery SQL 查询。BigQuery 客户端将返回错误，但错误消息将是不透明的（关于无效 SQL 的 BigQuery API 错误），而不是清晰的"需要项目"消息。
 
-In contrast, `Write` and `Schema` discard the returned `project` entirely (line 159, line 79) and use only `dataset` and `table`, which is correct for those paths. The inconsistency means `Read` is broken for 2-part identifiers while `Write` and `Schema` work.
+相比之下，`Write` 和 `Schema` 完全丢弃返回的 `project`（第 159 行、第 79 行），只使用 `dataset` 和 `table`，对这些路径是正确的。不一致性意味着 `Read` 对 2 部分标识符失效，而 `Write` 和 `Schema` 工作。
 
-**Fix:** Either enforce that 3-part identifiers are required for `Read` (returning a clear error), or fall back to the connector's stored `b.project` when the parsed project is empty:
+**修复：** 要么强制 `Read` 需要 3 部分标识符（返回清晰错误），要么在解析的项目为空时回退到连接器存储的 `b.project`：
 
 ```go
-// In Read, after splitIdentifier:
+// 在 Read 中，splitIdentifier 之后：
 if project == "" {
     project = b.project
 }
 q := fmt.Sprintf("SELECT * FROM `%s`.`%s`.`%s`", project, dataset, table)
 ```
 
-Apply the same fix symmetrically in `Write` and `Schema` for consistency, even though they currently ignore the project and rely on the BigQuery client's default project context.
+对 `Write` 和 `Schema` 应用相同的修复以保持一致性，即使它们当前忽略项目并依赖 BigQuery 客户端的默认项目上下文。
 
 ---
 
-## Warnings
+## 警告
 
-### WR-01: GCS client is not closed by `NewClientFromOptions` caller in `Factory`
+### WR-01: GCS 客户端在 `Factory` 中未被 `NewClientFromOptions` 调用者关闭
 
-**File:** `internal/connector/firstparty/gcs/factory.go:36-40`
+**文件：** `internal/connector/firstparty/gcs/factory.go:36-40`
 
-**Issue:** `Factory` calls `NewClientFromOptions` with a `context.WithTimeout` that it cancels (`defer cancel()`). The resulting `*gcstorage.Client` is then passed to `New(client, bucket, format)`. The GCS client performs connection establishment lazily but the context cancellation races with the first real operation if the factory's 10-second timeout fires. More concretely: if `New(client, ...)` returns the `*GCS` struct and then `cancel()` fires before the first `Ping` or `Read`, the underlying client may have its context cancelled depending on how the GCS SDK uses it internally.
+**问题：** `Factory` 调用 `NewClientFromOptions`，带有它取消的 `context.WithTimeout`（`defer cancel()`）。 resulting `*gcstorage.Client` 然后传递给 `New(client, bucket, format)`。GCS 客户端延迟建立连接，但如果 factory 的 10 秒超时在第一次真实操作之前触发，则上下文取消与第一次操作竞争。更具体地说：如果 `New(client, ...)` 返回 `*GCS` 结构体，然后 `cancel()` 在第一次 `Ping` 或 `Read` 之前触发，底层客户端可能已取消其上下文，取决于 GCS SDK 内部如何使用它。
 
-This is the same pattern used in the BigQuery factory. For connectors that use the GCS/BQ libraries, the construction context is only for the `NewClient` call itself, not the ongoing connection — this is correct for the GCS SDK. However, it is worth noting that both factories pass the construction timeout context to `NewClient`, which the SDK uses only for initial dial. The concern is minor for GCS since the SDK does not hold the context. Rating: warning because the pattern is consistent but worth documenting.
+这与 BigQuery factory 使用的模式相同。对于使用 GCS/BQ 库的连接器，构造上下文仅用于 `NewClient` 调用本身，不保留连接——这对 GCS SDK 是正确的。然而，值得注意的是两个 factory 都将构造超时上下文传递给 `NewClient`，SDK 仅用于初始拨号。问题是 GCS 的 minor，因为 SDK 不保留上下文。评级：警告，因为模式一致但值得记录。
 
-**Fix:** Add a code comment to `Factory` explicitly documenting that the construction context is only used for `NewClient`, not retained, following the same pattern as the BQ factory:
+**修复：** 在 `Factory` 中添加代码注释，明确记录构造上下文仅用于 `NewClient`（初始拨号），不保留，随后操作使用每请求上下文：
 
 ```go
 // ctx is used only for gcstorage.NewClient (initial dial); the client itself
@@ -195,20 +195,20 @@ defer cancel()
 
 ---
 
-### WR-02: Concurrency token release on retry does not release ALL acquired tags atomically — capacity starvation risk
+### WR-02: 重试时并发 token 释放不会原子释放所有获取的标签 — 容量饥饿风险
 
-**File:** `internal/runtime/executor.go:176-231`
+**文件：** `internal/runtime/executor.go:176-231`
 
-**Issue:** In `runStep`, when a resource-level token acquisition fails (after the global token was already acquired), `releaseAcquired()` is called to drop all acquired tags before retrying. This is correct. However, the `Release` call in `concurrency.Pool` uses a simple `DELETE WHERE run_id = $1 AND resource_tag = $2` without any locking — it is not in the same advisory-lock transaction used by `Acquire`. The sequence:
+**问题：** 在 `runStep` 中，当资源级 token 获取失败后（全局 token 已获取），调用 `releaseAcquired()` 删除所有获取的标签后再重试。这是正确的。但是 `concurrency.Pool` 中的 `Release` 调用使用简单的 `DELETE WHERE run_id = $1 AND resource_tag = $2`，没有任何锁定——它不在 `Acquire` 使用的同一建议锁事务中。序列：
 
-1. Acquire `global` → row inserted
-2. Acquire `resource_a` → fails (capacity exhausted)
-3. `releaseAcquired()` → deletes `global` row
-4. Retry: Acquire `global` again (new row inserted)
+1. 获取 `global` → 插入行
+2. 获取 `resource_a` → 失败（容量耗尽）
+3. `releaseAcquired()` → 删除 `global` 行
+4. 重试：再次获取 `global`（插入新行）
 
-Between steps 3 and 4, another concurrent run could acquire the freed `global` slot. This is not a correctness bug (the behavior is correct), but it means the retrying run sees additional contention that would not exist if it held the token across the retry sleep. The current design makes a retrying run re-compete for all tokens on every attempt, which can cause starvation under high load.
+在步骤 3 和 4 之间，另一个并发运行可以获取释放的 `global` 槽。这不是正确性错误（行为是正确的），但意味着重试运行看到额外的竞争，如果在重试 sleep 时持有 token 就不存在。当前设计使重试运行在每次尝试时重新竞争所有 token，这在高负载下可能导致饥饿。
 
-**Fix (design-level):** Document the "re-compete on retry" behavior explicitly in a code comment in `runStep` so future engineers do not assume the token is held across retries. Consider a token reservation pattern (pre-check without insert) for Phase 3 if starvation becomes observable.
+**修复（设计级）：** 在 `runStep` 的代码注释中明确记录"重试时重新竞争"行为，以便未来工程师不会假设 token 在重试之间保留。如果在 Phase 3 中饥饿变得可观察，考虑 token 预留模式（预检查而不插入）：
 
 ```go
 // NOTE: All tokens are released before the retry sleep so other runs can proceed.
@@ -220,17 +220,17 @@ releaseAcquired()
 
 ---
 
-### WR-03: `executor.Run` ignores `Registry.Get` error in the per-step loop
+### WR-03: `executor.Run` 在每步循环中忽略 `Registry.Get` 错误
 
-**File:** `internal/runtime/executor.go:119`
+**文件：** `internal/runtime/executor.go:119`
 
 ```go
 stepAsset, _ := e.deps.Registry.Get(name)
 ```
 
-**Issue:** `e.deps.Registry.Get(name)` can return an error (and a `nil` *asset.Asset) if the asset was somehow removed from the registry between `buildSubgraph` building the DAG and the per-step loop executing. If `Get` fails and returns `nil`, `runStep` receives a nil `*asset.Asset` and will panic when it calls `a.RetryPolicy()` (line 170), `a.Name()` (line 186), or `a.Resources()` (line 201). This panic is recovered by `safeMaterialize`, but the step never reaches that function — the panic occurs in `runStep` itself before the user function is called, and is NOT wrapped by `safeMaterialize`.
+**问题：** `e.deps.Registry.Get(name)` 可以在资产在 `buildSubgraph` 构建 DAG 和每步循环执行之间的某个时候从 registry 中移除时返回错误（和 `nil` *asset.Asset）。如果 `Get` 失败并返回 `nil`，`runStep` 收到 `nil` *asset.Asset，当调用 `a.RetryPolicy()`（第 170 行）、`a.Name()`（第 186 行）或 `a.Resources()`（第 201 行）时会 panic。这个 panic 被 `safeMaterialize` 恢复，但步骤永远不会到达该函数——panic 发生在 `runStep` 本身内部，在用户函数被调用之前，不由 `safeMaterialize` 包装。
 
-**Fix:** Check the error and return it:
+**修复：** 检查错误并返回：
 
 ```go
 stepAsset, err := e.deps.Registry.Get(name)
@@ -241,15 +241,15 @@ if err != nil {
 
 ---
 
-### WR-04: Reaper `SweepOnce` closes `rows` manually then calls `rows.Err()` — double-close risk
+### WR-04: Reaper `SweepOnce` 手动关闭 `rows` 然后调用 `rows.Err()` — double-close 风险
 
-**File:** `internal/run/reaper.go:101, 107-109`
+**文件：** `internal/run/reaper.go:101, 107-109`
 
-**Issue:** Inside the scan loop, if `rows.Scan` fails, the code calls `_ = rows.Close()` explicitly (line 101) and returns early. After the loop, line 107 calls `_ = rows.Close()` unconditionally, followed by `rows.Err()` at line 108. Calling `Close()` twice on `*sql.Rows` is explicitly documented as safe in Go's `database/sql` package, so this is not a crash risk. However, the manual `rows.Close()` in the error path at line 101 combined with the unconditional `_ = rows.Close()` at line 107 is confusing and the pattern differs from the idiomatic `defer rows.Close()` used everywhere else in the codebase (postgres, mysql, snowflake connectors all use `defer rows.Close()`).
+**问题：** 在扫描循环内部，如果 `rows.Scan` 失败，代码在第 101 行显式调用 `_ = rows.Close()` 并提前返回。循环后，第 107 行无条件调用 `_ = rows.Close()`，然后是第 108 行的 `rows.Err()`。在 Go 的 `database/sql` 包中，对 `*sql.Rows` 调用两次 `Close()` 明确记录为是安全的，所以这不是崩溃风险。但是错误路径中手动 `rows.Close()`（第 101 行）与循环后无条件的 `_ = rows.Close()`（第 107 行）的组合是令人困惑的，模式与代码库中其他地方的惯用 `defer rows.Close()` 不同（postgres、mysql、snowflake 连接器都使用 `defer rows.Close()`）。
 
-More importantly: when `rows.Scan` fails at line 100, the code immediately returns without calling `rows.Err()`. The error from `Scan` is returned, but any prior row-iteration error accumulated in `rows.Err()` is dropped. This is a minor correctness issue.
+更重要的是：当 `rows.Scan` 在第 100 行失败时，代码立即返回而不调用 `rows.Err()`。`Scan` 的错误被返回，但之前在 `rows.Err()` 中累积的任何行迭代错误被丢弃。这是一个 minor 正确性问题。
 
-**Fix:** Use `defer rows.Close()` immediately after the `QueryContext` call (idiomatic pattern), and check `rows.Err()` once after the loop:
+**修复：** 在 `QueryContext` 调用后立即使用 `defer rows.Close()`（惯用模式），然后在循环后检查 `rows.Err()` 一次：
 
 ```go
 rows, err := r.Store.DB().QueryContext(ctx, selectSQL, cutoff)
@@ -275,13 +275,13 @@ if err := rows.Err(); err != nil {
 
 ---
 
-### WR-05: `waitForRun` in `materialize.go` does not handle `context.Canceled` from `QueryRowContext`
+### WR-05: `materialize.go` 中的 `waitForRun` 不处理 `QueryRowContext` 的 `context.Canceled`
 
-**File:** `cmd/platform/materialize.go:103-104`
+**文件：** `cmd/platform/materialize.go:103-104`
 
-**Issue:** When `ctx` is canceled (SIGINT during synchronous wait), `QueryRowContext` will return `ctx.Err()` wrapped in a `*sql.ErrConnDone` or `context.Canceled`. The current code at line 104 wraps it as `"materialize: poll state: %w"` and returns. The `select` at line 119 also catches `ctx.Done()` and returns `ctx.Err()`, but the DB query runs before the `select`, so a canceled context during query will produce the wrapped error rather than the clean `context.Canceled`. This makes the exit message unnecessarily noisy in normal SIGINT shutdown. This is a minor UX issue rather than a correctness bug.
+**问题：** 当 `ctx` 被取消（同步等待期间的 SIGINT）时，`QueryRowContext` 将返回 `ctx.Err()`，包装在 `*sql.ErrConnDone` 或 `context.Canceled` 中。当前代码在第 104 行将其包装为 `"materialize: poll state: %w"` 并返回。第 119 行的 `select` 也捕获 `ctx.Done()` 并返回 `ctx.Err()`，但 DB 查询在 `select` 之前运行，所以查询期间的取消上下文会产生包装错误而不是干净的 `context.Canceled`。这在正常 SIGINT 关闭时使退出消息不必要的嘈杂。这是一个 minor UX 问题而不是正确性错误。
 
-**Fix:** After the query error, check `ctx.Err()` before wrapping:
+**修复：** 在查询错误后，检查 `ctx.Err()` 然后再包装：
 
 ```go
 if err := deps.store.DB().QueryRowContext(ctx, stateSQL, runID).Scan(&state, &errMsg); err != nil {
@@ -294,15 +294,15 @@ if err := deps.store.DB().QueryRowContext(ctx, stateSQL, runID).Scan(&state, &er
 
 ---
 
-### WR-06: `mysql.quoteIdentifier` path-traversal check uses `strings.Contains(id, "..")` which triggers on legitimate names
+### WR-06: `mysql.quoteIdentifier` 路径遍历检查触发合法名称
 
-**File:** `internal/connector/firstparty/mysql/mysql.go:280-282`
+**文件：** `internal/connector/firstparty/mysql/mysql.go:280-282`
 
-**Issue:** The path-traversal guard `strings.Contains(id, "..")` fires when an identifier contains two consecutive dots. A MySQL database named `db..schema` is indeed invalid, but the check also matches valid names like `"my..table"` in a concatenated `"db.my..table"` identifier — though again, double-dots in MySQL table names are not legal. The real risk is a false positive: a user who names a column `"e.g.."` (trailing dot) or schema `"schema.."` would get an opaque error about path traversal instead of a clear "illegal identifier" message.
+**问题：** 路径遍历防护 `strings.Contains(id, "..")` 在标识符包含两个连续点时触发。名为 `db..schema` 的 MySQL 数据库确实是无效的，但检查也会匹配像 `"my..table"` 这样的有效名称在一个连接的 `"db.my..table"` 标识符中——尽管话虽如此，MySQL 表名中的双点在法律上是不允许的。真正风险是误报：命名列为 `"e.g.."`（尾随点）或 schema `"schema.."` 的用户会得到关于路径遍历的不透明错误，而不是清晰的"非法标识符"消息。
 
-The Postgres connector does not have this check (correct for SQL), and the S3/GCS/HDFS connectors check segment-by-segment for `".."` (also correct). Only MySQL and Snowflake have the `strings.Contains(id, "..")` string-level check. This is a conservative measure that could produce confusing error messages.
+Postgres 连接器没有此检查（对 SQL 正确），S3/GCS/HDFS 连接器逐段检查 `".."`（也是正确的）。只有 MySQL 和 Snowflake 有 `strings.Contains(id, "..")` 字符串级检查。这是一个保守措施，可能产生令人困惑的错误消息。
 
-**Fix:** The MySQL identifier quoting already rejects backticks. The `".."` check is borrowed from path-traversal defenses for file-system connectors and does not apply cleanly to SQL identifiers. Remove it from `mysql.quoteIdentifier` and `snowflake.quoteIdentifier`, or replace with a clearer "consecutive dots not allowed" message:
+**修复：** MySQL 标识符引用已经拒绝反引号。`".."` 检查借用了文件系统连接器的路径遍历防御，不适用于 SQL 标识符。从 `mysql.quoteIdentifier` 和 `snowflake.quoteIdentifier` 中删除它，或替换为更清晰的"不允许连续点"消息：
 
 ```go
 // In quoteIdentifier:
@@ -312,19 +312,19 @@ The Postgres connector does not have this check (correct for SQL), and the S3/GC
 
 ---
 
-## Info
+## 信息
 
-### IN-01: `envVarPattern` in config loader only matches uppercase variable names
+### IN-01: config loader 中的 `envVarPattern` 仅匹配大写变量名
 
-**File:** `internal/connector/config/config.go:27`
+**文件：** `internal/connector/config/config.go:27`
 
 ```go
 envVarPattern = regexp.MustCompile(`\$\{([A-Z_][A-Z0-9_]*)\}`)
 ```
 
-**Issue:** The regex only matches `${UPPER_CASE}` placeholders. POSIX allows lowercase env var names (`$HOME`, `$user`, etc.). While the project convention is uppercase env vars (enforced by the regex comment "valid env var name"), this will silently leave lowercase `${lower_case_var}` placeholders unreplaced rather than reporting them as missing. Users who write `${dsn}` instead of `${DSN}` will get a confusing error: the literal string `${dsn}` will be passed to the YAML decoder and then to the connector factory, which will fail with a connector-specific error.
+**问题：** 正则表达式仅匹配 `${UPPER_CASE}` 占位符。POSIX 允许小写 env var 名称（`$HOME`、`$user` 等）。虽然项目约定是大写 env vars（由正则表达式注释"有效 env var 名称"强制），但这将静默保留小写 `${lower_case_var}` 占位符不替换，而不是报告它们为缺失。写 `${dsn}` 而不是 `${DSN}` 的用户会得到令人困惑的错误：字面字符串 `${dsn}` 将传递给 YAML 解码器，然后传递给连接器 factory，这将失败并带有连接器特定的错误。
 
-**Fix:** Either extend the regex to match lowercase (POSIX convention), or add a post-resolve check that warns when any `${...}` pattern remains in the resolved string (indicating an unmatched placeholder):
+**修复：** 要么扩展正则表达式以匹配小写（POSIX 约定），要么添加后解决检查，警告当任何 `${...}` 模式保留在解析字符串中时（表示未匹配的占位符）：
 
 ```go
 // After resolveEnv, scan for unresolved placeholders (catches lowercase mismatches):
@@ -335,17 +335,17 @@ if remaining := regexp.MustCompile(`\$\{[^}]+\}`).FindString(resolved); remainin
 
 ---
 
-### IN-02: `asset.ResetForTest` is exported and mutates a package-level variable without sync protection
+### IN-02: `asset.ResetForTest` 被导出并在无 sync 保护的情况下改变包级变量
 
-**File:** `internal/asset/registry.go:85-89`
+**文件：** `internal/asset/registry.go:85-89`
 
 ```go
 func ResetForTest() { defaultRegistry = NewDefinitionRegistry() }
 ```
 
-**Issue:** The exported `ResetForTest` function replaces `defaultRegistry` (a package-level `var`) without holding any lock. If called concurrently with a `Register` or `Get` call that is reading `defaultRegistry`, this is a data race. The comment at line 88 says "NOT safe for concurrent test use — use only from TestMain or serially," which is correct documentation. However, the integration test at `test/integration/e2e_postgres_test.go:273-274` calls `asset.ResetForTest()` inside individual test functions that run serially (`TestE2E_PostgresMaterialize`, etc.). These tests are currently sequential, so there is no race in practice. The risk is a future `t.Parallel()` call that would introduce the race silently.
+**问题：** 导出的 `ResetForTest` 函数替换 `defaultRegistry`（包级 `var`），而不持有任何锁。如果与调用 `Register` 或 `Get` 读取 `defaultRegistry` 的调用并发调用，这是数据竞争。第 88 行的注释说"NOT safe for concurrent test use — use only from TestMain or serially,"，这是正确的文档。但是 `test/integration/e2e_postgres_test.go:273-274` 中的集成测试在单独运行测试函数内调用 `asset.ResetForTest()`（`TestE2E_PostgresMaterialize` 等）。这些测试当前是顺序的，所以在实践中没有竞争。风险是未来的 `t.Parallel()` 调用会静默引入竞争。
 
-**Fix:** Add the `t.Setenv`-style pattern or use a `sync/atomic.Pointer` for `defaultRegistry`, or add a package-init mutex. At minimum, add a test-time `go vet`/`-race` note in the function comment:
+**修复：** 添加 `t.Setenv` 风格模式或使用 `sync/atomic.Pointer` 用于 `defaultRegistry`，或添加包初始化互斥锁。至少在函数注释中添加测试时间 `go vet`/`-race` 注意：
 
 ```go
 // ResetForTest is safe only when called serially (e.g. from TestMain or t.Cleanup without
@@ -356,15 +356,13 @@ func ResetForTest() { defaultRegistry = NewDefinitionRegistry() }
 
 ---
 
-### IN-03: `run_steps` table has no foreign key to `runs`
+### IN-03: `run_steps` 表没有到 `runs` 的外键
 
-**File:** `migrations/20260507120000_phase2_run_tables.sql:27-46`
+**文件：** `migrations/20260507120000_phase2_run_tables.sql:27-46`
 
-**Issue:** The `run_steps.run_id` column references `runs.id` semantically but has no `FOREIGN KEY` constraint in the migration DDL. Orphaned step rows (referencing a deleted or non-existent run) can accumulate without DB-level enforcement. The ent schema (`run_step.go:23`) also does not declare an edge to `Run`, so ent does not generate the FK either.
+**问题：** `run_steps.run_id` 列语义引用 `runs.id`，但在迁移 DDL 中没有 `FOREIGN KEY` 约束。可以累积孤立步骤行（引用已删除或不存在运行的），没有 DB 级执行。如果运行被删除（手动或通过未来清理 job），其 `run_steps` 行被静默留下。类似地，写入 `run_steps` 并带有不存在 `run_id` 的错误会在不报告的情况下成功。
 
-This is a data-integrity gap: if a run is deleted (manually or via a future cleanup job), its `run_steps` rows are silently left behind. Similarly, a bug that writes to `run_steps` with a non-existent `run_id` would succeed silently.
-
-**Fix:** Add the foreign key in the migration:
+这是数据完整性差距。修复：在迁移中添加外键：
 
 ```sql
 ALTER TABLE run_steps
@@ -372,7 +370,7 @@ ALTER TABLE run_steps
   FOREIGN KEY (run_id) REFERENCES runs (id) ON DELETE CASCADE;
 ```
 
-And declare the edge in the ent schema:
+并在 ent schema 中声明边：
 
 ```go
 func (RunStep) Edges() []ent.Edge {
@@ -384,18 +382,18 @@ func (RunStep) Edges() []ent.Edge {
 
 ---
 
-### IN-04: `conformance.go` `CtxCancel` test asserts `err != nil` which always passes even without cancellation
+### IN-04: `conformance.go` `CtxCancel` 测试断言 `err != nil` 即使没有取消也总是通过
 
-**File:** `internal/connector/firstparty/conformance/conformance.go:79`
+**文件：** `internal/connector/firstparty/conformance/conformance.go:79`
 
 ```go
 require.Truef(t, errors.Is(err, context.Canceled) || err != nil,
     "expected ctx.Canceled or any error, got %v", err)
 ```
 
-**Issue:** The assertion `errors.Is(err, context.Canceled) || err != nil` is equivalent to just `err != nil` because `errors.Is(err, context.Canceled)` implies `err != nil`. The test therefore passes as long as the connector returns ANY error after context cancellation — including unrelated errors like "object not found" or "bucket empty". A connector that ignores context cancellation entirely and returns a business error would pass this test, masking a real bug.
+**问题：** 断言 `errors.Is(err, context.Canceled) || err != nil` 等同于 just `err != nil`，因为 `errors.Is(err, context.Canceled)` 意味着 `err != nil`。因此，只要连接器在上下文取消后返回任何错误，测试就通过——包括"对象未找到"或"bucket 空"等无关错误。完全忽略上下文取消并返回业务错误的连接器将通过此测试，掩盖真正的错误。
 
-**Fix:** Strengthen the assertion. The connector should return `context.Canceled` (or a wrapping of it) when the context is cancelled before the operation completes:
+**修复：** 加强断言。连接器应在上下文取消后完成操作时返回 `context.Canceled`（或其包装）：
 
 ```go
 // The connector must respect context cancellation.

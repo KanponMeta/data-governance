@@ -57,24 +57,24 @@ findings:
 status: issues_found
 ---
 
-# Phase 06: Code Review Report
+# Phase 06: 代码审查报告
 
-**Reviewed:** 2026-05-12T00:00:00Z
-**Depth:** standard
-**Files Reviewed:** 45
-**Status:** issues_found
+**审查时间:** 2026-05-12T00:00:00Z
+**深度:** standard
+**审查文件数:** 45
+**状态:** 发现问题
 
-## Summary
+## 摘要
 
-Reviewed 45 files across the Phase 6 Web UI & API deliverable. The codebase is generally well-structured with proper use of chi for HTTP routing, connect-go for RPC, React with TanStack Query for the frontend, and ReactFlow for lineage visualization. No critical security vulnerabilities or bugs were found. Three warnings and six info-level items were identified, mostly related to incomplete stub implementations that are acknowledged in comments.
+审查了 Phase 6 Web UI 与 API 交付物的 45 个文件。代码库整体结构良好，chi 用于 HTTP 路由、connect-go 用于 RPC、React 配合 TanStack Query 作为前端、ReactFlow 用于血缘可视化。没有发现严重的安全漏洞或 bug。发现了 3 个警告和 6 个信息级别的问题，主要与未完成的桩实现相关（在注释中已说明）。
 
-## Warnings
+## 警告
 
-### WR-01: fetchQualityTrend is a stub returning empty data
+### WR-01: fetchQualityTrend 是一个返回空数据的桩
 
-**File:** `internal/api/quality_handlers.go:68-85`
-**Issue:** The `fetchQualityTrend` function is a stub implementation that always returns empty results (`[]QualityTrendPoint{}, 0, nil`). The actual ent queries are commented out, so quality trend data will always be empty.
-**Fix:**
+**文件:** `internal/api/quality_handlers.go:68-85`
+**问题:** `fetchQualityTrend` 函数是一个桩实现，始终返回空结果（`[]QualityTrendPoint{}, 0, nil`）。实际的 ent 查询被注释掉了，因此质量趋势数据将始终为空。
+**修复:**
 ```go
 // Implement when ent queries are ready:
 // runs, err := deps.Ent.Run.Query().
@@ -85,11 +85,11 @@ Reviewed 45 files across the Phase 6 Web UI & API deliverable. The codebase is g
 //   All(ctx)
 ```
 
-### WR-02: ListAlertsHandler and AcknowledgeAlertHandler are stubs
+### WR-02: ListAlertsHandler 和 AcknowledgeAlertHandler 是桩
 
-**File:** `internal/api/quality_handlers.go:98-143`
-**Issue:** Both handlers (`listAlertsHandler` and `acknowledgeAlertHandler`) are stub implementations that return empty data without any actual database queries. Alerts will never be populated or acknowledged.
-**Fix:**
+**文件:** `internal/api/quality_handlers.go:98-143`
+**问题:** 两个处理器（`listAlertsHandler` 和 `acknowledgeAlertHandler`）都是桩实现，在没有任何实际数据库查询的情况下返回空数据。警报永远不会填充或确认。
+**修复:**
 ```go
 // Replace stub with actual ent queries when quality_alerts schema is ready:
 // alerts, err := deps.Ent.QualityAlert.Query().
@@ -98,27 +98,27 @@ Reviewed 45 files across the Phase 6 Web UI & API deliverable. The codebase is g
 //   Limit(50).All(ctx)
 ```
 
-### WR-03: Cookie name mismatch between CSRF validation and login handler
+### WR-03: CSRF 验证和登录处理器之间的 Cookie 名称不匹配
 
-**File:** `internal/auth/csrf.go:21` and `internal/api/auth_handlers.go:135`
-**Issue:** `DefaultCSRFConfig()` uses cookie name `"dg_session"` (line 21), but in `auth_handlers.go:135` the login handler sets cookie with `Name: "dg_session"`. However, the cookie value set in login is `out.Token` (the JWT access token), not a separate CSRF token. The CSRF middleware compares the cookie value against the `X-CSRF-Token` header, both of which are set to the JWT. This creates a situation where the CSRF token IS the JWT, which may not be the intended behavior.
+**文件:** `internal/auth/csrf.go:21` 和 `internal/api/auth_handlers.go:135`
+**问题:** `DefaultCSRFConfig()` 使用 cookie 名称 `"dg_session"`（第 21 行），但在 `auth_handlers.go:135` 中登录处理器设置的 cookie 名称为 `Name: "dg_session"`。但是，登录中设置的 cookie 值是 `out.Token`（JWT 访问令牌），而不是单独的 CSRF 令牌。CSRF 中间件将 cookie 值与 `X-CSRF-Token` 请求头进行比较，两者都设置为 JWT。这造成了一种情况，即 CSRF 令牌就是 JWT，这可能不是预期行为。
 
-Note: This pattern appears intentional based on comments (D-23, T-06-02) but could be a security concern if the JWT is used for CSRF. A CSRF token should ideally be separate from the authentication token.
-**Fix:** Consider using separate tokens for authentication and CSRF protection, or document why the JWT is acceptable as a CSRF token in this context.
+注意：基于注释（D-23、T-06-02），这种模式看起来是有意为之，但如果 JWT 用于 CSRF，则可能存在安全风险。CSRF 令牌理想情况下应该与认证令牌分开。
+**修复:** 考虑使用单独的令牌进行认证和 CSRF 保护，或记录为什么在此上下文中 JWT 可以接受作为 CSRF 令牌。
 
-## Info
+## 信息
 
-### IN-01: Admin ConnectRPC handlers are unimplemented stubs
+### IN-01: Admin ConnectRPC 处理器是未实现的桩
 
-**File:** `internal/api/connect_admin.go:27-65`
-**Issue:** All `AdminService` handler methods (`ListUsers`, `AssignRole`, `RemoveRole`, `ListRoles`, `CreateRole`, `DeleteRole`, `ListPolicies`, `CreatePolicy`, `UpdatePolicy`, `DeletePolicy`) return `connect.CodeUnimplemented`. These are acknowledged as stubs in comments.
-**Fix:** Implement AdminService handlers in subsequent plans as noted in the comment.
+**文件:** `internal/api/connect_admin.go:27-65`
+**问题:** 所有 `AdminService` 处理器方法（`ListUsers`、`AssignRole`、`RemoveRole`、`ListRoles`、`CreateRole`、`DeleteRole`、`ListPolicies`、`CreatePolicy`、`UpdatePolicy`、`DeletePolicy`）都返回 `connect.CodeUnimplemented`。这些在注释中被标记为桩。
+**修复:** 在后续计划中实现 AdminService 处理器（如注释中所述）。
 
-### IN-02: Tabs component uses React.cloneElement which may cause extra re-renders
+### IN-02: Tabs 组件使用 React.cloneElement 可能导致额外重新渲染
 
-**File:** `web/src/components/ui/tabs.tsx:21, 41`
-**Issue:** The Tabs/TabsList components use `React.cloneElement` to pass props to children, which bypasses the normal React reconciliation and can cause unexpected behavior. The pattern is functional but could be refactored to use a context-based approach.
-**Fix:**
+**文件:** `web/src/components/ui/tabs.tsx:21, 41`
+**问题:** Tabs/TabsList 组件使用 `React.cloneElement` 向子组件传递 props，这绕过了正常的 React 协调机制，可能导致意外行为。该模式功能正常，但可以重构为使用基于上下文的方法。
+**修复:**
 ```tsx
 // Use React context for Tabs state instead of cloneElement
 const TabsContext = React.createContext<{
@@ -127,17 +127,17 @@ const TabsContext = React.createContext<{
 }>({})
 ```
 
-### IN-03: Missing error boundaries in React components
+### IN-03: React 组件中缺少错误边界
 
-**File:** `web/src/main.tsx` (and all page components)
-**Issue:** No React error boundaries are defined. Uncaught errors in component render trees will crash the entire application instead of graceful degradation.
-**Fix:** Add error boundary components wrapping route-level content.
+**文件:** `web/src/main.tsx`（以及所有页面组件）
+**问题:** 没有定义 React 错误边界。组件渲染树中未捕获的错误将使整个应用程序崩溃，而不是优雅降级。
+**修复:** 添加错误边界组件包装路由级内容。
 
-### IN-04: Governance page CSRF token extraction uses wrong cookie name
+### IN-04: Governance 页面 CSRF 令牌提取使用了错误的 cookie 名称
 
-**File:** `web/src/pages/governance/index.tsx:109-112`
-**Issue:** The code looks for `dg_csrf` cookie but the backend sets `dg_session` cookie (internal/api/auth_handlers.go:135). The CSRF token extraction should use `dg_session` instead.
-**Fix:**
+**文件:** `web/src/pages/governance/index.tsx:109-112`
+**问题:** 代码查找 `dg_csrf` cookie，但后端设置的是 `dg_session` cookie（internal/api/auth_handlers.go:135）。CSRF 令牌提取应改用 `dg_session`。
+**修复:**
 ```tsx
 // Get CSRF token from cookie - use correct cookie name
 const csrfToken = document.cookie
@@ -146,20 +146,20 @@ const csrfToken = document.cookie
   ?.split('=')[1] || ''
 ```
 
-### IN-05: Missing search bar and filter components referenced in catalog page
+### IN-05: 目录页面中引用了缺失的搜索栏和过滤器组件
 
-**File:** `web/src/pages/catalog/index.tsx:3-7`
-**Issue:** The `SearchBar`, `SearchResult`, `TagFilter`, and `OwnerSelect` components are imported but not present in the codebase. The catalog page will fail to compile/run.
-**Fix:** Create the missing components or remove imports if they will be added later.
+**文件:** `web/src/pages/catalog/index.tsx:3-7`
+**问题:** 导入了 `SearchBar`、`SearchResult`、`TagFilter` 和 `OwnerSelect` 组件，但代码库中不存在这些组件。目录页面将无法编译/运行。
+**修复:** 创建缺失的组件，或移除导入（如果稍后添加）。
 
-### IN-06: main.tsx contains both route definition AND page components in a single file
+### IN-06: main.tsx 在单个文件中同时包含路由定义和页面组件
 
-**File:** `web/src/main.tsx`
-**Issue:** This file is 368 lines and mixes route tree definition with multiple page components (AssetDashboardPage, AssetCardPage, AssetDetailPage, RunHistoryPage, etc.). This violates single responsibility and makes the file harder to maintain.
-**Fix:** Split into separate files under `web/src/pages/` directory with one page component per file, as already done for admin sub-pages.
+**文件:** `web/src/main.tsx`
+**问题:** 该文件有 368 行，混合了路由树定义和多个页面组件（AssetDashboardPage、AssetCardPage、AssetDetailPage、RunHistoryPage 等）。这违反了单一职责原则，使文件更难维护。
+**修复:** 拆分为 `web/src/pages/` 目录下的单独文件，每个文件一个页面组件（如 admin 子页面已做的那样）。
 
 ---
 
-_Reviewed: 2026-05-12T00:00:00Z_
-_Reviewer: Claude (gsd-code-reviewer)_
-_Depth: standard_
+_审查时间: 2026-05-12T00:00:00Z_
+_审查者: Claude (gsd-code-reviewer)_
+_深度: standard_

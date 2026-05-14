@@ -78,43 +78,43 @@ deviations: []
 auth_gates: []
 ---
 
-# Phase 01 Plan 04: Connector Interface + Registry + Integration Test Summary
+# Phase 01 Plan 04: 连接器接口 + 注册表 + 集成测试总结
 
-## One-liner
+## 一句话总结
 
-Connector ABI frozen at v1.0.0 with protobuf IDL + Go interface, in-process Registry with APIVersion enforcement, example stub proving clean import boundary, end-to-end integration test covering all Phase 1 acceptance criteria, CI pipeline guarding the contract.
+连接器 ABI 以 protobuf IDL + Go 接口的形式冻结在 v1.0.0，带 APIVersion 强制执行的就地注册表，证明清晰导入边界的示例桩，端到端集成测试覆盖所有 Phase 1 验收标准，保护契约的 CI 流水线。
 
-## What Was Built
+## 已构建内容
 
-Plan 04 locks the connector public-API surface that third parties will build against:
+Plan 04 锁定第三方将构建的连接器公共 API surface:
 
-1. **Protobuf IDL** (`internal/connector/proto/connector.proto`) - `data_governance.connector.v1` package with `ConnectorService` (Ping, Schema, Read, Write RPCs), all request/response messages, Capabilities. FROZEN comment at top of file.
+1. **Protobuf IDL** (`internal/connector/proto/connector.proto`) - `data_governance.connector.v1` 包，包含 `ConnectorService` (Ping, Schema, Read, Write RPC)、所有请求/响应消息、Capabilities。文件顶部有 FROZEN 注释。
 
-2. **buf tooling** - `buf.yaml` (v2, STANDARD lint, FILE breaking, PACKAGE_DIRECTORY_MATCH disabled to allow `internal/` layout), `buf.gen.yaml` (buf.build/protocolbuffers/go + buf.build/connectrpc/go plugins). Generated `connector.pb.go` and `connectorv1connect/connector.connect.go`.
+2. **buf 工具** - `buf.yaml` (v2, STANDARD lint, FILE breaking, PACKAGE_DIRECTORY_MATCH 禁用以允许 `internal/` 布局)、`buf.gen.yaml` (buf.build/protocolbuffers/go + buf.build/connectrpc/go 插件)。生成 `connector.pb.go` 和 `connectorv1connect/connector.connect.go`。
 
-3. **Go interface** (`internal/connector/connector.go`) - `Connector` interface mirroring proto exactly with all types: `Capabilities`, `AssetRef`, `Column`, `Row`, request/response structs.
+3. **Go 接口** (`internal/connector/connector.go`) - `Connector` 接口精确镜像 proto，包含所有类型: `Capabilities`、`AssetRef`、`Column`、`Row`、请求/响应结构体。
 
-4. **Version constant** (`internal/connector/version.go`) - `APIVersion = "v1.0.0"` with bumping rules in comment.
+4. **版本常量** (`internal/connector/version.go`) - `APIVersion = "v1.0.0"`，注释中包含版本更新规则。
 
-5. **In-process Registry** (`internal/connector/registry.go`) - Thread-safe `Registry` with `NewRegistry`, `Register` (rejects mismatched APIVersion with `ErrIncompatibleVersion`, duplicate name with `ErrAlreadyRegistered`), `Get` (ErrNotFound), `List` (sorted).
+5. **就地注册表** (`internal/connector/registry.go`) - 线程安全的 `Registry`，包含 `NewRegistry`、`Register` (拒绝不匹配的 APIVersion 并抛出 `ErrIncompatibleVersion`，重复名称抛出 `ErrAlreadyRegistered`)、`Get` (ErrNotFound)、`List` (排序)。
 
-6. **Reference stub** (`internal/connector/example_inproc/postgres_stub.go`) - Imports ONLY `github.com/kanpon/data-governance/internal/connector`. Compile-time assertion `var _ connector.Connector = (*PostgresStub)(nil)`. Package comment explicitly documents the boundary requirement.
+6. **参考桩** (`internal/connector/example_inproc/postgres_stub.go`) - 仅导入 `github.com/kanpon/data-governance/internal/connector`。编译时断言 `var _ connector.Connector = (*PostgresStub)(nil)`。包注释明确记录边界要求。
 
-7. **Integration test** (`test/integration/integration_test.go`) - `TestPhase1AcceptanceCriteria` with 9 subtests: health, admin bootstrap, login JWT, wrong password 401+problem+json, invite, accept-invite, expired token + event_log verification, RLS append-only enforcement (raw SQL), connector boundary marker.
+7. **集成测试** (`test/integration/integration_test.go`) - `TestPhase1AcceptanceCriteria`，包含 9 个子测试: health、admin bootstrap、login JWT、错误密码 401+problem+json、invite、accept-invite、过期令牌 + event_log 验证、RLS 追加-only 强制执行 (原始 SQL)、连接器边界标记。
 
-8. **CI workflow** (`.github/workflows/ci.yml`) - buf lint, atlas migrate lint (warn-only), unit tests, integration tests with platform startup.
+8. **CI 工作流** (`.github/workflows/ci.yml`) - buf lint、atlas migrate lint (警告模式)、单元测试、带平台启动的集成测试。
 
-## Commits
+## 提交
 
-| Commit | Description |
+| 提交 | 描述 |
 |--------|-------------|
 | 4ac3451 | feat(01-04): connector protobuf IDL + Go interface + buf tooling |
 | 4e4b09a | feat(01-04): connector Registry + example in-process stub |
 | b59cb30 | feat(01-04): end-to-end integration test + CI workflow |
 
-## Threat Mitigation
+## 威胁缓解
 
-| Threat | Mitigation | File |
+| 威胁 | 缓解措施 | 文件 |
 |--------|------------|------|
 | T-04-01 Connector ABI tampering | APIVersion() returns connector.APIVersion; Registry rejects mismatches | registry.go |
 | T-04-02 Migration tampering | CI runs atlas migrate lint | ci.yml |
@@ -122,19 +122,19 @@ Plan 04 locks the connector public-API surface that third parties will build aga
 | T-04-04 Proto IDL tampering | buf lint + breaking checks in CI | ci.yml |
 | T-04-06 Registration repudiation | slog INFO-level logging for audit traceability | registry.go |
 
-## Open Questions for Phase 2
+## Phase 2 的待解决问题
 
-1. **Subprocess transport via go-plugin**: Phase 1 Registry is in-process only. Phase 2 must add `hashicorp/go-plugin` subprocess management with gRPC over stdio for non-Go connectors.
+1. **通过 go-plugin 的子进程传输**: Phase 1 Registry 仅支持就地。Phase 2 必须添加 `hashicorp/go-plugin` 子进程管理，通过 gRPC over stdio 支持非 Go 连接器。
 
-2. **Connector lifecycle events to add to D-10 enum**: Phase 1 event types (D-10) cover auth + platform. Phase 2 should add `connector.registered`, `connector.ping_failed`, `connector.read_error`, `connector.write_error` to the enum.
+2. **需要添加到 D-10 枚举的连接器生命周期事件**: Phase 1 事件类型 (D-10) 覆盖 auth + platform。Phase 2 应将 `connector.registered`、`connector.ping_failed`、`connector.read_error`、`connector.write_error` 添加到枚举中。
 
-3. **Secrets vault integration**: Phase 1 proto documents that sensitive config keys should be env-var indirection. Phase 2 should enforce this via a secrets vault (Vault, AWS Secrets Manager, etc.).
+3. **密钥保管库集成**: Phase 1 proto 记录敏感配置密钥应通过 env-var 间接寻址。Phase 2 应通过密钥保管库 (Vault、AWS Secrets Manager 等) 强制执行此操作。
 
-4. **Platform service protos**: The `/grpc` subtree is a net/http stub in Phase 1. Phase 2 must define `proto/platform/v1/platform.proto` and replace the stub with connect-go handlers.
+4. **平台服务 proto**: `/grpc` 子树在 Phase 1 中是 net/http 桩。Phase 2 必须定义 `proto/platform/v1/platform.proto` 并用 connect-go 处理程序替换该桩。
 
-## Verification Results
+## 验证结果
 
-| Check | Result |
+| 检查 | 结果 |
 |-------|--------|
 | `go build ./...` | PASS |
 | `go vet ./...` | PASS |
@@ -150,10 +150,10 @@ Plan 04 locks the connector public-API surface that third parties will build aga
 | `grep "buf lint" ci.yml` | PASS |
 | `grep "go test -tags=integration" ci.yml` | PASS |
 
-## Self-Check
+## 自我检查
 
-All claims verified:
-- Commits exist: 4ac3451, 4e4b09a, b59cb30
-- Files created: internal/connector/{proto/*.{proto,yaml,gen.yaml},connector.go,version.go,registry.go,registry_test.go,gen/*.pb.go,gen/connectorv1connect/*,example_inproc/*.go}, test/integration/integration_test.go, .github/workflows/ci.yml
-- All acceptance criteria from PLAN.md verified via grep + automated checks
-- Integration test RLS check uses raw SQL (consistent with plan 02; ent Immutable() prevents UpdateOneID generation)
+所有声明已验证:
+- 提交存在: 4ac3451, 4e4b09a, b59cb30
+- 创建的文件: internal/connector/{proto/*.{proto,yaml,gen.yaml},connector.go,version.go,registry.go,registry_test.go,gen/*.pb.go,gen/connectorv1connect/*,example_inproc/*.go}, test/integration/integration_test.go, .github/workflows/ci.yml
+- 所有来自 PLAN.md 的验收标准已通过 grep + 自动化检查验证
+- 集成测试 RLS 检查使用原始 SQL (与 plan 02 一致；ent Immutable() 阻止 UpdateOneID 生成)

@@ -120,8 +120,9 @@ key-decisions:
     plan's original 3-arg signature"
   - "MaskingIO uses MaskApplyFunc dependency-injection surface. internal/policy
     already imports internal/asset (for ColumnPolicy); making asset import
-    policy would create a cycle. Executor wires policypkg.Apply at the call
-    site"
+    policy would create a cycle. Dependency-injection via a function value is
+    the standard Go cycle-break pattern and yields free testability (tests
+    inject deterministic transforms instead of relying on MASK_HASH_SALT)"
   - "runtime.MaskRulesProvider returns []policy.MaskRule (not []runtime.MaskRule).
     runtime → policy import is one-way (policy does NOT import runtime), so
     no cycle exists. The cleaner approach is to let the runtime depend on
@@ -162,63 +163,40 @@ duration: 30min
 completed: 2026-05-10
 ---
 
-# Phase 5 Plan 05-03: PII Propagation + In-Pipeline Masking Summary
+# Phase 5 Plan 05-03: PII 传播与管道内掩码总结
 
-**Synchronous PII tag propagation over column_edges inside the lineage_writer transaction — zero unmasked window for downstream columns. Builder.Column().TagOverride() is the only auditable path that REMOVES inherited pii (writes metadata.tag_overridden on first observation, idempotent on re-runs). Non-warehouse connectors (Postgres/MySQL/S3/GCS/HDFS) have AssetIO.Write wrapped with MaskingIO that applies HMAC-SHA256/redact/partial transforms in-pipeline.**
+**同步 PII 标签传播：沿 column_edges 在 lineage_writer 事务内传播，下游列零未掩码窗口。`Builder.Column().TagOverride()` 是移除继承 pii=true 标签的唯一合规路径（首次观察时写入 metadata.tag_overridden，幂等重复运行）。非仓库连接器（Postgres/MySQL/S3/GCS/HDFS）的 AssetIO.Write 由 MaskingIO 装饰，在管道内应用 HMAC-SHA256/redact/partial 转换。**
 
-## Performance
+## 性能
 
-- **Duration:** ~30 min total across 2 tasks
-- **Started:** 2026-05-10T01:20:59Z
-- **Completed:** 2026-05-10T01:50:35Z
-- **Tasks:** 2/2 committed atomically
-- **Files modified:** 16 (8 new + 8 modified)
-- **Tests added:** 39 unit tests + 1 deferred-items entry
+- **持续时间：** 约 30 分钟
+- **开始：** 2026-05-10T01:20:59Z
+- **完成：** 2026-05-10T01:50:35Z
+- **任务：** 2/2 原子提交
+- **文件变更：** 16（8 创建 + 8 修改）
+- **测试添加：** 39 个单元测试 + 1 个 deferred-items 条目
 
-## Accomplishments
+## 成就
 
-- **PII propagator (D-06).** Walking column_edges inside the caller's *sql.Tx
-  — propagation, override application, and audit emission all commit/rollback
-  with the lineage_writer's column_edges UPSERT. No eventually-consistent
-  window where downstream pii columns appear unmasked.
-- **TagOverride builder DSL.** `asset.New("orders_anon").Column("hashed_ssn")
-  .TagOverride(asset.TagOverride{Remove: "pii", Reason: "hashed at source"})`
-  is the only sanctioned path for removing the propagated pii=true tag.
-  Reason is mandatory; the audit chain captures actor + before + after + reason.
-- **Idempotent override audit.** First observation of an override emits
-  metadata.tag_overridden to the audit chain; subsequent same-(asset, column)
-  re-runs read pii_override_audit_seq from column_pii_tags and skip the
-  emission.
-- **In-pipeline mask transforms.** ApplyHash uses HMAC-SHA256 over a
-  deployment-wide salt (MASK_HASH_SALT env var; required in prod via
-  GOV_ENV=prod). ApplyRedact returns "***". ApplyPartial reveals first/last
-  N characters with '*' between; short strings fall back to redact.
-- **MaskingIO decorator.** Wraps AssetIO.Write; iterates per-row Fields
-  map; calls injected MaskApplyFunc on string columns referenced by a
-  MaskRule; passes non-string and non-rule columns unchanged. Goroutine-safe
-  row counter, slog.Debug per-Write summary.
-- **Executor capability assertion.** `maybeWrapMaskingIO` enforces D-05
-  order: nil MaskRulesProvider → no wrap; connector implements
-  MaskingProvisioner → no wrap (warehouse-native takes precedence); else
-  fetch rules and wrap MaskingIO around the inner AssetIO BEFORE TrackingIO.
-- **PII fallback safety net.** `MaskRulesForAsset` returns rows where
-  column_pii_tags.pii=true AND no active column_policy exists — DefaultMaskForPII
-  (redact in v1) is applied AND slog.Warn captures the inconsistency for
-  operators.
-- **cmd/platform wiring.** worker.go startup now constructs
-  policy.NewStore + governance.NewPropagator + lineage.NewWriter(...).WithPropagator(...)
-  and assigns runtime.Deps.MaskRulesProvider = policyStore.
+- **PII 传播器（D-06）。** 在调用方的 `*sql.Tx` 内遍历 column_edges — 传播、override 应用和 audit 排放都随 lineage_writer 的 column_edges UPSERT 一起 commit/rollback。无最终一致窗口使下游 pii 列看起来未掩码。
+- **TagOverride builder DSL。** `asset.New("orders_anon").Column("hashed_ssn").TagOverride(asset.TagOverride{Remove: "pii", Reason: "hashed at source"})` 是移除传播的 pii=true 标签的唯一批准路径。Reason 是必填的；audit 链捕获 actor + before + after + reason。
+- **幂等 override audit。** 首次观察到 override 时发出 metadata.tag_overridden 到 audit 链；后续相同 (asset, column) 重新运行读取 pii_override_audit_seq 并跳过排放。
+- **管道内掩码转换。** ApplyHash 使用 HMAC-SHA256 over 部署范围 salt（MASK_HASH_SALT env var；生产通过 GOV_ENV=prod 要求）。ApplyRedact 返回 "***"。ApplyPartial 揭示前/后 N 字符，中间用 '*'；短字符串 fallback 到 redact。
+- **MaskingIO 装饰器。** 包装 AssetIO.Write；遍历每行 Fields map；调用注入的 MaskApplyFunc 处理字符串列；对非字符串和非规则列直接传递。goroutine 安全的行计数器，每 Write 条 slog.Debug 摘要。
+- **Executor 能力断言。** `maybeWrapMaskingIO` 强制 D-05 顺序：nil MaskRulesProvider → 不包装；连接器实现 MaskingProvisioner → 不包装（仓库原生优先）；否则获取规则并在 TrackingIO 之前用 MaskingIO 包装 AssetIO。
+- **PII fallback 安全网。** `MaskRulesForAsset` 返回 column_pii_tags.pii=true 且无活动 column_policy 的行 — 应用 DefaultMaskForPII（v1 为 redact）并 slog.Warn 捕获不一致情况。
+- **cmd/platform 接线。** worker.go 启动时构建 policy.NewStore + governance.NewPropagator + lineage.NewWriter(...).WithPropagator(...) 并分配 runtime.Deps.MaskRulesProvider = policyStore。
 
-## Task Commits
+## 任务提交
 
-| Task | Description                                                                          | Commit    |
+| 任务 | 描述 | 提交 |
 | ---- | ------------------------------------------------------------------------------------ | --------- |
-| 1    | Synchronous PII propagator + TagOverride DSL + lineage hook                          | `cb9ebdc` |
-| 2    | In-pipeline mask functions + MaskingIO decorator + executor wiring (RBAC-05)         | `0d38156` |
+| 1    | 同步 PII 传播器 + TagOverride DSL + lineage 钩子 | `cb9ebdc` |
+| 2    | 管道内掩码函数 + MaskingIO 装饰器 + executor 接线（RBAC-05） | `0d38156` |
 
-## propagator BFS SQL (per `<output>` requirement)
+## 传播器 BFS SQL（按 `<output>` 要求）
 
-The propagator's depth-1 BFS query that drives the union rule:
+传播器的深度-1 BFS 查询，驱动 union 规则：
 
 ```sql
 SELECT ce.from_asset, ce.from_column, COALESCE(t.pii, FALSE) AS upstream_pii
@@ -231,12 +209,7 @@ SELECT ce.from_asset, ce.from_column, COALESCE(t.pii, FALSE) AS upstream_pii
    AND ce.superseded_at IS NULL
 ```
 
-**Index plan (intended):** the existing partial index `column_edges_active_to`
-on `(to_asset, to_column) WHERE superseded_at IS NULL` covers the WHERE clause.
-The LEFT JOIN to `column_pii_tags` uses the table's PRIMARY KEY (asset,
-column_name) — Postgres performs an index-nested-loop. EXPLAIN ANALYZE plan
-on a freshly-loaded test schema (executed against the testharness Postgres
-once Docker is available in CI):
+**预期索引计划：** 既有的部分索引 `column_edges_active_to` 在 `(to_asset, to_column) WHERE superseded_at IS NULL` 上覆盖 WHERE 子句。LEFT JOIN 到 `column_pii_tags` 使用表的 PRIMARY KEY (asset, column_name) — Postgres 执行索引嵌套循环。Docker 可用后在 testharness Postgres 上执行 EXPLAIN ANALYZE 计划：
 
 ```
 Hash Right Join  (cost=12.00..24.00 rows=N width=70)
@@ -246,16 +219,11 @@ Hash Right Join  (cost=12.00..24.00 rows=N width=70)
          Filter: (superseded_at IS NULL)
 ```
 
-Production scale (>10K column_edges per asset target): the index condition
-prunes to ≤ N upstream rows for the requested (to_asset, to_column); the LEFT
-JOIN scans column_pii_tags by PK once per upstream. With BFS depth = 1 (the
-plan's design choice — recursion happens naturally across runs as each
-upstream materialization writes its own pii flag), there is no risk of
-exponential expansion.
+生产规模（>10K column_edges 每目标资产）：索引条件裁剪到请求的 (to_asset, to_column) 的 ≤N 个上游行；LEFT JOIN 按 PK 一次扫描 column_pii_tags。因为 BFS 深度 = 1（计划的设计选择 — 递归通过运行自然发生，因为每个上游物化写入自己的 pii 标志），无指数膨胀风险。
 
-## TagOverride storage shape
+## TagOverride 存储形状
 
-Builder declaration:
+Builder 声明：
 
 ```go
 asset.New("orders_anon").
@@ -264,7 +232,7 @@ asset.New("orders_anon").
         And()
 ```
 
-Persisted into `column_pii_tags`:
+持久化到 `column_pii_tags`：
 
 ```
 asset                | orders_anon
@@ -276,8 +244,7 @@ override_reason      | hashed via SHA-256 at source; not reversible
 pii_override_audit_seq | <audit_log.seq emitted on first observation>
 ```
 
-Audit row written on first observation (subsequent re-runs see
-`pii_override_audit_seq` populated and skip the emission):
+首次观察时写入 audit 行（后续重新运行看到 `pii_override_audit_seq` 已填充并跳过排放）：
 
 ```
 event_type     | metadata.tag_overridden
@@ -290,9 +257,9 @@ payload        | { "asset": "orders_anon", "column": "hashed_ssn",
 actor_id       | NULL  (system / builder declaration)
 ```
 
-## MASK_HASH_SALT deployment runbook (per `<output>` requirement)
+## MASK_HASH_SALT 部署手册（按 `<output>` 要求）
 
-**Generate (one-time, deployment provisioner):**
+**生成（一次性，部署配置器）：**
 
 ```bash
 openssl rand -hex 32 | tr -d '\n' > /etc/data-governance/mask-hash.salt
@@ -300,7 +267,7 @@ chmod 0400 /etc/data-governance/mask-hash.salt
 chown platform:platform /etc/data-governance/mask-hash.salt
 ```
 
-**Inject into the platform process** (Kubernetes secret or systemd EnvironmentFile):
+**注入平台进程**（Kubernetes secret 或 systemd EnvironmentFile）：
 
 ```yaml
 # k8s manifest excerpt
@@ -317,30 +284,22 @@ spec:
               key: salt
 ```
 
-**Behavioural guarantees:**
+**行为保证：**
 
-- `GOV_ENV=prod` + empty `MASK_HASH_SALT` → `policy.ApplyHash` returns
-  `policy.ErrMaskSaltMissing`; the platform refuses to mask and surfaces the
-  error to the run (test: `TestApplyHash_RequiresSaltInProd`).
-- `GOV_ENV=""` + empty salt → permissive (HMAC with empty key) — INSECURE; for
-  development only. Test: `TestApplyHash_NoErrInDev`.
-- Determinism: identical (salt, value) → identical 64-hex-char digest across
-  100+ calls. Test: `TestApplyHash_Deterministic`.
+- `GOV_ENV=prod` + 空 `MASK_HASH_SALT` → `policy.ApplyHash` 返回 `policy.ErrMaskSaltMissing`；平台拒绝掩码并将错误 surfaced 到运行（测试：`TestApplyHash_RequiresSaltInProd`）。
+- `GOV_ENV=""` + 空 salt → 宽容模式（空密钥的 HMAC）— 不安全；仅用于开发。测试：`TestApplyHash_NoErrInDev`。
+- 确定性：相同 (salt, value) → 100+ 次调用产生相同的 64-hex-char 摘要。测试：`TestApplyHash_Deterministic`。
 
-**Rotation runbook:**
+**轮换手册：**
 
-1. Generate new salt, deploy alongside the old one as `MASK_HASH_SALT_NEXT`.
-2. Trigger a one-time rematerialization of every asset with HMAC-mask
-   columns (`./platform backfill --code-hash-changed`).
-3. After all column_edges referencing the new code_hash are written, swap
-   `MASK_HASH_SALT_NEXT` → `MASK_HASH_SALT` and remove the old one.
-4. Old hash digests are no longer comparable to new — this is by design
-   (T-05-03-13 documented as accept).
+1. 生成新 salt，与旧 salt 并存为 `MASK_HASH_SALT_NEXT`。
+2. 触发每个带 HMAC 掩码列的资产的一次性重新物化（`./platform backfill --code-hash-changed`）。
+3. 所有引用新 code_hash 的 column_edges 写入后，将 `MASK_HASH_SALT_NEXT` 交换为 `MASK_HASH_SALT` 并移除旧 salt。
+4. 旧 hash 摘要不再与新的可比 — 这是设计决定（T-05-03-13 记录为接受）。
 
-## D-05 Capability Assertion Order (per `<acceptance_criteria>`)
+## D-05 能力断言顺序（按 `<acceptance_criteria>`）
 
-The executor's runStep calls `maybeWrapMaskingIO(ctx, assetName, inner)` BEFORE
-wrapping with TrackingIO:
+executor 的 runStep 在 TrackingIO 包装之前调用 `maybeWrapMaskingIO(ctx, assetName, inner)`：
 
 ```go
 func (e *Executor) maybeWrapMaskingIO(ctx, assetName, inner) (asset.AssetIO, error) {
@@ -356,17 +315,16 @@ func (e *Executor) maybeWrapMaskingIO(ctx, assetName, inner) (asset.AssetIO, err
 }
 ```
 
-Tested by 4 named unit tests:
+4 个命名单元测试验证：
 
-- `TestExecutor_NoPolicies_DoesNotWrapMaskingIO` — gate (1).
-- `TestExecutor_WarehouseConnector_DoesNotWrapMaskingIO` — gate (2).
-- `TestExecutor_NonWarehouseConnector_WithPolicies_WrapsMaskingIO` — wrap path.
-- `TestExecutor_PIIWithoutPolicy_FallsBackToRedact` — pii fallback path.
+- `TestExecutor_NoPolicies_DoesNotWrapMaskingIO` — 门 (1)。
+- `TestExecutor_WarehouseConnector_DoesNotWrapMaskingIO` — 门 (2)。
+- `TestExecutor_NonWarehouseConnector_WithPolicies_WrapsMaskingIO` — 包装路径。
+- `TestExecutor_PIIWithoutPolicy_FallsBackToRedact` — pii fallback 路径。
 
-## End-to-end PII Test Fixture (per `<output>` requirement)
+## 端到端 PII 测试夹具（按 `<output>` 要求）
 
-The end-to-end smoke for "upstream pii=true → downstream inherits pii=true"
-lives in `internal/governance/pii_propagator_test.go`:
+"上游 pii=true → 下游继承 pii=true"的端到端冒烟测试位于 `internal/governance/pii_propagator_test.go`：
 
 ```go
 func TestPropagate_UnionRule_AnyUpstreamPII(t *testing.T) {
@@ -388,158 +346,134 @@ func TestPropagate_UnionRule_AnyUpstreamPII(t *testing.T) {
 }
 ```
 
-Multi-upstream union check (1 of 3 upstreams pii → output is pii):
-`TestPropagate_MultipleUpstreamsUnion`. Same-tx guarantee (rollback erases
-the propagator's writes): `TestPropagate_SameTxGuarantee`.
+多上游 union 检查（1/3 上游 pii → 输出为 pii）：`TestPropagate_MultipleUpstreamsUnion`。同一 tx 保证（rollback 擦除传播器的写入）：`TestPropagate_SameTxGuarantee`。
 
-## STRIDE Mitigation Evidence (T-05-03-*)
+## STRIDE 缓解证据（T-05-03-*）
 
-| Threat ID    | Mitigation Evidence                                                                                                                 |
+| Threat ID    | 缓解证据                                                                                                                 |
 | ------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| T-05-03-01   | `governance.Propagator` runs inside `lineage.Writer`'s tx (verified by `TestPropagate_SameTxGuarantee` — rollback erases the row)  |
-| T-05-03-02   | column_pii_tags row's `source='override'` is the only cleartext path; an UPDATE that removes pii without source='override' would not pass the application code path |
-| T-05-03-03   | metadata.tag_overridden audit chain entry includes `actor_id`, `reason`, `removed_tag`, `added_tag`, `run_id`; idempotent via `pii_override_audit_seq` (`TestPropagate_OverrideEmitsAuditOnce`) |
-| T-05-03-04   | MaskRulesForAsset's pii fallback path emits `slog.Warn("pii column without policy", ...)` and applies `DefaultMaskForPII` (verified by `TestStore_MaskRulesForAsset_PIIWithoutPolicyFallsBackToRedact`) |
-| T-05-03-05   | `maybeWrapMaskingIO` type-asserts `connector.MaskingProvisioner` BEFORE consulting the rules provider; verified by `TestExecutor_WarehouseConnector_DoesNotWrapMaskingIO` |
-| T-05-03-06   | `ApplyHash` uses HMAC-SHA256 with deployment-wide salt; salt rotation procedure documented in user_setup runbook above; T-05-03-06 disposition = accept (deterministic-by-design) |
-| T-05-03-07   | Plan documents 3-char SSN suffix attack as accept; v1 only enforces non-empty salt — operational mitigation is to use Partial(reveal=0) or Redact for high-risk columns |
-| T-05-03-08   | TagOverride.Reason is a free-form text field; platform enforces non-empty (Validate()); semantic veracity is operational |
-| T-05-03-09   | column_edges drift detection from Phase 4 D-04 still emits `lineage.drift_detected` events; complements Phase 5 propagator |
-| T-05-03-10   | BFS depth = 1 by design — no recursion in propagator code; recursive accumulation happens across runs |
-| T-05-03-11   | MaskingIO operates on AssetIO.Write boundary only; user code that bypasses this (opening DB directly) is documented as known-architecture limitation (Pitfall #8 covers warehouse-native fallback) |
-| T-05-03-12   | All SQL paths covered by tests (TestPropagate_*) + same-tx rollback testing |
-| T-05-03-13   | Hash incomparability after salt rotation is documented in runbook as accept |
+| T-05-03-01   | `governance.Propagator` 在 `lineage.Writer` 的 tx 内运行（`TestPropagate_SameTxGuarantee` 验证 — rollback 擦除行）  |
+| T-05-03-02   | column_pii_tags 行的 `source='override'` 是唯一的明文路径；没有 source='override' 的 UPDATE 移除 pii 不会通过应用程序代码路径 |
+| T-05-03-03   | metadata.tag_overridden audit 链条目包含 `actor_id`、`reason`、`removed_tag`、`added_tag`、`run_id`；通过 `pii_override_audit_seq` 幂等（`TestPropagate_OverrideEmitsAuditOnce`） |
+| T-05-03-04   | MaskRulesForAsset 的 pii fallback 路径发出 `slog.Warn("pii column without policy", ...)` 并应用 `DefaultMaskForPII`（`TestStore_MaskRulesForAsset_PIIWithoutPolicyFallsBackToRedact` 验证） |
+| T-05-03-05   | `maybeWrapMaskingIO` 在查询规则提供者之前类型断言 `connector.MaskingProvisioner`；`TestExecutor_WarehouseConnector_DoesNotWrapMaskingIO` 验证 |
+| T-05-03-06   | `ApplyHash` 使用 HMAC-SHA256 与部署范围 salt；salt 轮换程序记录在 user_setup 手册上方；T-05-03-06 处置 = accept（确定性设计） |
+| T-05-03-07   | 文档记录 3 字符 SSN 末尾攻击为 accept；v1 仅强制非空 salt — 操作缓解是使用 Partial(reveal=0) 或 Redact 用于高风险列 |
+| T-05-03-08   | TagOverride.Reason 是自由格式文本字段；平台强制非空（Validate()）；语义真实性是运营责任 |
+| T-05-03-09   | column_edges 漂移检测来自 Phase 4 D-04 仍然发出 `lineage.drift_detected` 事件；补充 Phase 5 传播器 |
+| T-05-03-10   | BFS 深度 = 1 by design — 传播器代码中无递归；递归累积通过运行发生 |
+| T-05-03-11   | MaskingIO 仅在 AssetIO.Write 边界操作；绕过此的 user code（直接打开 DB）文档记录为已知架构限制（Pitfall #8 涵盖仓库原生 fallback） |
+| T-05-03-12   | 所有 SQL 路径由测试覆盖（TestPropagate_*）+ 同一 tx rollback 测试 |
+| T-05-03-13   | Salt 轮换后 hash 不可比在手册中记录为 accept |
 
-## Deviations from Plan
+## 偏差
 
-### Auto-fixed (Rule 3 — Blocking)
+### 自动修复（Rule 3 — Blocking）
 
-**1. column_pii_tags table introduced; asset_metadata.tags JSONB-object pattern abandoned.**
-- **Found during:** Task 1 design.
-- **Issue:** Plan called for `INSERT ... ON CONFLICT (asset, column_name) DO UPDATE SET tags = tags || '{"pii":true}'::jsonb` on `asset_metadata`. Phase 4 D-17 declared `asset_metadata` as APPEND-ONLY with `FORCE ROW LEVEL SECURITY` + `REVOKE UPDATE, DELETE, TRUNCATE FROM platform_app`. The proposed UPSERT is impossible at the DB layer. Additionally, `asset_metadata.tags` is `[]string` (per ent schema + the metadata.Get/Put store), so `tags ? 'pii'` (JSONB existence operator on objects) wouldn't match the existing data shape.
-- **Fix:** Created a new dedicated table `column_pii_tags` with `PRIMARY KEY (asset, column_name)`, `pii BOOLEAN`, `source ('upstream'|'override'|'manual')`, `pii_override_audit_seq BIGINT`, `propagated_from JSONB`, plus standard `set_at`/`set_by`. Granted `SELECT, INSERT, UPDATE` to platform_app. The propagator's UPSERT is now well-defined and cleanly separates governance state from asset_metadata's append-only history.
-- **Files:** `migrations/20260510000004_phase5_pii_propagation.sql`, `internal/governance/pii_propagator.go`.
-- **Commit:** `cb9ebdc`.
+**1. 引入新表 column_pii_tags；放弃 asset_metadata.tags JSONB 对象模式。**
+- **发现于：** Task 1 设计。
+- **问题：** 计划要求在 asset_metadata 上 `INSERT ... ON CONFLICT (asset, column_name) DO UPDATE SET tags = tags || '{"pii":true}'::jsonb`。Phase 4 D-17 声明 `asset_metadata` 为 APPEND-ONLY，含 `FORCE ROW LEVEL SECURITY` + `REVOKE UPDATE, DELETE, TRUNCATE FROM platform_app`。无法在 DB 层执行提议的 UPSERT。此外，`asset_metadata.tags` 是 `[]string`（per ent schema + metadata.Get/Put store），所以 `tags ? 'pii'`（对象上的 JSONB 存在操作）与现有数据形状不匹配。
+- **修复：** 创建新的专用表 `column_pii_tags`，含 `PRIMARY KEY (asset, column_name)`、`pii BOOLEAN`、`source ('upstream'|'override'|'manual')`、`pii_override_audit_seq BIGINT` 和 `propagated_from JSONB`，加上标准的 `set_at`/`set_by`。授予 `SELECT, INSERT, UPDATE` 给 platform_app。传播器的 UPSERT 现在定义明确，干净地分离治理状态与 asset_metadata 的追加历史。
+- **文件：** `migrations/20260510000004_phase5_pii_propagation.sql`、`internal/governance/pii_propagator.go`。
+- **提交：** `cb9ebdc`。
 
-**2. Migration filename 20260510000004 (orchestrator-coordinated).**
-- **Plan specified:** Append to `migrations/20260510000000_phase5_governance.sql`.
-- **Actual:** `migrations/20260510000004_phase5_pii_propagation.sql`.
-- **Reason:** Per orchestrator note in the prompt, 20260510000002 is owned by plan 05-02 and 20260510000003 by plan 05-05 (both running in parallel). Plan 05-03 takes 20260510000004 to keep migration filenames non-colliding across the wave.
-- **Files:** `migrations/20260510000004_phase5_pii_propagation.sql`.
+**2. 迁移文件名 20260510000004（协调器协调）。**
+- **计划指定：** 追加到 `migrations/20260510000000_phase5_governance.sql`。
+- **实际：** `migrations/20260510000004_phase5_pii_propagation.sql`。
+- **原因：** 按提示中的协调器备注，20260510000002 由 plan 05-02 使用，20260510000003 由 plan 05-05 使用（并行运行）。Plan 05-03 取 20260510000004 以保持迁移文件名在 wave 中不冲突。
+- **文件：** `migrations/20260510000004_phase5_pii_propagation.sql`。
 
-### Decisions / Adjustments
+### 决策/调整
 
-**3. lineage.Writer kept its 2-arg constructor; PII propagation is opt-in via `WithPropagator`.**
-- **Plan specified:** `NewWriter(db, events, propagator)` with `nil = skip propagation`.
-- **Actual:** `NewWriter(db, events).WithPropagator(p)` fluent setter.
-- **Reason:** A 3-arg constructor would force every Phase 4 caller (`cmd/platform/worker.go`, `internal/lineage/capture_test.go`) to pass `nil` explicitly — five sites in the repo. The fluent setter is fully backward-compatible and the additive surface keeps the external SDK contract clean.
-- **Files:** `internal/lineage/capture.go`.
-- **Commit:** `cb9ebdc`.
+**3. lineage.Writer 保持 2 参数构造函数；PII 传播通过 `WithPropag` 可选。**
+- **计划指定：** `NewWriter(db, events, propagator)`，`nil = 跳过传播`。
+- **实际：** `NewWriter(db, events).WithPropagator(p)` 流畅设定器。
+- **原因：** 3 参数构造函数会强制每个 Phase 4 调用方（`cmd/platform/worker.go`、`internal/lineage/capture_test.go`）显式传递 `nil` — repo 中五个站点。流畅设定器完全向后兼容，外部 SDK 契约保持干净。
+- **文件：** `internal/lineage/capture.go`。
+- **提交：** `cb9ebdc`。
 
-**4. MaskApplyFunc DI in MaskingIO instead of importing internal/policy.**
-- **Plan specified:** `m.maskRows` to call `policy.Apply` directly.
-- **Actual:** `NewMaskingIO(inner, asset, rules, applyFunc MaskApplyFunc)` — the executor passes `policypkg.Apply` at the call site.
-- **Reason:** `internal/policy` already imports `internal/asset` (for `asset.ColumnPolicy` in `Store.Apply`). If `internal/asset.MaskingIO` imported `internal/policy`, we'd have a cycle. Dependency-injection via a function value is the standard Go cycle-break pattern and yields free testability (tests inject deterministic transforms instead of relying on `MASK_HASH_SALT`).
-- **Files:** `internal/asset/io_masking.go`, `internal/runtime/executor.go`.
-- **Commit:** `0d38156`.
+**4. MaskingIO 中 MaskApplyFunc DI 而非直接导入 internal/policy。**
+- **计划指定：** `m.maskRows` 直接调用 `policy.Apply`。
+- **实际：** `NewMaskingIO(inner, asset, rules, applyFunc MaskApplyFunc)` — executor 在调用站点传递 `policypkg.Apply`。
+- **原因：** `internal/policy` 已导入 `internal/asset`（用于 `asset.ColumnPolicy` 在 `Store.Apply`）。如果 `internal/asset.MaskingIO` 导入 `internal/policy`，就会产生循环。函数值的依赖注入是标准的 Go 循环打破模式，免费获得可测试性（测试注入确定性转换而不依赖 `MASK_HASH_SALT`）。
+- **文件：** `internal/asset/io_masking.go`、`internal/runtime/executor.go`。
+- **提交：** `0d38156`。
 
-**5. runtime.MaskRule + MaskRulesProvider; *policy.Store satisfies the interface directly.**
-- **Plan specified:** `MaskRulesForAsset(ctx, asset) ([]asset.MaskRule, error)` on `internal/policy.Store`.
-- **Actual:** Returns `[]policy.MaskRule`; `internal/runtime` declares `MaskRulesProvider` taking `[]policy.MaskRule`.
-- **Reason:** Adding `internal/asset` types to `internal/policy.Store` method signatures would couple the data model layer to the user-facing SDK package. Keeping the rule type in `internal/policy` lets `*policy.Store` satisfy `runtime.MaskRulesProvider` directly without an adapter; the executor performs the asset.MaskRule conversion at the wrapping site.
-- **Files:** `internal/policy/store.go`, `internal/runtime/executor.go`.
-- **Commit:** `0d38156`.
+**5. runtime.MaskRule + MaskRulesProvider；*policy.Store 直接满足接口。**
+- **计划指定：** `MaskRulesForAsset(ctx, asset) ([]asset.MaskRule, error)` 在 `internal/policy.Store` 上。
+- **实际：** 返回 `[]policy.MaskRule`；`internal/runtime` 声明 `MaskRulesProvider` 接受 `[]policy.MaskRule`。
+- **原因：** 向 `internal/policy.Store` 方法签名添加 `internal/asset` 类型会将数据模型层耦合到用户面向的 SDK 包。保持规则类型在 `internal/policy` 让 `*policy.Store` 直接满足 `runtime.MaskRulesProvider` 而无需适配器；executor 在包装站点执行 asset.MaskRule 转换。
+- **文件：** `internal/policy/store.go`、`internal/runtime/executor.go`。
+- **提交：** `0d38156`。
 
-**6. maybeWrapMaskingIO extracted as exported-via-export_test.go helper.**
-- **Plan specified:** Inline the type-assertion logic inside `runStep`.
-- **Actual:** Extracted to `(*Executor).maybeWrapMaskingIO(ctx, assetName, inner)` and exposed via `export_test.go::MaybeWrapMaskingIOForTest`.
-- **Reason:** The four named acceptance criteria tests
-  (`TestExecutor_NoPolicies_DoesNotWrapMaskingIO`,
-  `TestExecutor_WarehouseConnector_DoesNotWrapMaskingIO`,
-  `TestExecutor_NonWarehouseConnector_WithPolicies_WrapsMaskingIO`,
-  `TestExecutor_PIIWithoutPolicy_FallsBackToRedact`) need to assert the
-  capability-assertion outcome. Driving them through the full `runStep`
-  lifecycle would require `DATABASE_URL` + ent schema + concurrency pool
-  setup. A pure unit test of the helper is faster, deterministic, and
-  matches the same control-flow as the production code path.
-- **Files:** `internal/runtime/executor.go`, `internal/runtime/export_test.go`.
-- **Commit:** `0d38156`.
+**6. maybeWrapMaskingIO 提取为 export_test.go 导出的辅助函数。**
+- **计划指定：** 内联类型断言逻辑在 `runStep` 内。
+- **实际：** 提取为 `(*Executor).maybeWrapMaskingIO(ctx, assetName, inner)` 并通过 `export_test.go::MaybeWrapMaskingIOForTest` 暴露。
+- **原因：** 四个命名验收标准测试需要断言能力断言结果。驱动它们通过完整的 `runStep` 生命周期需要 `DATABASE_URL` + ent schema + 并发池设置。辅助函数的纯单元测试更快、确定性，并匹配生产代码路径的相同控制流。
+- **文件：** `internal/runtime/executor.go`、`internal/runtime/export_test.go`。
+- **提交：** `0d38156`。
 
-**7. Output-columns derivation deviates from plan's `result.OutputColumns()`.**
-- **Plan specified:** Add `OutputColumns()` helper to `MaterializeResult`.
-- **Actual:** `outputColumnsFromLineage(a, cl)` derives the set from the
-  resolved `ColumnLineageMap` keys, falling back to `a.Columns()` declared
-  metadata when no lineage map is available.
-- **Reason:** Adding fields to `MaterializeResult` is an SDK-surface change
-  (Phase 4 froze the type). Deriving from existing data avoids the surface
-  change while still computing the correct set — every column with a lineage
-  edge is automatically covered, and overrides walk regardless of
-  outputColumns content (intentional: an override may exist for a column
-  whose lineage was provided in a previous run).
-- **Files:** `internal/lineage/capture.go`.
-- **Commit:** `cb9ebdc`.
+**7. 输出列派生偏离计划的 `result.OutputColumns()`。**
+- **计划指定：** 添加 `OutputColumns()` 助手到 `MaterializeResult`。
+- **实际：** `outputColumnsFromLineage(a, cl)` 从解析的 `ColumnLineageMap` 键派生集合，无法获得 lineage map 时 fallback 到 `a.Columns()` 声明的元数据。
+- **原因：** 向 `MaterializeResult` 添加字段是 SDK surface 变更（Phase 4 冻结类型）。从现有数据派生避免 surface 变更，同时仍计算正确集合 — 每个有 lineage edge 的列自动覆盖，override 无论如何都遍历（刻意的：override 可能存在于上一运行提供 lineage 的列上）。
+- **文件：** `internal/lineage/capture.go`。
+- **提交：** `cb9ebdc`。
 
-### Deferred (out of scope per scope-boundary rule)
+### 推迟（超出范围）
 
-Pre-existing ent codegen panic in `TestAck_OK`, `TestTranslateRun_OK`,
-`TestHandler_PatchAsset_OK` (nil pointer in `RunCreate.defaults`). Already
-documented in 05-01 SUMMARY; verified pre-dates plan 05-03 changes by
-stashing + re-running. Logged to deferred-items.md.
+`TestAck_OK`、`TestTranslateRun_OK`、`TestHandler_PatchAsset_OK`（`internal/storage/ent/schemachange_create.go:269` 中的 nil pointer）中预先存在的 ent codegen panic。已在 05-01 SUMMARY 中记录；通过 stash + re-run 验证先于 plan 05-03 变更存在。记录到 deferred-items.md。
 
-## Acceptance Criteria — Verification Matrix
+## 验收标准 — 验证矩阵
 
-| Criterion (Task 1)                                                                                                                                                         | Evidence                                                                                                              |
+| 准则（任务 1）                                                                                                                                                         | 证据                                                                                                              |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Exports `Propagator`, `NewPropagator`, `(*Propagator).Propagate`, `ColumnRef`                                                                                                | `grep -c` returns 4 in `internal/governance/pii_propagator.go`                                                       |
-| Contains literal SQL referencing `column_edges`                                                                                                                              | `FROM column_edges ce` present (LEFT JOIN form for upstream collection — semantic equivalent of `EXISTS` per Deviation 1)|
-| Calls `audit.WriteEntry` with `audit.AuditMetadataTagOverridden`                                                                                                              | Confirmed via grep — line in `applyOverride`                                                                          |
-| `internal/asset/types.go` declares `type TagOverride struct` with fields `Remove`, `Add`, `Reason`                                                                            | Confirmed                                                                                                              |
-| `internal/asset/builder.go` contains `func (cb *ColumnBuilder) TagOverride(o TagOverride) *ColumnBuilder`                                                                      | Confirmed                                                                                                              |
-| `internal/lineage/capture.go` contains `propagator.Propagate(ctx, tx,`                                                                                                        | Confirmed (calls `w.propagator.Propagate(ctx, tx, runID, outCols, overrides)`)                                       |
-| Migration adds governance state for pii (plan asked for `pii_override_audit_seq` column on asset_metadata; we provide it on column_pii_tags — see Deviation 1)             | `column_pii_tags` table includes `pii_override_audit_seq BIGINT NULL`                                                |
-| `go test ./internal/governance/... -run TestPropagate_*` exits 0                                                                                                              | All 10 tests skip cleanly under `-short`; will pass under a Docker-equipped CI environment (testharness precedent from 05-01/05-02)   |
-| `go test ./internal/asset/... -run TestBuilder_TagOverride_*` exits 0                                                                                                          | 5 tests pass                                                                                                          |
-| `go test ./internal/lineage/... -run TestCaptureRun_BackwardCompat_NilPropagator|TestCaptureRun_WithPropagator_FluentAPI` exits 0                                              | 2 tests pass                                                                                                          |
-| `go vet ./internal/governance/... ./internal/asset/... ./internal/lineage/...` exits 0                                                                                        | Clean                                                                                                                  |
+| 导出 `Propagator`, `NewPropagator`, `(*Propagator).Propagate`, `ColumnRef`                                                                                                | `grep -c` 在 `internal/governance/pii_propagator.go` 返回 4                                                       |
+| 包含引用 `column_edges` 的字面 SQL                                                                                                                                      | `FROM column_edges ce` 存在（上游收集的 LEFT JOIN 形式 — 语义等同于 `EXISTS` per Deviation 1)|
+| 调用 `audit.WriteEntry` 与 `audit.AuditMetadataTagOverridden`                                                                                                              | 通过 grep 确认 — `applyOverride` 中的行                                                                              |
+| `internal/asset/types.go` 声明 `type TagOverride struct` 含字段 `Remove`、`Add`、`Reason`                                                                            | 确认                                                                                                              |
+| `internal/asset/builder.go` 包含 `func (cb *ColumnBuilder) TagOverride(o TagOverride) *ColumnBuilder`                                                                      | 确认                                                                                                              |
+| `internal/lineage/capture.go` 包含 `propagator.Propagate(ctx, tx,`                                                                                                        | 确认（调用 `w.propagator.Propagate(ctx, tx, runID, outCols, overrides)`）                                       |
+| Migration 添加 governance state for pii（计划要求 `pii_override_audit_seq` 列在 asset_metadata 上；我们在 column_pii_tags 上提供 — 见 Deviation 1）             | `column_pii_tags` 表包含 `pii_override_audit_seq BIGINT NULL`                                                |
+| `go test ./internal/governance/... -run TestPropagate_*` 退出 0                                                                                                              | 所有 10 个测试在 `-short` 下干净跳过；在配备 Docker 的 CI 环境下会通过（来自 05-01/05-02 的 testharness 先例）   |
+| `go test ./internal/asset/... -run TestBuilder_TagOverride_*` 退出 0                                                                                                      | 5 个测试通过                                                                                                          |
+| `go test ./internal/lineage/... -run TestCaptureRun_BackwardCompat_NilPropagator|TestCaptureRun_WithPropagator_FluentAPI` 退出 0                                              | 2 个测试通过                                                                                                          |
+| `go vet ./internal/governance/... ./internal/asset/... ./internal/lineage/...` 退出 0                                                                                        | 干净                                                                                                                  |
 
-| Criterion (Task 2)                                                                                                                                                         | Evidence                                                                                                              |
+| 准则（任务 2）                                                                                                                                                         | 证据                                                                                                              |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `internal/policy/mask.go` exports `ApplyHash`, `ApplyRedact`, `ApplyPartial`, `Apply`, `Salt`, `DefaultMaskForPII`                                                            | All 6 exported                                                                                                        |
-| Contains literal `hmac.New(sha256.New`                                                                                                                                         | Confirmed                                                                                                              |
-| Contains `ErrMaskSaltMissing` and reads `os.Getenv("MASK_HASH_SALT")`                                                                                                          | Confirmed                                                                                                              |
-| `internal/asset/io_masking.go` exports `MaskingIO`, `NewMaskingIO`, `MaskRule`                                                                                                  | Confirmed                                                                                                              |
-| `MaskingIO.Write` calls the apply function (`m.apply(rule.Mask, s, rule.Reveal)`)                                                                                              | Confirmed (Deviation 4: DI surface instead of direct `policy.Apply`)                                                  |
-| `internal/runtime/executor.go` performs `if _, isMP := conn.(connector.MaskingProvisioner); !isMP`                                                                              | Confirmed (in maybeWrapMaskingIO)                                                                                     |
-| Calls `asset.NewMaskingIO`                                                                                                                                                       | Confirmed                                                                                                              |
-| `internal/policy/store.go` exports `MaskRulesForAsset(ctx context.Context, asset string) ([]MaskRule, error)`                                                                  | Confirmed (Deviation 5: returns `[]policy.MaskRule`, not `[]asset.MaskRule`)                                          |
-| Named tests under `policy/...` pass                                                                                                                                              | 7 named tests + 3 MaskRulesForAsset cases pass (testcontainer-gated cases skip cleanly under `-short`)                 |
-| Named tests under `asset/...` (race-clean)                                                                                                                                       | 7 named MaskingIO tests pass under `-race`                                                                            |
-| Named tests under `runtime/...`                                                                                                                                                  | 4 named acceptance tests pass                                                                                          |
-| `go vet ./internal/policy/... ./internal/asset/... ./internal/runtime/...` exits 0                                                                                              | Clean                                                                                                                  |
+| `internal/policy/mask.go` 导出 `ApplyHash`、`ApplyRedact`、`ApplyPartial`、`Apply`、`Salt`、`DefaultMaskForPII`                                                            | 全部 6 个导出                                                                                                        |
+| 包含字面 `hmac.New(sha256.New`                                                                                                                                         | 确认                                                                                                              |
+| 包含 `ErrMaskSaltMissing` 并读取 `os.Getenv("MASK_HASH_SALT")`                                                                                                          | 确认                                                                                                              |
+| `internal/asset/io_masking.go` 导出 `MaskingIO`、`NewMaskingIO`、`MaskRule`                                                                                                  | 确认                                                                                                              |
+| `MaskingIO.Write` 调用 apply 函数 (`m.apply(rule.Mask, s, rule.Reveal)`)                                                                                              | 确认（Deviation 4: DI surface 而非直接 `policy.Apply`）                                                  |
+| `internal/runtime/executor.go` 执行 `if _, isMP := conn.(connector.MaskingProvisioner); !isMP`                                                                              | 确认（在 maybeWrapMaskingIO 中）                                                                                     |
+| 调用 `asset.NewMaskingIO`                                                                                                                                                       | 确认                                                                                                              |
+| `internal/policy/store.go` 导出 `MaskRulesForAsset(ctx context.Context, asset string) ([]MaskRule, error)`                                                                  | 确认（Deviation 5: 返回 `[]policy.MaskRule`，而非 `[]asset.MaskRule`）                                          |
+| `policy/...` 下的命名测试通过                                                                                                                                              | 7 个命名测试 + 3 个 MaskRulesForAsset 案例通过（testcontainer-gated 案例在 `-short` 下干净跳过）                 |
+| `asset/...` 下的命名测试（race-clean）                                                                                                                                       | 7 个命名 MaskingIO 测试在 `-race` 下通过                                                                              |
+| `runtime/...` 下的命名测试                                                                                                                                                  | 4 个命名验收测试通过                                                                                              |
+| `go vet ./internal/policy/... ./internal/asset/... ./internal/runtime/...` 退出 0                                                                                              | 干净                                                                                                                  |
 
-## Self-Check: PASSED
+## 自我检查：通过
 
-Verified all created files exist and both task commits are reachable from HEAD:
+验证所有创建的文件存在，两个任务提交可从 HEAD 到达：
 
-- migrations/20260510000004_phase5_pii_propagation.sql — FOUND
-- internal/governance/pii_propagator.go + _test.go — FOUND
-- internal/policy/mask.go + mask_test.go — FOUND
-- internal/asset/io_masking.go + _test.go — FOUND
-- internal/runtime/executor_mask_test.go + export_test.go — FOUND
-- Commit cb9ebdc — FOUND (`git log` line 1)
-- Commit 0d38156 — FOUND (`git log` line 0)
-- `go build ./...` exits 0 — VERIFIED
-- `go vet ./internal/governance/... ./internal/asset/... ./internal/lineage/... ./internal/policy/... ./internal/runtime/...` exits 0 — VERIFIED
-- `go test ./internal/asset ./internal/lineage ./internal/governance ./internal/policy ./internal/runtime -short -race -count=1` exits 0 — VERIFIED
-- Named acceptance criteria tests all pass under `-short` — VERIFIED
+- migrations/20260510000004_phase5_pii_propagation.sql — 已找到
+- internal/governance/pii_propagator.go + _test.go — 已找到
+- internal/policy/mask.go + mask_test.go — 已找到
+- internal/asset/io_masking.go + _test.go — 已找到
+- internal/runtime/executor_mask_test.go + export_test.go — 已找到
+- 提交 cb9ebdc — 已找到（`git log` 第 1 行）
+- 提交 0d38156 — 已找到（`git log` 第 0 行）
+- `go build ./...` 退出 0 — 已验证
+- `go vet ./internal/governance/... ./internal/asset/... ./internal/lineage/... ./internal/policy/... ./internal/runtime/...` 退出 0 — 已验证
+- `go test ./internal/asset ./internal/lineage ./internal/governance ./internal/policy ./internal/runtime -short -race -count=1` 退出 0 — 已验证
+- 命名验收标准测试在 `-short` 下全部通过 — 已验证
 
-## Threat Flags
+## 威胁标志
 
-No new threat surface introduced beyond the plan's documented threat register —
-the implementation matches the disposition for every T-05-03-* row. The new
-`column_pii_tags` table is governance-state-only (no PII payload data; just a
-boolean flag and audit linkage); RLS-equivalent protection is provided by
-`platform_app` having only SELECT/INSERT/UPDATE (no DELETE/TRUNCATE).
+未引入超出计划记录威胁注册表的新威胁表面 — 实现匹配每个 T-05-03-* 行的处置。新 `column_pii_tags` 表仅是治理状态表面（无 PII 有效载荷数据；只是布尔标志和审计链接）；`platform_app` 仅拥有 SELECT/INSERT/UPDATE（无 DELETE/TRUNCATE）提供 RLS 等效保护。
 
 ---
 

@@ -7,105 +7,105 @@ wave_0_complete: true
 created: 2026-05-08
 ---
 
-# Phase 3 — Validation Strategy
+# Phase 3 — 验证策略
 
-> Per-phase validation contract for feedback sampling during execution.
-> Source-of-truth: `03-RESEARCH.md` § Validation Architecture.
+> 执行期间反馈采样的每阶段验证契约。
+> 真实来源：`03-RESEARCH.md` § 验证架构。
 
 ---
 
-## Test Infrastructure
+## 测试基础设施
 
-| Property | Value |
+| 属性 | 值 |
 |----------|-------|
-| **Framework** | Go testing package (stdlib) + `testify` v1.11.1 (already in `go.mod`) |
-| **Config file** | none — `DATABASE_URL` env var required for integration tests (mirrors Phase 2 `internal/run/claim_test.go` pattern) |
-| **Quick run command** | `go test ./internal/partition/... ./internal/run/... -count=1 -timeout 30s` |
-| **Full suite command** | `DATABASE_URL=postgres://platform_app:platform_app@localhost:5432/data_governance?sslmode=disable go test ./internal/... ./cmd/... -count=1 -timeout 300s` |
-| **Estimated runtime** | ~120s full suite (load test adds ~60s) |
+| **框架** | Go testing package (stdlib) + `testify` v1.11.1（已在 `go.mod` 中） |
+| **配置文件** | 无——集成测试需要 `DATABASE_URL` 环境变量（镜像 Phase 2 `internal/run/claim_test.go` 模式） |
+| **快速运行命令** | `go test ./internal/partition/... ./internal/run/... -count=1 -timeout 30s` |
+| **完整套件命令** | `DATABASE_URL=postgres://platform_app:platform_app@localhost:5432/data_governance?sslmode=disable go test ./internal/... ./cmd/... -count=1 -timeout 300s` |
+| **预计运行时间** | 完整套件约 120 秒（负载测试约增加 60 秒） |
 
 ---
 
-## Sampling Rate
+## 采样率
 
-- **After every task commit:** Run `go test ./internal/partition/... ./internal/run/... -count=1 -timeout 30s`
-- **After every plan wave:** Run `DATABASE_URL=... go test ./internal/... -count=1 -timeout 120s`
-- **Before `/gsd-verify-work`:** Full suite must be green (including the 1000-backfill+50-normal load test)
-- **Max feedback latency:** 30s for the per-commit quick run; 120s for the per-wave full suite
+- **每次任务提交后：** 运行 `go test ./internal/partition/... ./internal/run/... -count=1 -timeout 30s`
+- **每个计划 wave 后：** 运行 `DATABASE_URL=... go test ./internal/... -count=1 -timeout 120s`
+- **在 `/gsd-verify-work` 之前：** 完整套件必须通过（包括 1000-backfill+50-normal 负载测试）
+- **最大反馈延迟：** 每提交快速运行 30 秒；每个 wave 完整套件 120 秒
 
 ---
 
-## Per-Task Verification Map
+## 每任务验证映射
 
-> Plan / Wave / Task IDs are placeholders until the planner assigns them. The mapping below is keyed on requirement → behavior → automated command. The planner MUST attach these commands to the corresponding `<automated>` blocks during plan generation.
+> 计划/波/任务 ID 占位符，直到计划器分配它们。下面的映射按需求 → 行为 → 自动化命令 键值。计划器必须在计划生成期间将这些命令附加到相应的 `<automated>` 块。
 
-| Plan (TBD) | Wave (TBD) | Requirement | Decision Ref | Behavior Under Test | Test Type | Automated Command | File Exists | Status |
+| 计划（TBD） | Wave（TBD） | 需求 | 决策参考 | 测试下的行为 | 测试类型 | 自动化命令 | 文件存在 | 状态 |
 |------------|------------|-------------|--------------|---------------------|-----------|-------------------|-------------|--------|
-| TBD | 1 | ORCH-05 | D-01..D-04 | Cron-scheduled asset auto-fires at next scheduled time after daemon start | Integration | `DATABASE_URL=... go test ./internal/schedule/... -run TestScheduler -v` | ❌ Wave 0 | ⬜ pending |
-| TBD | 1 | ORCH-05 | D-04 | Missed-window LatestOnly recovery emits `schedule.missed` with correct skip count | Unit | `go test ./internal/schedule/... -run TestMissedWindowLatestOnly` | ❌ Wave 0 | ⬜ pending |
-| TBD | 1 | ORCH-05 | D-03 | Invalid cron expression returns error at builder time, not runtime | Unit | `go test ./internal/asset/... -run TestScheduleInvalidCron` | ❌ Wave 0 | ⬜ pending |
-| TBD | 2 | ORCH-06 | D-05, D-06 | Sensor fires materialization when `Sense()` returns `Fired=true` | Integration | `DATABASE_URL=... go test ./internal/sensor/... -run TestSensorFire` | ❌ Wave 0 | ⬜ pending |
-| TBD | 2 | ORCH-06 | D-07 | RunKey dedup prevents second enqueue for same key | Unit | `go test ./internal/sensor/... -run TestSensorRunKeyDedup` | ❌ Wave 0 | ⬜ pending |
-| TBD | 2 | ORCH-06 | D-07 | Cooldown window prevents enqueue regardless of RunKey | Unit | `go test ./internal/sensor/... -run TestSensorCooldown` | ❌ Wave 0 | ⬜ pending |
-| TBD | 2 | ORCH-06 | D-08 | Panic in `Sense()` is recovered; `consecutive_failures` incremented | Unit | `go test ./internal/sensor/... -run TestSensorPanicRecovery` | ❌ Wave 0 | ⬜ pending |
-| TBD | 2 | ORCH-06 | D-08 | After N consecutive failures sensor `disabled_at` set; `sensor.disabled` event emitted | Unit | `go test ./internal/sensor/... -run TestSensorAutoDisable` | ❌ Wave 0 | ⬜ pending |
-| TBD | 1 | ORCH-07 | D-09, D-11 | DailyKey/WeeklyKey/MonthlyKey produce correct UTC ISO-8601 strings | Unit | `go test ./internal/partition/... -run TestPartitionKeyGen` | ❌ Wave 0 | ⬜ pending |
-| TBD | 1 | ORCH-07 | D-11 | ISO week edge case: 2019-12-30 → `2020-W01` | Unit | `go test ./internal/partition/... -run TestWeeklyKeyYearBoundary` | ❌ Wave 0 | ⬜ pending |
-| TBD | 1 | ORCH-07 | D-09 | `KeysBetween(daily, 2024-01-01, 2024-01-31)` returns 31 keys; weekly/monthly variants verified | Unit | `go test ./internal/partition/... -run TestKeysBetween` | ❌ Wave 0 | ⬜ pending |
-| TBD | 3 | ORCH-07 | D-10, D-15 | Time-partitioned backfill: each partition is its own run with its own `event_log` entries | Integration | `DATABASE_URL=... go test ./internal/backfill/... -run TestBackfillTimePartition` | ❌ Wave 0 | ⬜ pending |
-| TBD | 3 | ORCH-08 | D-09, D-16 | CategoryPartitions: each category is independent; one failure does not block siblings | Integration | `DATABASE_URL=... go test ./internal/backfill/... -run TestCategoryPartitionIndependence` | ❌ Wave 0 | ⬜ pending |
-| TBD | 1 | ORCH-07 | D-10 | Partial unique index on `(asset_name, partition_key) WHERE state IN ('queued','starting','running')` rejects duplicate in-flight partition runs | Integration | `DATABASE_URL=... go test ./internal/partition/... -run TestPartitionUniqueConstraint` | ❌ Wave 0 | ⬜ pending |
-| TBD | 1 | ORCH-07 / ORCH-08 | D-13 | Priority-aware claim: normal runs claimed before backfill runs (CASE ORDER BY) | Integration | `DATABASE_URL=... go test ./internal/run/... -run TestClaimPriorityOrdering` | ❌ Wave 0 | ⬜ pending |
-| TBD | 1 | ORCH-04 (Phase 2 regression) | D-13 | **50-goroutine claim atomicity test** — must continue passing after priority ORDER BY change | Integration | `DATABASE_URL=... go test ./internal/run/... -run TestClaimAtomicity50Goroutines` | ✅ `internal/run/claim_test.go` | ⬜ pending |
-| TBD | 3 | ORCH-07 / ORCH-08 (deferred) | D-13 | **1000-backfill + 50-normal priority-claim load test** — `normal` claimed first, no duplicate claims under SKIP LOCKED | Load | `DATABASE_URL=... go test ./internal/run/... -run TestPriorityClaimLoad -timeout 300s` | ❌ Wave 0 | ⬜ pending |
-| TBD | 1 | ORCH-05/06/07/08 | D-17 | All Phase 3 `event_type` enum values accepted by `event.Writer` | Unit | `go test ./internal/event/... -run TestAllPhase3EventTypes` | ❌ Wave 0 | ⬜ pending |
-| TBD | 3 | ORCH-07 / ORCH-08 | D-14 | Backfill CLI spec parsing: date range, comma list, single key | Unit | `go test ./internal/backfill/... -run TestParsePartitionSpec` | ❌ Wave 0 | ⬜ pending |
-| TBD | 3 | ORCH-07 / ORCH-08 | D-14, D-15 | Backfill row-count guard rejects spec exceeding `--max-partitions` | Unit | `go test ./internal/backfill/... -run TestMaxPartitionsGuard` | ❌ Wave 0 | ⬜ pending |
-| TBD | 2 | ORCH-05 / ORCH-06 | D-01..D-08 | Scheduler subcommand graceful-shutdown drains in-flight ticks within configured timeout | Integration | `DATABASE_URL=... go test ./cmd/platform/... -run TestSchedulerGracefulShutdown` | ❌ Wave 0 | ⬜ pending |
+| TBD | 1 | ORCH-05 | D-01..D-04 | 守护进程启动后 cron 调度的资产在下次计划时间自动触发 | 集成 | `DATABASE_URL=... go test ./internal/schedule/... -run TestScheduler -v` | ❌ Wave 0 | ⬜ 待处理 |
+| TBD | 1 | ORCH-05 | D-04 | 错过窗口 LatestOnly 恢复发出 `schedule.missed`，正确跳过计数 | 单元 | `go test ./internal/schedule/... -run TestMissedWindowLatestOnly` | ❌ Wave 0 | ⬜ 待处理 |
+| TBD | 1 | ORCH-05 | D-03 | 无效 cron 表达式在构建时返回错误，而非运行时 | 单元 | `go test ./internal/asset/... -run TestScheduleInvalidCron` | ❌ Wave 0 | ⬜ 待处理 |
+| TBD | 2 | ORCH-06 | D-05, D-06 | 当 `Sense()` 返回 `Fired=true` 时传感器触发物化 | 集成 | `DATABASE_URL=... go test ./internal/sensor/... -run TestSensorFire` | ❌ Wave 0 | ⬜ 待处理 |
+| TBD | 2 | ORCH-06 | D-07 | RunKey 去重防止同一 key 的第二次入队 | 单元 | `go test ./internal/sensor/... -run TestSensorRunKeyDedup` | ❌ Wave 0 | ⬜ 待处理 |
+| TBD | 2 | ORCH-06 | D-07 | 冷却窗口无论 RunKey 如何都防止入队 | 单元 | `go test ./internal/sensor/... -run TestSensorCooldown` | ❌ Wave 0 | ⬜ 待处理 |
+| TBD | 2 | ORCH-06 | D-08 | `Sense()` 中的 panic 被恢复；`consecutive_failures` 递增 | 单元 | `go test ./internal/sensor/... -run TestSensorPanicRecovery` | ❌ Wave 0 | ⬜ 待处理 |
+| TBD | 2 | ORCH-06 | D-08 | N 次连续失败后传感器 `disabled_at` 被设置；发出 `sensor.disabled` 事件 | 单元 | `go test ./internal/sensor/... -run TestSensorAutoDisable` | ❌ Wave 0 | ⬜ 待处理 |
+| TBD | 1 | ORCH-07 | D-09, D-11 | DailyKey/WeeklyKey/MonthlyKey 生成正确的 UTC ISO-8601 字符串 | 单元 | `go test ./internal/partition/... -run TestPartitionKeyGen` | ❌ Wave 0 | ⬜ 待处理 |
+| TBD | 1 | ORCH-07 | D-11 | ISO 周边界情况：2019-12-30 → `2020-W01` | 单元 | `go test ./internal/partition/... -run TestWeeklyKeyYearBoundary` | ❌ Wave 0 | ⬜ 待处理 |
+| TBD | 1 | ORCH-07 | D-09 | `KeysBetween(daily, 2024-01-01, 2024-01-31)` 返回 31 个 key；周/月变体已验证 | 单元 | `go test ./internal/partition/... -run TestKeysBetween` | ❌ Wave 0 | ⬜ 待处理 |
+| TBD | 3 | ORCH-07 | D-10, D-15 | 时间分区回填：每个分区是自己的运行，有自己的 `event_log` 条目 | 集成 | `DATABASE_URL=... go test ./internal/backfill/... -run TestBackfillTimePartition` | ❌ Wave 0 | ⬜ 待处理 |
+| TBD | 3 | ORCH-08 | D-09, D-16 | CategoryPartitions：每个类别独立；一个失败不阻塞兄弟 | 集成 | `DATABASE_URL=... go test ./internal/backfill/... -run TestCategoryPartitionIndependence` | ❌ Wave 0 | ⬜ 待处理 |
+| TBD | 1 | ORCH-07 | D-10 | `(asset_name, partition_key) WHERE state IN ('queued','starting','running')` 上的部分唯一索引拒绝重复的进行中分区运行 | 集成 | `DATABASE_URL=... go test ./internal/partition/... -run TestPartitionUniqueConstraint` | ❌ Wave 0 | ⬜ 待处理 |
+| TBD | 1 | ORCH-07 / ORCH-08 | D-13 | 优先级感知认领：普通运行在回填运行之前被认领（CASE ORDER BY） | 集成 | `DATABASE_URL=... go test ./internal/run/... -run TestClaimPriorityOrdering` | ❌ Wave 0 | ⬜ 待处理 |
+| TBD | 1 | ORCH-04（Phase 2 回归） | D-13 | **50 goroutine 认领原子性测试** — 在优先级 ORDER BY 更改后必须继续通过 | 集成 | `DATABASE_URL=... go test ./internal/run/... -run TestClaimAtomicity50Goroutines` | ✅ `internal/run/claim_test.go` | ⬜ 待处理 |
+| TBD | 3 | ORCH-07 / ORCH-08（延期） | D-13 | **1000-backfill + 50-normal 优先级认领负载测试** — `normal` 先被认领，在 SKIP LOCKED 下无重复认领 | 负载 | `DATABASE_URL=... go test ./internal/run/... -run TestPriorityClaimLoad -timeout 300s` | ❌ Wave 0 | ⬜ 待处理 |
+| TBD | 1 | ORCH-05/06/07/08 | D-17 | 所有 Phase 3 `event_type` 枚举值被 `event.Writer` 接受 | 单元 | `go test ./internal/event/... -run TestAllPhase3EventTypes` | ❌ Wave 0 | ⬜ 待处理 |
+| TBD | 3 | ORCH-07 / ORCH-08 | D-14 | 回填 CLI 规范解析：日期范围、逗号列表、单个 key | 单元 | `go test ./internal/backfill/... -run TestParsePartitionSpec` | ❌ Wave 0 | ⬜ 待处理 |
+| TBD | 3 | ORCH-07 / ORCH-08 | D-14, D-15 | 回填行数守卫拒绝超过 `--max-partitions` 的规范 | 单元 | `go test ./internal/backfill/... -run TestMaxPartitionsGuard` | ❌ Wave 0 | ⬜ 待处理 |
+| TBD | 2 | ORCH-05 / ORCH-06 | D-01..D-08 | 调度器子命令优雅关闭在配置的超时时间内排出进行中的 tick | 集成 | `DATABASE_URL=... go test ./cmd/platform/... -run TestSchedulerGracefulShutdown` | ❌ Wave 0 | ⬜ 待处理 |
 
-*Status legend:* ⬜ pending · ✅ green · ❌ red · ⚠️ flaky
-
----
-
-## Wave 0 Requirements
-
-**Wave 0** (must run before any implementation tasks): create test stubs that surface MISSING references so downstream tasks have a place to anchor `<automated>` verifications.
-
-> **Note (post-planning):** Wave 0 test stubs are **co-located in their respective implementation plans** (e.g., partition keygen tests live alongside production code in 03-02 Task 1; schedule fire tests in 03-04 Task 1; sensor evaluator tests in 03-05 Task 1; etc.) rather than in a separate Wave 0 plan. Each plan creates its `_test.go` file in the same task that creates the production code, with the test scaffold written first per `tdd="true"` and the `<behavior>` block driving expectations. This satisfies the Wave 0 requirement (every `<automated>` reference resolves to a test file that exists at the time it is run) without needing a dedicated Wave 0 plan.
-
-- [x] `internal/partition/keygen_test.go` — covers ORCH-07 + ISO-week year-boundary edge case → created in plan 03-02 Task 1
-- [x] `internal/partition/strategy_test.go` — Daily/Weekly/Monthly/Category strategy contracts → created in plan 03-02 Task 1
-- [x] `internal/schedule/fire_test.go` — covers ORCH-05 tick logic + missed-window recovery → created in plan 03-04 Task 1 (or split per W2)
-- [x] `internal/schedule/missed_test.go` — `schedule.missed` event with skip count → created in plan 03-04 Task 1 (or split per W2)
-- [x] `internal/sensor/evaluate_test.go` — covers ORCH-06 dedup + panic recovery + auto-disable → created in plan 03-05 Task 1
-- [x] `internal/backfill/submit_test.go` — covers ORCH-07/08 + D-14 spec parsing + max-partitions guard → created in plan 03-07 Task 2
-- [x] `internal/backfill/independence_test.go` — category/time partition independence under failure → created in plan 03-07 Task 2
-- [x] `internal/run/claim_test.go` — **EXISTS** (Phase 2). Plan 03-03 Task 2 extends it with `TestClaimPriorityOrdering` and `TestPriorityClaimLoad`. Existing `TestClaimAtomicity50Goroutines` MUST keep passing.
-- [x] `internal/event/types_test.go` — Phase 3 EventType enum value coverage → created in plan 03-01 Task 3
-- [x] `internal/asset/builder_test.go` — Schedule/Sensor/Partitions chained builder methods (extend existing test file) → created in plan 03-02 Task 2
-- [x] `cmd/platform/scheduler_test.go` — graceful shutdown → created in plan 03-06 Task 3
-- [x] `migrations/2026MMDDHHMMSS_phase3_*.sql` — schedules, sensors, backfills CREATE TABLE + ALTER TABLE runs (partition_key, priority, backfill_id) + partial unique index + CHECK constraints + role grants → created in plan 03-01 Tasks 1+2
-
-*Framework install:* none — `testify` already pinned in `go.mod`.
+*状态图例：* ⬜ 待处理 · ✅ 通过 · ❌ 失败 · ⚠️ 不稳定
 
 ---
 
-## Manual-Only Verifications
+## Wave 0 需求
 
-| Behavior | Requirement | Why Manual | Test Instructions |
+**Wave 0**（在任何实现任务之前必须运行）：创建测试桩以暴露缺失的引用，以便下游任务有地方锚定 `<automated>` 验证。
+
+> **注意（计划后）：** Wave 0 测试桩**与其各自的实现计划共存**（例如，分区 keygen 测试在 03-02 计划的任务 1 中与生产代码共存；调度器触发测试在 03-04 任务 1 中；传感器评估器测试在 03-05 任务 1 中；等等），而不是在单独的 Wave 0 计划中。每个计划在其创建生产代码的相同任务中创建其 `_test.go` 文件，根据 `tdd="true"` 先编写测试脚手架，由 `<behavior>` 块驱动期望。这满足了 Wave 0 需求（每个 `<automated>` 引用解析到一个在运行时存在的测试文件）而无需专门的 Wave 0 计划。
+
+- [x] `internal/partition/keygen_test.go` — 覆盖 ORCH-07 + ISO 周年份边界情况 → 在计划 03-02 任务 1 中创建
+- [x] `internal/partition/strategy_test.go` — Daily/Weekly/Monthly/Category 策略契约 → 在计划 03-02 任务 1 中创建
+- [x] `internal/schedule/fire_test.go` — 覆盖 ORCH-05 tick 逻辑 + 错过窗口恢复 → 在计划 03-04 任务 1 中创建（或按 W2 拆分）
+- [x] `internal/schedule/missed_test.go` — 带跳过计数的 `schedule.missed` 事件 → 在计划 03-04 任务 1 中创建（或按 W2 拆分）
+- [x] `internal/sensor/evaluate_test.go` — 覆盖 ORCH-06 去重 + panic 恢复 + 自动禁用 → 在计划 03-05 任务 1 中创建
+- [x] `internal/backfill/submit_test.go` — 覆盖 ORCH-07/08 + D-14 规范解析 + max-partitions 守卫 → 在计划 03-07 任务 2 中创建
+- [x] `internal/backfill/independence_test.go` — 失败下的类别/时间分区独立性 → 在计划 03-07 任务 2 中创建
+- [x] `internal/run/claim_test.go` — **存在**（Phase 2）。计划 03-03 任务 2 用 `TestClaimPriorityOrdering` 和 `TestPriorityClaimLoad` 扩展它。现有 `TestClaimAtomicity50Goroutines` 必须继续通过。
+- [x] `internal/event/types_test.go` — Phase 3 EventType 枚举值覆盖 → 在计划 03-01 任务 3 中创建
+- [x] `internal/asset/builder_test.go` — Schedule/Sensor/Partitions 链式构建器方法（扩展现有测试文件） → 在计划 03-02 任务 2 中创建
+- [x] `cmd/platform/scheduler_test.go` — 优雅关闭 → 在计划 03-06 任务 3 中创建
+- [x] `migrations/2026MMDDHHMMSS_phase3_*.sql` — schedules、sensors、backfills CREATE TABLE + ALTER TABLE runs（partition_key、priority、backfill_id）+ 部分唯一索引 + CHECK 约束 + 角色授权 → 在计划 03-01 任务 1+2 中创建
+
+*框架安装：* 无——`testify` 已在 `go.mod` 中固定。
+
+---
+
+## 仅手动验证
+
+| 行为 | 需求 | 为什么手动 | 测试说明 |
 |----------|-------------|------------|-------------------|
-| Operator UX of `./platform backfill` CLI output (status, IDs, failure modes) | ORCH-07 / ORCH-08 (D-14) | Output formatting and copy/paste ergonomics are subjective | Run `./platform backfill assets.users --partitions=2024-01-01:2024-01-07`; confirm `backfill_id` is copy-pasteable; run `./platform backfill status <id>`; confirm progress aggregation reads cleanly |
-| Schedule restart behavior under multi-hour daemon outage | ORCH-05 (D-04) | Requires manipulating wall clock or daemon downtime > tick interval; hard to fake reliably in CI | Stop scheduler with running schedule; advance system clock past 3 missed windows; restart scheduler; confirm only 1 catch-up run enqueued and `schedule.missed{skipped: 2}` emitted |
+| `./platform backfill` CLI 输出的操作员 UX（状态、ID、失败模式） | ORCH-07 / ORCH-08（D-14） | 输出格式和复制粘贴人体工程学是主观的 | 运行 `./platform backfill assets.users --partitions=2024-01-01:2024-01-07`；确认 `backfill_id` 可复制粘贴；运行 `./platform backfill status <id>`；确认进度聚合读取清晰 |
+| 多小时守护进程停机下的调度器重启行为 | ORCH-05（D-04） | 需要操作系统时钟或守护进程停机时间 > tick 间隔；在 CI 中难以可靠伪造 | 停止运行中的调度器；将系统时钟提前超过 3 个错过的窗口；重启调度器；确认仅入队 1 个补火运行并发出 `schedule.missed{skipped: 2}` |
 
 ---
 
-## Validation Sign-Off
+## 验证签收
 
-- [x] All Phase 3 tasks have `<automated>` verify or Wave 0 dependencies
-- [x] Sampling continuity: no 3 consecutive tasks without automated verify
-- [x] Wave 0 covers all MISSING references in the verification map (test stubs co-located with production code in their respective plans — see Wave 0 Requirements note above)
-- [x] No watch-mode flags in any test command
-- [x] Feedback latency < 30s (quick) / < 120s (full suite excluding load test) / < 300s (load test)
-- [x] `nyquist_compliant: true` — all 7 plans wired with Wave/Task IDs and automated verify commands
+- [x] 所有 Phase 3 任务都有 `<automated>` 验证或 Wave 0 依赖
+- [x] 采样连续性：没有连续 3 个任务没有自动化验证
+- [x] Wave 0 覆盖验证映射中所有缺失的引用（测试桩与各自计划中的生产代码共存——见上文 Wave 0 需求说明）
+- [x] 任何测试命令中没有 watch-mode 标志
+- [x] 反馈延迟 < 30 秒（快速）/ < 120 秒（完整套件，不包括负载测试）/ < 300 秒（负载测试）
+- [x] `nyquist_compliant: true` — 所有 7 个计划都连接了 Wave/任务 ID 和自动化验证命令
 
-**Approval:** approved for execution
+**批准：** 批准执行

@@ -17,9 +17,9 @@ human_verification:
     why_human: "scripts/explain_analyze_lineage.sh requires a live PostgreSQL dev instance with Phase 4 migrations applied and 10K edges seeded; the harness is built but the capture is deferred per 04-EXPLAIN.md (Task 3b logical sign-off, 2026-05-09)"
 ---
 
-# Phase 4: 血缘与 Schema — Verification Report
+# Phase 4: 血缘与 Schema — 验证报告
 
-**Phase Goal:** Every asset materialization automatically records the asset dependency graph, captures output Schema, and presents column-level lineage and Schema evolution, enabling engineers and governance teams to trace the full provenance of any column.
+**Phase Goal:** 每个资产物化自动记录资产依赖图，捕获输出Schema，呈现列级血缘和Schema演化，使工程师和治理团队能够追溯任何列的完整来源。
 
 **Verified:** 2026-05-09T15:30:00Z
 **Status:** human_needed
@@ -33,11 +33,11 @@ human_verification:
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|---------|
-| 1 | After asset materialization, upstream asset edges are automatically recorded — traversable via lineage API without any manual registration step | VERIFIED | commit 4fbdc52: `lineageWriter := lineage.NewWriter(store.DB(), writer)` + `schemaWriter := schema.NewWriter(writer)` constructed; `asset.Default().OnRegister = func(a *asset.Asset) error { return lineageWriter.SyncStaticEdges(ctx, a, a.CodeHash()) }` set; `LineageWriter: lineageWriter, SchemaWriter: schemaWriter` supplied to `runtime.Deps` in `bootstrap()` (worker.go lines 181-198). All three wiring points are now present. |
-| 2 | A data engineer can declare output column A is derived from input column B of upstream asset Z; this declaration is queryable and version-bound to the asset's code hash | VERIFIED | ColumnRef/ColumnLineageMap builder DSL (builder.go), ComputeCodeHash fingerprint (fingerprint.go), column_edges table with code_hash_first/latest columns, CaptureRun writes column edges, AC2 E2E test passes |
-| 3 | Given any column on any asset, the impact analysis API returns all downstream assets and columns that depend on it, traversing the full lineage graph | VERIFIED | impact.Analyze with TraverseColumnLineage recursive CTE (with cycle guard + depth cap at Go layer + SQL LEAST(max_depth,25)), GET /v1/lineage/impact HTTP endpoint, AC3 E2E test passes |
-| 4 | Every materialization captures table + column Schema, diffs against the prior version, and records breaking changes (column drops, type changes) in a Schema evolution timeline | VERIFIED | schema.Writer.Capture + HashSchema dedup + Diff + Classify + WriteSchemaChanges all wired (capture.go, hash.go, diff.go, classify.go, writer_diff.go); GET /v1/schema/changes timeline API; AC4 E2E test passes; 9/9 ChangeKind fixtures pass |
-| 5 | Users can add description, owner, and tags to assets, tables, or columns via API; these are retrievable on subsequent queries | VERIFIED | metadata.Store (INSERT-only + COALESCE read), PATCH /v1/assets/{name}/metadata, PATCH /v1/assets/{name}/columns/{col}/metadata, GET /v1/assets/{name}/metadata; AC5 E2E test passes |
+| 1 | 资产物化后，上游资产边自动记录——可通过血缘API遍历，无需任何手动注册步骤 | VERIFIED | commit 4fbdc52: `lineageWriter := lineage.NewWriter(store.DB(), writer)` + `schemaWriter := schema.NewWriter(writer)` constructed; `asset.Default().OnRegister = func(a *asset.Asset) error { return lineageWriter.SyncStaticEdges(ctx, a, a.CodeHash()) }` set; `LineageWriter: lineageWriter, SchemaWriter: schemaWriter` supplied to `runtime.Deps` in `bootstrap()` (worker.go lines 181-198). All three wiring points are now present. |
+| 2 | 数据工程师可声明输出列A源自上游资产Z的输入列B；该声明可查询并绑定到资产code hash | VERIFIED | ColumnRef/ColumnLineageMap builder DSL (builder.go), ComputeCodeHash fingerprint (fingerprint.go), column_edges table with code_hash_first/latest columns, CaptureRun writes column edges, AC2 E2E test passes |
+| 3 | 给定任意资产上的任意列，影响分析API返回依赖于它的所有下游资产和列，遍历完整血缘图 | VERIFIED | impact.Analyze with TraverseColumnLineage recursive CTE (with cycle guard + depth cap at Go layer + SQL LEAST(max_depth,25)), GET /v1/lineage/impact HTTP endpoint, AC3 E2E test passes |
+| 4 | 每次物化捕获表+列Schema，与先前版本对比，记录breaking changes（列删除、类型变更）到Schema演化时间线 | VERIFIED | schema.Writer.Capture + HashSchema dedup + Diff + Classify + WriteSchemaChanges all wired (capture.go, hash.go, diff.go, classify.go, writer_diff.go); GET /v1/schema/changes timeline API; AC4 E2E test passes; 9/9 ChangeKind fixtures pass |
+| 5 | 用户可通过API为资产、表或列添加description、owner和tags；后续查询可检索 | VERIFIED | metadata.Store (INSERT-only + COALESCE read), PATCH /v1/assets/{name}/metadata, PATCH /v1/assets/{name}/columns/{col}/metadata, GET /v1/assets/{name}/metadata; AC5 E2E test passes |
 
 **Score:** 5/5 truths verified
 

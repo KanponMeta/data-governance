@@ -67,105 +67,105 @@ metrics:
   files: 23
 ---
 
-# Phase 02 Plan 05: First-Party Connectors Summary
+# Phase 02 Plan 05: 一方连接器摘要
 
-Six remaining first-party connector types plus a shared conformance harness — delivering all seven connectors registered in `cmd/platform/factories.go` via three atomic tasks.
+六个剩余的一方连接器类型加上共享一致性工具 — 通过三个原子任务交付所有七个在 `cmd/platform/factories.go` 中注册的连接器。
 
-## What Was Built
+## 已构建内容
 
-**Conformance harness** (`internal/connector/firstparty/conformance/`): Shared `RunConformance(t, c, Setup)` function executing five subtests (Ping, Schema, WriteThenRead, CtxCancel, Close) against any `connector.Connector`. All new connectors are validated through this harness.
+**一致性工具**（`internal/connector/firstparty/conformance/`）：共享的 `RunConformance(t, c, Setup)` 函数，对任何 `connector.Connector` 执行五个子测试（Ping、Schema、WriteThenRead、CtxCancel、Close）。所有新连接器都通过此工具进行验证。
 
-**MySQL connector** (SQL archetype): `database/sql` + `go-sql-driver/mysql`, backtick identifier quoting, parameterized INSERT, closed guard with `sync.RWMutex`. Tests use testcontainers-go `mysql:8` container; conformance suite validates the full SQL round-trip.
+**MySQL 连接器**（SQL 原型）：`database/sql` + `go-sql-driver/mysql`、反引号标识符引用、参数化 INSERT、带 `sync.RWMutex` 的关闭保护。测试使用 testcontainers-go `mysql:8` 容器；一致性套件验证完整的 SQL 往返。
 
-**S3 connector** (object-store archetype): AWS SDK v2, tri-format encoding (parquet/csv/NDJSON), `keyFromIdentifier` with path traversal guard (T-02-05-02). Parquet uses dynamic `parquet.Group{}` schema with `parquet.Optional(parquet.String())` nodes. Tests use `localstack/localstack:3` testcontainer.
+**S3 连接器**（对象存储原型）：AWS SDK v2、三格式编码（parquet/csv/NDJSON）、带路径遍历保护的 `keyFromIdentifier`（T-02-05-02）。Parquet 使用动态 `parquet.Group{}` schema 和 `parquet.Optional(parquet.String())` 节点。测试使用 `localstack/localstack:3` testcontainer。
 
-**BigQuery connector**: `cloud.google.com/go/bigquery` client, backtick-quoted SELECT, streaming inserts via `bqRowSaver` implementing `ValueSaver`, schema from `TableMetadata`. Default tests are sqlmock-free (CGo constraint — see Deviations). Emulator tests gated behind `//go:build bigquery_emulator`.
+**BigQuery 连接器**：`cloud.google.com/go/bigquery` 客户端、反引号引用 SELECT、通过实现 `ValueSaver` 的 `bqRowSaver` 进行流式插入、从 `TableMetadata` 获取 schema。默认测试无 sqlmock（CGo 约束 — 见偏差）。模拟器测试在 `//go:build bigquery_emulator` 后进行门控。
 
-**GCS connector** (object-store archetype): Mirrors S3 with `cloud.google.com/go/storage`. Tests use `fsouza/fake-gcs-server` in-process (no Docker required). Three conformance tests for parquet/csv/json all pass.
+**GCS 连接器**（对象存储原型）：使用 `cloud.google.com/go/storage` 镜像 S3。测试使用进程内 `fsouza/fake-gcs-server`（无需 Docker）。Parquet/csv/json 的三个一致性测试全部通过。
 
-**Snowflake connector** (SQL archetype): `database/sql` + `gosnowflake`, double-quote identifier quoting (`"DB"."SCHEMA"."TABLE"`), `splitIdentifier` handles 3/2/1-part identifiers, `NewFromDB` for sqlmock injection. Eight sqlmock tests prove SQL correctness. Real-account conformance gated behind `//go:build snowflake_real_creds`.
+**Snowflake 连接器**（SQL 原型）：`database/sql` + `gosnowflake`、双引号标识符引用（`"DB"."SCHEMA"."TABLE"`）、处理 3/2/1 部分标识符的 `splitIdentifier`、用于 sqlmock 注入的 `NewFromDB`。八个 sqlmock 测试证明 SQL 正确性。真实账户一致性在 `//go:build snowflake_real_creds` 后进行门控。
 
-**HDFS connector** (object-store archetype): `colinmarc/hdfs/v2`, `StatFs` for Ping, `MkdirAll + Remove + Create` write pattern, `pathFromIdentifier` path traversal guard, same parquet/csv/json tri-format as S3/GCS. Tests skip gracefully when `HDFS_TEST_NAMENODE` is unset.
+**HDFS 连接器**（对象存储原型）：`colinmarc/hdfs/v2`、`StatFs` 用于 Ping、`MkdirAll + Remove + Create` 写入模式、带路径遍历保护的 `pathFromIdentifier`、与 S3/GCS 相同的 parquet/csv/json 三格式。测试在 `HDFS_TEST_NAMENODE` 未设置时优雅跳过。
 
-**factories.go**: All seven connector types registered — `postgres`, `mysql`, `snowflake`, `s3`, `gcs`, `hdfs`, `bigquery`.
+**factories.go**：所有七个连接器类型已注册 — `postgres`、`mysql`、`snowflake`、`s3`、`gcs`、`hdfs`、`bigquery`。
 
-## Commits
+## 提交
 
-| Task | Commit | Description |
+| 任务 | 提交 | 描述 |
 |------|--------|-------------|
-| 5.1  | a102ca8 | conformance suite + MySQL + S3 connectors |
-| 5.2a | 99dfb18 | BigQuery + GCS connectors + factories.go with 5 types |
-| 5.2b | fc51f2f | Snowflake + HDFS connectors + factories.go with all 7 types |
+| 5.1  | a102ca8 | 一致性工具 + MySQL + S3 连接器 |
+| 5.2a | 99dfb18 | BigQuery + GCS 连接器 + 5 个类型的 factories.go |
+| 5.2b | fc51f2f | Snowflake + HDFS 连接器 + 7 个类型的 factories.go |
 
-## Deviations from Plan
+## 与计划的偏差
 
-### Auto-applied Discretion Decisions
+### 自动应用的 Discretion 决策
 
-**1. [D-CLAUDE-DISCRETION] BigQuery emulator CGo compilation failure on Linux**
-- **Found during:** Task 5.2a (`go vet ./internal/connector/firstparty/bigquery/...`)
-- **Issue:** `goccy/bigquery-emulator` depends on `goccy/go-zetasql` which requires compiling a C++ ZetaSQL library from source on Linux. The compilation fails with C++ conflicting declarations in the CI environment. This was documented in `.planning/phases/02-execution-engine/02-CONTEXT.md` at planning time.
-- **Fix:** Moved emulator test to `bigquery_emulator_test.go` with `//go:build bigquery_emulator` build tag. Default `bigquery_test.go` contains compile-time assertion and factory error tests only. Documented in both files with clear comment blocks.
-- **Files modified:** `internal/connector/firstparty/bigquery/bigquery_test.go`, `internal/connector/firstparty/bigquery/bigquery_emulator_test.go`
-- **Commit:** 99dfb18
+**1. [D-CLAUDE-DISCRETION] BigQuery 模拟器在 Linux 上 CGo 编译失败**
+- **发现于：** 任务 5.2a（`go vet ./internal/connector/firstparty/bigquery/...`）
+- **问题：** `goccy/bigquery-emulator` 依赖于 `goccy/go-zetasql`，需要从源代码编译 C++ ZetaSQL 库。在 Linux 上编译失败，原因是 C++ 声明冲突。这在规划时已记录在 `.planning/phases/02-execution-engine/02-CONTEXT.md` 中。
+- **修复：** 将模拟器测试移至 `bigquery_emulator_test.go`，使用 `//go:build bigquery_emulator` 构建标签。默认 `bigquery_test.go` 仅包含编译时断言和工厂错误测试。在两个文件中都有明确的注释块记录。
+- **修改的文件：** `internal/connector/firstparty/bigquery/bigquery_test.go`、`internal/connector/firstparty/bigquery/bigquery_emulator_test.go`
+- **提交：** 99dfb18
 
-**2. [D-CLAUDE-DISCRETION] Snowflake: no in-process emulator available**
-- **Found during:** Task 5.2b planning
-- **Issue:** No production-grade in-process Snowflake emulator exists for Go (documented at planning time in 02-CONTEXT.md, T-02-05-04).
-- **Fix:** sqlmock-based default tests prove SQL correctness (SQL generation, parameter binding, identifier quoting). Real-account round-trip tests gated behind `//go:build snowflake_real_creds` and require `SNOWFLAKE_DSN` env var. Test comment block explicitly documents what each test level proves.
-- **Files modified:** `internal/connector/firstparty/snowflake/snowflake_test.go`, `internal/connector/firstparty/snowflake/snowflake_real_creds_test.go`
-- **Commit:** fc51f2f
+**2. [D-CLAUDE-DISCRETION] Snowflake：没有可用的进程内模拟器**
+- **发现于：** 任务 5.2b 规划
+- **问题：** Go 没有生产级进程内 Snowflake 模拟器（在 02-CONTEXT.md 中规划时已记录，T-02-05-04）。
+- **修复：** 基于 sqlmock 的默认测试证明 SQL 正确性（SQL 生成、参数绑定、标识符引用）。真实账户往返测试在 `//go:build snowflake_real_creds` 后进行门控，需要 `SNOWFLAKE_DSN` 环境变量。测试注释块明确记录每个测试级别证明的内容。
+- **修改的文件：** `internal/connector/firstparty/snowflake/snowflake_test.go`、`internal/connector/firstparty/snowflake/snowflake_real_creds_test.go`
+- **提交：** fc51f2f
 
-**3. [Rule 1 - Bug] sqlmock Close expectation missing for APIVersion and Close_Idempotent tests**
-- **Found during:** Task 5.2b (Snowflake test run)
-- **Issue:** `TestSnowflake_APIVersion` uses `defer db.Close()` and `TestSnowflake_Close_Idempotent` calls `c.Close()` explicitly; sqlmock reported "call to database Close was not expected, next expectation is..." because `mock.ExpectClose()` was missing.
-- **Fix:** Added `mock.ExpectClose()` before `defer db.Close()` in APIVersion test and before the first `c.Close()` call in Close_Idempotent test.
-- **Commit:** fc51f2f
+**3. [规则 1 - Bug] sqlmock Close 预期缺失导致 APIVersion 和 Close_Idempotent 测试失败**
+- **发现于：** 任务 5.2b（Snowflake 测试运行）
+- **问题：** `TestSnowflake_APIVersion` 使用 `defer db.Close()`，`TestSnowflake_Close_Idempotent` 显式调用 `c.Close()`；sqlmock 报告"数据库 Close 调用不在预期中，下次预期是..."，因为缺少 `mock.ExpectClose()`。
+- **修复：** 在 APIVersion 测试中的 `defer db.Close()` 之前添加 `mock.ExpectClose()`，在 Close_Idempotent 测试中第一次 `c.Close()` 调用之前添加 `mock.ExpectClose()`。
+- **提交：** fc51f2f
 
-**4. [Rule 1 - Bug] sqlmock MonitorPingsOption needed for ExpectPing**
-- **Found during:** Task 5.2b (Snowflake Ping test)
-- **Issue:** `sqlmock.New()` without `MonitorPingsOption(true)` silently ignores `ExpectPing()` calls, causing the expectation to be unmet. sqlmock logs "WARNING: Ping monitoring is disabled".
-- **Fix:** Changed `sqlmock.New()` to `sqlmock.New(sqlmock.MonitorPingsOption(true))` in `TestSnowflake_Ping`.
-- **Commit:** fc51f2f
+**4. [规则 1 - Bug] sqlmock 需要 MonitorPingsOption 用于 ExpectPing**
+- **发现于：** 任务 5.2b（Snowflake Ping 测试）
+- **问题：** 没有 `MonitorPingsOption(true)` 的 `sqlmock.New()` 会静默忽略 `ExpectPing()` 调用，导致预期未满足。sqlmock 记录"WARNING: Ping monitoring is disabled"。
+- **修复：** 在 `TestSnowflake_Ping` 中将 `sqlmock.New()` 改为 `sqlmock.New(sqlmock.MonitorPingsOption(true))`。
+- **提交：** fc51f2f
 
-**5. [Rule 1 - Bug] go.sum missing entries for Google Cloud dependencies**
-- **Found during:** Task 5.2a (build after adding BigQuery/GCS imports)
-- **Issue:** `cloud.google.com/go/bigquery` and `cloud.google.com/go/storage` pulled in transitive deps including `prometheus/client_golang` that were not in go.sum.
-- **Fix:** Ran `go get github.com/prometheus/client_golang/prometheus/promhttp@v1.19.1` and `go mod tidy` to resolve all missing entries.
-- **Commit:** 99dfb18
+**5. [规则 1 - Bug] go.sum 缺少 Google Cloud 依赖项条目**
+- **发现于：** 任务 5.2a（添加 BigQuery/GCS 导入后的构建）
+- **问题：** `cloud.google.com/go/bigquery` 和 `cloud.google.com/go/storage` 带来了包括 `prometheus/client_golang` 在内的传递依赖，但 go.sum 中没有这些条目。
+- **修复：** 运行 `go get github.com/prometheus/client_golang/prometheus/promhttp@v1.19.1` 和 `go mod tidy` 来解析所有缺失的条目。
+- **提交：** 99dfb18
 
-## Known Stubs
+## 已知的存根
 
-None. All seven connector types are fully wired with real implementations. Schema inference, read, write, and ping are functional for all types.
+无。所有七个连接器类型都使用真实实现完全接入。Schema 推理、读取、写入和 ping 对所有类型都有效。
 
-## Threat Surface Scan
+## 威胁面扫描
 
-No new network endpoints or auth paths introduced beyond what is documented in the plan's threat model:
+未引入计划威胁模型中记录的网络端点或认证路径之外的新内容：
 
-| Threat | File | Mitigation |
+| 威胁 | 文件 | 缓解措施 |
 |--------|------|------------|
-| T-02-05-01 | snowflake/factory.go | DSN never logged; comment present |
-| T-02-05-01 | bigquery/factory.go | credentials_json never logged; comment present |
-| T-02-05-02 | s3/s3.go, gcs/gcs.go, hdfs/hdfs.go | ".." segment rejection in all object-store identifiers |
-| T-02-05-03 | all object-store connectors | In-memory read accepted; comment documents Phase 3 deferral |
-| T-02-05-04 | snowflake/snowflake_test.go | Mock vs real-creds documented in test comment block |
+| T-02-05-01 | snowflake/factory.go | DSN 从不记录；注释存在 |
+| T-02-05-01 | bigquery/factory.go | credentials_json 从不记录；注释存在 |
+| T-02-05-02 | s3/s3.go, gcs/gcs.go, hdfs/hdfs.go | 所有对象存储标识符中的 ".." 段拒绝 |
+| T-02-05-03 | 所有对象存储连接器 | 内存读取已接受；注释记录 Phase 3 推迟 |
+| T-02-05-04 | snowflake/snowflake_test.go | Mock 与真实凭证的对比在测试注释块中记录 |
 
-## Self-Check: PASSED
+## 自我检查：通过
 
-Files exist:
-- internal/connector/firstparty/conformance/conformance.go: FOUND
-- internal/connector/firstparty/mysql/mysql.go: FOUND
-- internal/connector/firstparty/s3/s3.go: FOUND
-- internal/connector/firstparty/bigquery/bigquery.go: FOUND
-- internal/connector/firstparty/gcs/gcs.go: FOUND
-- internal/connector/firstparty/snowflake/snowflake.go: FOUND
-- internal/connector/firstparty/hdfs/hdfs.go: FOUND
-- cmd/platform/factories.go (7 RegisterFactory calls): FOUND
+文件存在：
+- internal/connector/firstparty/conformance/conformance.go: 已找到
+- internal/connector/firstparty/mysql/mysql.go: 已找到
+- internal/connector/firstparty/s3/s3.go: 已找到
+- internal/connector/firstparty/bigquery/bigquery.go: 已找到
+- internal/connector/firstparty/gcs/gcs.go: 已找到
+- internal/connector/firstparty/snowflake/snowflake.go: 已找到
+- internal/connector/firstparty/hdfs/hdfs.go: 已找到
+- cmd/platform/factories.go（7 个 RegisterFactory 调用）：已找到
 
-Commits exist:
-- a102ca8 (task 5.1): FOUND
-- 99dfb18 (task 5.2a): FOUND
-- fc51f2f (task 5.2b): FOUND
+提交存在：
+- a102ca8（任务 5.1）：已找到
+- 99dfb18（任务 5.2a）：已找到
+- fc51f2f（任务 5.2b）：已找到
 
-`go build ./...`: PASS
-`go vet ./...`: PASS
-`grep -c RegisterFactory cmd/platform/factories.go`: 7
+`go build ./...`：通过
+`go vet ./...`：通过
+`grep -c RegisterFactory cmd/platform/factories.go`：7

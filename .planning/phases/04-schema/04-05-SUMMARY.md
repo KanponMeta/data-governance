@@ -65,9 +65,9 @@ duration: 17min
 completed: 2026-05-09
 ---
 
-# Phase 4 Plan 05: Schema Diff Classifier + Breaking-Change Writer Summary
+# Phase 4 Plan 05: Schema Diff Classifier + Breaking-Change Writer 总结
 
-**Schema diff classifier (Diff + IsWideningPostgres + Classify) and writer (WriteSchemaChanges) wired into schema.Writer.Capture, with all 9 schematest fixture pairs verified end-to-end through Diff → Classify → schema_changes DB rows + audit-pointer event payloads**
+**Schema diff 分类器（Diff + IsWideningPostgres + Classify）和写入器（WriteSchemaChanges）接入 schema.Writer.Capture，通过 Diff → Classify → schema_changes DB 行 + 审计指针事件负载端到端验证所有 9 个 schematest fixture 对**
 
 ## Performance
 
@@ -83,17 +83,17 @@ completed: 2026-05-09
 
 **`schema.Diff(prev, next connector.Schema) []SchemaChange`**
 
-Column-by-column set comparison producing an ordered list of changes:
-1. `column_added` (columns in next but not prev)
-2. `column_dropped` (columns in prev but not next)
-3. In-place attribute changes per column (sorted alphabetically): type change (provisional `ChangeTypeWidened`) → nullable → default → comment
-4. `pk_changed` if PrimaryKey slice differs
+逐列集合比较生成有序变更列表：
+1. `column_added`（next 中有但 prev 中没有的列）
+2. `column_dropped`（prev 中有但 next 中没有的列）
+3. 原地属性变更（按字母表排序的列）：类型变更（临时 `ChangeTypeWidened`）→ nullable → default → comment
+4. `pk_changed`（如果 PrimaryKey slice 不同）
 
-Renames produce drop+add pairs per CONTEXT.md (no heuristic rename detection).
+重命名产生 drop+add 对（按 CONTEXT.md，无启发式重命名检测）。
 
 **`schema.IsWideningPostgres(oldType, newType) (isWidening, known bool)`**
 
-PostgreSQL type lattice for Phase 4:
+Phase 4 的 PostgreSQL 类型格：
 
 | Family | Examples | Rule |
 |--------|---------|------|
@@ -126,23 +126,23 @@ PostgreSQL type lattice for Phase 4:
 
 **`schema.WriteSchemaChanges(ctx, tx, runID, asset, codeHash, prevVersionID, newVersionID, changes) ([]uuid.UUID, error)`**
 
-- INSERTs one `schema_changes` row per `SchemaChange` in the supplied tx (atomic with `schema_versions` INSERT — D-11)
-- Calls `Classify(c, IsWideningPostgres)` per change to determine `change_type` + `is_breaking`
-- `column_name = ""` maps to DB NULL (PK-level changes)
-- `prevVersionID = nil` maps to DB NULL (first capture)
-- Returns `[]uuid.UUID` for audit-pointer payload on `schema.change_detected` event
+- 在提供的 tx 中为每个 `SchemaChange` INSERT 一条 `schema_changes` 行（D-11 与 `schema_versions` INSERT 原子性）
+- 每条变更调用 `Classify(c, IsWideningPostgres)` 确定 `change_type` + `is_breaking`
+- `column_name = ""` 映射到 DB NULL（PK 级变更）
+- `prevVersionID = nil` 映射到 DB NULL（首次捕获）
+- 返回 `[]uuid.UUID` 用于 `schema.change_detected` 事件的审计指针负载
 
-**`schema.Writer.Capture` upgrade (D-11 audit pointer):**
+**`schema.Writer.Capture` 升级（D-11 审计指针）：**
 
 ```
 latestQuery: SELECT id, schema_hash, schema_data FROM schema_versions ...
 ```
 
-New flow on hash difference:
-1. INSERT schema_versions (existing)
-2. `changes = Diff(prev.schema, captured)` (if hasPrev)
-3. `changeIDs, err = WriteSchemaChanges(ctx, tx, ..., changes)` — within same tx
-4. Emit `schema.change_detected` with:
+哈希不同时的新流程：
+1. INSERT schema_versions（现有）
+2. `changes = Diff(prev.schema, captured)`（如果有 prev）
+3. `changeIDs, err = WriteSchemaChanges(ctx, tx, ..., changes)` — 在同一 tx 内
+4. 发出 `schema.change_detected`：
    ```json
    {"asset": "...", "schema_hash": "...", "new_version_id": "...", "code_hash": "...",
     "schema_changes_ids": ["uuid1", "uuid2", ...], "prev_version_id": "..."}

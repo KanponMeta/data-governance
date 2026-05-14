@@ -9,125 +9,125 @@ skipped: 0
 status: all_fixed
 ---
 
-# Phase 5: Code Review Fix Report
+# Phase 5: 代码审查修复报告
 
-**Fixed at:** 2026-05-10T02:40:51Z
-**Source review:** `.planning/phases/05-governance/05-REVIEW.md`
-**Iteration:** 1
+**修复时间：** 2026-05-10T02:40:51Z
+**来源审查：** `.planning/phases/05-governance/05-REVIEW.md`
+**迭代：** 1
 
-**Summary:**
-- Findings in scope: 17 (6 critical + 11 warnings)
-- Fixed: 17
-- Skipped: 0
+**摘要：**
+- 范围内发现：17（6 个严重 + 11 个警告）
+- 已修复：17
+- 已跳过：0
 
-Every fix was committed atomically with `git commit --no-verify`. Each commit message references the finding ID. The codebase builds clean (`go build ./...`) and `go vet ./...` is clean after the final fix. Integration tests that depend on Postgres testcontainers were not exercised — Docker is unavailable in this sandbox; unit-level tests in the affected packages all passed where they exist.
+每个修复都通过 `git commit --no-verify` 原子提交。每个提交消息都引用发现 ID。代码库构建干净（`go build ./...`），最终修复后 `go vet ./...` 干净。依赖 Postgres testcontainers 的集成测试未被执行 — Docker 在此沙箱中不可用；受影响包中的单元级测试在存在的地方全部通过。
 
-## Fixed Issues
+## 已修复问题
 
-### CR-01: Audit hash-chain integrity broken — hash uses input OccurredAt, row stores defaulted time.Now()
+### CR-01: 审计哈希链完整性损坏 — 哈希使用输入 OccurredAt，行存储默认 time.Now()
 
-**Files modified:** `internal/audit/writer.go`
-**Commit:** `28272d3`
-**Applied fix:** Resolved `occurredAt` (with zero-value default to `time.Now().UTC()`) BEFORE computing `selfHash`. Both the hash and the INSERT now use the same timestamp value, so `Verify` recomputes a hash matching the stored row.
+**修改文件：** `internal/audit/writer.go`
+**提交：** `28272d3`
+**应用的修复：** 在计算 `selfHash` 之前解析 `occurredAt`（零值默认为 `time.Now().UTC()`）。哈希和 INSERT 现在使用相同的时间戳值，因此 `Verify` 重新计算的哈希与存储的行匹配。
 
-### CR-02: audit.Verify scans TIMESTAMPTZ into int64 — verification path is non-functional
+### CR-02: audit.Verify 将 TIMESTAMPTZ 扫描为 int64 — 验证路径无效
 
-**Files modified:** `internal/audit/verify.go`
-**Commit:** `8a8ceb8`
-**Applied fix:** Changed scan target from `var occurredAtUnixNano int64` to `var occurredAt time.Time`, then derived `occurredAtUnixNano := occurredAt.UnixNano()` for hash recomputation. pgx now scans TIMESTAMPTZ correctly and the entire `Verify` codepath (REST `/audit/verify`, `platform audit verify` CLI, `emitVerifyFailedEntry`) is functional.
+**修改文件：** `internal/audit/verify.go`
+**提交：** `8a8ceb8`
+**应用的修复：** 将扫描目标从 `var occurredAtUnixNano int64` 改为 `var occurredAt time.Time`，然后导出 `occurredAtUnixNano := occurredAt.UnixNano()` 用于哈希重新计算。pgx 现在正确扫描 TIMESTAMPTZ，整个 `Verify` 编码路径（REST `/audit/verify`、`platform audit verify` CLI、`emitVerifyFailedEntry`）都功能正常。
 
-### CR-03: Governance approval bypass — quorum counted by substring of unprivileged comment text
+### CR-03: 治理批准绕过 — quorum 通过无权限 comment 文本的子串计数
 
-**Files modified:** `internal/governance/workflow.go`
-**Commit:** `32c748d`
-**Applied fix:** Added two new sentinel errors (`ErrSelfApproval`, `ErrDuplicateVote`). `decide()` now rejects when `decider == submitter` (four-eyes principle) and when a prior `[approved by <decider>]` or `[rejected by <decider>]` token already exists in the comment ledger. `countApprovals` now matches the structured `[approved by <uuid>]` token PREFIX rather than the loose `"approved by "` substring, so a free-form reject comment cannot be miscounted as an approval. **Status: requires human verification** — the long-term fix (governance_review_decisions table with reviewer-pool membership enforcement) is tracked separately; the short-term hardening here is correct but the maintainer should confirm against the Plan 05-04 governance test scenarios before relying on it.
+**修改文件：** `internal/governance/workflow.go`
+**提交：** `32c748d`
+**应用的修复：** 添加了两个新的 sentinel errors（`ErrSelfApproval`、`ErrDuplicateVote`）。`decide()` 现在在 `decider == submitter`（四眼原则）时拒绝，并在 prior `[approved by <decider>]` 或 `[rejected by <decider>]` token 已存在于 comment ledger 中时拒绝。`countApprovals` 现在匹配结构化的 `[approved by <uuid>]` token 前缀，而非松散的 `"approved by "` 子串，因此自由格式的 reject comment 不能被误计为批准。**状态：需要人工验证** — 长期修复（governance_review_decisions 表 + reviewer-pool 成员资格强制）在单独跟踪；此处短期加固是正确的，但维护者应在依赖之前根据 Plan 05-04 治理测试场景确认。
 
-### CR-04: InProcessQueue.InsertTx ignores tx and inserts immediately — breaks documented atomic-enqueue contract
+### CR-04: InProcessQueue.InsertTx 忽略 tx 并立即插入 — 破坏文档化的原子入队契约
 
-**Files modified:** `internal/notification/worker.go`, `internal/governance/workflow.go`, `internal/governance/sla_scanner.go`, `internal/quality/freshness.go`
-**Commit:** `24fe99a`
-**Applied fix:** All three production callers (`Workflow.Submit`, `Workflow.decide`, `SLAScanner.Scan`, `freshness.emitBreach`) now build `NotificationDispatchArgs` BEFORE `tx.Commit()` and call `queue.Insert` AFTER commit succeeds. A rolled-back tx no longer produces a phantom notification. `InProcessQueue.InsertTx` doc-comment was rewritten to make its non-transactional semantics explicit and direct callers at the post-commit pattern; the surface remains compatible with a future River swap. (Note: the dispatcher path in `internal/quality/dispatcher.go` already documents its phantom-notification limitation and was left unchanged for this iteration; it requires a deeper refactor of the evaluator → executor commit boundary.)
+**修改文件：** `internal/notification/worker.go`、`internal/governance/workflow.go`、`internal/governance/sla_scanner.go`、`internal/quality/freshness.go`
+**提交：** `24fe99a`
+**应用的修复：** 所有三个生产调用方（`Workflow.Submit`、`Workflow.decide`、`SLAScanner.Scan`、`freshness.emitBreach`）现在在 `tx.Commit()` 之前构建 `NotificationDispatchArgs`，并在提交成功后调用 `queue.Insert`。回滚的 tx 不再产生幽灵通知。`InProcessQueue.InsertTx` doc-comment 被重写以明确其非事务性语义，并将调用方指向 post-commit 模式；表面与未来 River swap 保持兼容。（注意：`internal/quality/dispatcher.go` 中的 dispatcher 路径已记录其幽灵通知限制，本次迭代保持不变；它需要在 evaluator → executor 提交边界进行更深入的重构。）
 
-### CR-05: CLI getActorFromEnv permits arbitrary actor spoofing into the hash-chain
+### CR-05: CLI getActorFromEnv 允许任意 actor 欺骗进入哈希链
 
-**Files modified:** `cmd/platform/governance.go`, `cmd/platform/policy.go`, `cmd/platform/role.go`, `cmd/platform/governance_test.go`
-**Commit:** `5745c2d`
-**Applied fix:** Added `cliDangerousEnabled()` helper (reads `PLATFORM_CLI_DANGEROUS`) and a shared `cliAuthDisabledMsg`. All CLI write subcommands now refuse to run unless the flag is set: `governance submit/review/reassign`, `policy patch/yaml-reload`, `role create/assign/revoke`. Read subcommands (`governance status`, `policy show/list`, `role list`) are unaffected. Existing tests opt-in via `t.Setenv("PLATFORM_CLI_DANGEROUS", "1")`; a new `TestSubmitCmd_DangerousFlagRequired` covers the gate itself.
+**修改文件：** `cmd/platform/governance.go`、`cmd/platform/policy.go`、`cmd/platform/role.go`、`cmd/platform/governance_test.go`
+**提交：** `5745c2d`
+**应用的修复：** 添加了 `cliDangerousEnabled()` helper（读取 `PLATFORM_CLI_DANGEROUS`）和共享的 `cliAuthDisabledMsg`。所有 CLI 写子命令现在拒绝运行，除非设置了该标志：`governance submit/review/reassign`、`policy patch/yaml-reload`、`role create/assign/revoke`。读子命令（`governance status`、`policy show/list`、`role list`）不受影响。现有测试通过 `t.Setenv("PLATFORM_CLI_DANGEROUS", "1")` 选择加入；新的 `TestSubmitCmd_DangerousFlagRequired` 覆盖门本身。
 
-### CR-06: Quality rule SQL injection via unescaped column name in NullCheck / RangeCheck
+### CR-06: 通过未转义列名的质量规则 SQL 注入（NullCheck / RangeCheck）
 
-**Files modified:** `internal/asset/types.go`
-**Commit:** `5ad946a`
-**Applied fix:** Added `quoteSQLIdent` helper which doubles embedded double quotes (ANSI SQL identifier-quoting rule). `NullCheck.Evaluate` and `RangeCheck.Evaluate` now route the column name through `quoteSQLIdent` instead of embedding it directly into a `"%s"` template. SQLAssertion was reviewed and intentionally left as-is — the SQL body is asset-author code (trusted at registration).
+**修改文件：** `internal/asset/types.go`
+**提交：** `5ad946a`
+**应用的修复：** 添加了 `quoteSQLIdent` helper，将嵌入的双引号加倍（ANSI SQL 标识符引号规则）。`NullCheck.Evaluate` 和 `RangeCheck.Evaluate` 现在通过 `quoteSQLIdent` 传递列名，而不是直接嵌入 `"%s"` 模板。SQLAssertion 经过审查并有意保持原样 — SQL body 是 asset-author 代码（在注册时受信任）。
 
-### WR-01: RequirePermission checks only primary role; multi-role users may be denied access
+### WR-01: RequirePermission 仅检查主角色；多角色用户可能被拒绝访问
 
-**Files modified:** `internal/auth/middleware.go`
-**Commit:** `e772109`
-**Applied fix:** `Principal` struct now carries `Roles []string` (full active set) in addition to the primary `Role`. `Middleware` populates both from the JWT claims. `RequirePermission` de-duplicates `Role + Roles` and enforces each against Casbin in turn — passing if any role matches. A user assigned multiple roles is no longer silently denied access permitted by their non-primary roles.
+**修改文件：** `internal/auth/middleware.go`
+**提交：** `e772109`
+**应用的修复：** `Principal` 结构现在携带 `Roles []string`（完整活动集）以及主 `Role`。`Middleware` 从 JWT claims 填充两者。`RequirePermission` 对 `Role + Roles` 进行去重，轮流对每个在 Casbin 中强制执行 — 任何角色匹配即通过。被分配多个角色的用户不再因非主要角色的许可而被静默拒绝。
 
-### WR-02: REST handlers leak raw DB error messages back to clients
+### WR-02: REST handlers 向客户端泄露原始 DB 错误消息
 
-**Files modified:** `internal/api/role_handlers.go`, `internal/policy/handler.go`, `internal/governance/handler.go`
-**Commit:** `0bd337a`
-**Applied fix:** Every handler that previously called `http.Error(w, err.Error(), 500)` or `writeProblem(w, 500, "...", err.Error())` for DB-originating errors now logs the full error via `slog.Error` with structured fields (actor, asset, etc.) and returns the generic detail `"internal error; see server logs"`. `handleDecideError` also gained explicit cases for `ErrSelfApproval` (403) and `ErrDuplicateVote` (409) introduced by CR-03, so those are surfaced clearly instead of falling through to the 500 path.
+**修改文件：** `internal/api/role_handlers.go`、`internal/policy/handler.go`、`internal/governance/handler.go`
+**提交：** `0bd337a`
+**应用的修复：** 每个以前调用 `http.Error(w, err.Error(), 500)` 或 `writeProblem(w, 500, "...", err.Error())` 处理 DB 起源错误的 handler，现在通过 `slog.Error` 和结构化字段（actor、asset 等）记录完整错误，并返回通用详情 `"internal error; see server logs"`。`handleDecideError` 还为 CR-03 引入的 `ErrSelfApproval`（403）和 `ErrDuplicateVote`（409）添加了明确案例，因此这些被清楚地暴露而不是落入 500 路径。
 
-### WR-03: handleVerify only verifies seq=1, not the whole chain
+### WR-03: handleVerify 仅验证 seq=1，不验证整个链
 
-**Files modified:** `internal/api/audit_handlers.go`
-**Commit:** `1a2f20e`
-**Applied fix:** Handler now resolves `MAX(seq)` from `audit.audit_log` first, then calls `Verify(ctx, db, 1, maxSeq)` so the entire chain is recomputed. Empty chain returns `ok=true, scanned=0`. Mirrors the `cmd/platform/audit.go` CLI behaviour.
+**修改文件：** `internal/api/audit_handlers.go`
+**提交：** `1a2f20e`
+**应用的修复：** Handler 现在首先从 `audit.audit_log` 解析 `MAX(seq)`，然后调用 `Verify(ctx, db, 1, maxSeq)`，因此重新计算整个链。空链返回 `ok=true, scanned=0`。镜像 `cmd/platform/audit.go` CLI 行为。
 
-### WR-04: bytesEqual for hash comparison should be subtle.ConstantTimeCompare
+### WR-04: 用于哈希比较的 bytesEqual 应使用 subtle.ConstantTimeCompare
 
-**Files modified:** `internal/audit/verify.go`
-**Commit:** `b57889b`
-**Applied fix:** Removed the local `bytesEqual` helper and replaced the comparison with `subtle.ConstantTimeCompare(computedHash, storedHash) != 1`. Aligns with the project mandate for constant-time comparison on hash material and removes the small timing side channel during chain verification.
+**修改文件：** `internal/audit/verify.go`
+**提交：** `b57889b`
+**应用的修复：** 删除了本地 `bytesEqual` helper，将比较替换为 `subtle.ConstantTimeCompare(computedHash, storedHash) != 1`。与项目对哈希材料常量时间比较的要求一致，并在链验证期间消除了小的时间侧信道。
 
-### WR-05: audit.WriteEntry callers frequently omit OccurredAt
+### WR-05: audit.WriteEntry 调用方经常省略 OccurredAt
 
-**Files modified:** `internal/audit/export.go`, `internal/audit/verify.go`
-**Commit:** `5cb1526`
-**Applied fix:** `emitExportAuditEntry` and `emitVerifyFailedEntry` now set `OccurredAt: time.Now().UTC()` explicitly so the audit-emitting site is the source of truth. The CR-01 fix already added the defensive zero-value default in `WriteEntry`, but explicit `OccurredAt` improves auditability and aligns with every other emitting site (governance, policy, auth, etc.). All other call sites already set `OccurredAt`.
+**修改文件：** `internal/audit/export.go`、`internal/audit/verify.go`
+**提交：** `5cb1526`
+**应用的修复：** `emitExportAuditEntry` 和 `emitVerifyFailedEntry` 现在显式设置 `OccurredAt: time.Now().UTC()`，因此审计发射站点是真相来源。CR-01 修复已在 `WriteEntry` 中添加了防御性零值默认值，但显式 `OccurredAt` 提高了可审计性，并与每个其他发射站点（governance、policy、auth 等）对齐。所有其他调用站点都已设置 `OccurredAt`。
 
-### WR-06: ApplyPartial byte-indexing breaks multi-byte UTF-8
+### WR-06: ApplyPartial 字节索引破坏多字节 UTF-8
 
-**Files modified:** `internal/policy/mask.go`
-**Commit:** `0d198cc`
-**Applied fix:** `ApplyPartial` now converts to `[]rune`, computes lengths and slices by rune count, and rebuilds the masked string from rune slices. Multi-byte UTF-8 sequences are no longer split mid-rune, eliminating partial-rune leakage of the supposedly-masked character.
+**修改文件：** `internal/policy/mask.go`
+**提交：** `0d198cc`
+**应用的修复：** `ApplyPartial` 现在转换为 `[]rune`，按 rune 计数计算长度和切片，并从 rune 切片重建掩码字符串。多字节 UTF-8 序列不再在 rune 中间分割，消除了所谓掩码字符的部分 rune 泄漏。
 
-### WR-07: isUndefinedTable substring matching is fragile
+### WR-07: isUndefinedTable 子串匹配脆弱
 
-**Files modified:** `internal/governance/auto_approval.go`
-**Commit:** `d93ab14`
-**Applied fix:** Added `github.com/jackc/pgx/v5/pgconn` import. `isUndefinedTable` now uses `errors.As` on `*pgconn.PgError` and checks SQLSTATE codes `42P01` (undefined_table) / `42703` (undefined_column). The misleading `"does not exist"` substring match is gone; the residual `"undefined_table"` / `"undefined_column"` substring fallback is retained for non-pg test scaffolding.
+**修改文件：** `internal/governance/auto_approval.go`
+**提交：** `d93ab14`
+**应用的修复：** 添加了 `github.com/jackc/pgx/v5/pgconn` 导入。`isUndefinedTable` 现在使用 `errors.As` 对 `*pgconn.PgError` 并检查 SQLSTATE 代码 `42P01`（undefined_table）/ `42703`（undefined_column）。误导性的 `"does not exist"` 子串匹配消失了；残留的 `"undefined_table"` / `"undefined_column"` 子串回退为非 pg 测试脚手架保留。
 
-### WR-08: connectorName calls Ping with context.Background()
+### WR-08: connectorName 使用 context.Background() 调用 Ping
 
-**Files modified:** `internal/policy/sync_job.go`
-**Commit:** `5a3640a`
-**Applied fix:** `connectorName` now takes `ctx context.Context` as its first parameter and forwards it to `Ping`. All three call sites in `sync_job.go` pass the work context, so a Ping during shutdown no longer leaks a goroutine waiting on an unresponsive warehouse.
+**修改文件：** `internal/policy/sync_job.go`
+**提交：** `5a3640a`
+**应用的修复：** `connectorName` 现在以 `ctx context.Context` 作为第一个参数，并将其转发给 `Ping`。`sync_job.go` 中所有三个调用站点都传递工作上下文，因此在关闭期间 Ping 不再泄漏等待无响应仓库的 goroutine。
 
-### WR-09: Governance gate fail-open on missing asset_versions row creates a race-window bypass
+### WR-09: 治理门在缺少 asset_versions 行时 fail-open 创建竞态窗口绕过
 
-**Files modified:** `internal/runtime/executor.go`
-**Commit:** `82f8275`
-**Applied fix:** The `errors.Is(err, sql.ErrNoRows)` branch in the governance gate now returns `errMaterializationGated` instead of allowing the run to proceed. The registration-race rationale was a bypass surface: an attacker could register an asset with a fresh `code_hash` and race the run before governance review wrote the asset_versions row. Run is now retried (or failed by the outer policy) rather than silently bypassing access control.
+**修改文件：** `internal/runtime/executor.go`
+**提交：** `82f8275`
+**应用的修复：** 治理门中的 `errors.Is(err, sql.ErrNoRows)` 分支现在返回 `errMaterializationGated` 而不是允许运行继续。绕过理由是一个绕过表面：攻击者可以用新的 `code_hash` 注册资产，并在治理审查写入 asset_versions 行之前竞态运行。运行现在重试（或被外部策略拒绝），而不是静默绕过访问控制。
 
-### WR-10: CreateRole audit-emits even when ON CONFLICT DO NOTHING means no row was created
+### WR-10: CreateRole 即使 ON CONFLICT DO NOTHING 意味着没有行被创建也发出审计
 
-**Files modified:** `internal/auth/service.go`
-**Commit:** `2e87740`
-**Applied fix:** `CreateRole` now captures `res.RowsAffected()` after the INSERT and short-circuits before the audit write when `rows == 0`. The empty tx is committed and the function returns `nil` without emitting `role.created`. Audit chain consumers can now distinguish a true create from a no-op replay.
+**修改文件：** `internal/auth/service.go`
+**提交：** `2e87740`
+**应用的修复：** `CreateRole` 现在在 INSERT 后捕获 `res.RowsAffected()`，当 `rows == 0` 时在审计写入之前短路。提交空 tx，函数返回 `nil` 而不发出 `role.created`。审计链消费者现在可以区分真正的创建和 no-op 重放。
 
-### WR-11: dedupRoles returns input slice unmodified when len <= 1
+### WR-11: dedupRoles 在 len <= 1 时返回输入切片不变
 
-**Files modified:** `internal/governance/reviewers.go`
-**Commit:** `528a528`
-**Applied fix:** `dedupRoles` no longer has a fast-path that returns the input slice directly. The function always allocates a new slice, eliminating the aliasing hazard where a caller's later `append(pool.Roles, ...)` could mutate the original through a shared backing array.
+**修改文件：** `internal/governance/reviewers.go`
+**提交：** `528a528`
+**应用的修复：** `dedupRoles` 不再有空 fast-path 直接返回输入切片。函数始终分配新切片，消除了调用方后续 `append(pool.Roles, ...)` 可能通过共享后备数组突变原始数据的别名风险。
 
 ---
 
-_Fixed: 2026-05-10T02:40:51Z_
-_Fixer: Claude (gsd-code-fixer)_
-_Iteration: 1_
+_修复时间：2026-05-10T02:40:51Z_
+_修复者：Claude (gsd-code-fixer)_
+_迭代：1_

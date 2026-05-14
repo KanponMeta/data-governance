@@ -14,35 +14,35 @@ progress:
   percent: 100
 ---
 
-# Project State
+# 项目状态
 
-## Project Reference
+## 项目参考
 
-See: .planning/PROJECT.md (updated 2026-04-29)
+参见: .planning/PROJECT.md (更新于 2026-04-29)
 
-**Core value:** A data practitioner can define, run, and govern data assets in code — and every downstream consumer can trust what they're working with, trace where it came from to the field level, and know who is allowed to see it.
-**Current focus:** Phase 06 — web-ui-api
+**核心价值:** 数据从业者可以在代码中定义、运行和治理数据资产——每个下游消费者都可以信任他们正在使用的数据，追溯其字段级来源，并了解谁有权查看它。
+**当前重点:** Phase 06 — web-ui-api
 
-## Current Position
+## 当前进度
 
-Phase: 06
-Plan: Not started
-Status: Executing Phase 06
-Last activity: 2026-05-12
+阶段: 06
+计划: 未开始
+状态: 正在执行 Phase 06
+最近活动: 2026-05-12
 
-Progress: [░░░░░░░░░░] 0%
+进度: [░░░░░░░░░░] 0%
 
-## Performance Metrics
+## 性能指标
 
-**Velocity:**
+**速度:**
 
-- Total plans completed: 32
-- Average duration: -
-- Total execution time: 0 hours
+- 已完成计划总数: 32
+- 平均耗时: -
+- 总执行时间: 0 小时
 
-**By Phase:**
+**按阶段统计:**
 
-| Phase | Plans | Total | Avg/Plan |
+| 阶段 | 计划数 | 总计 | 平均/计划 |
 |-------|-------|-------|----------|
 | 01 | 5 | - | - |
 | 02 | 5 | - | - |
@@ -50,36 +50,35 @@ Progress: [░░░░░░░░░░] 0%
 | 04 | 8 | - | - |
 | 06 | 7 | - | - |
 
-**Recent Trend:**
+**近期趋势:**
 
-- Last 5 plans: none yet
-- Trend: -
+- 最近 5 个计划: 尚无
+- 趋势: -
 
-*Updated after each plan completion*
+*每个计划完成后更新*
 
-## Accumulated Context
+## 累积上下文
 
-### Decisions
+### 决策
 
-Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting current work:
+决策记录在 PROJECT.md 关键决策表中。影响当前工作的近期决策:
 
-- Foundation: Connector interface (CONN-08) placed in Phase 1 — it is an irreversible public API surface; third-party adoption depends on early stability
-- Execution: Concurrency token pool designed in Phase 2 alongside the execution engine — adding it later creates the Dagster deadlock pattern (issue #25743)
-- Governance: Hash-chain audit log built in Phase 5 before the first audit record is written — retrofitting requires rewriting all existing records
+- 基础: 连接器接口 (CONN-08) 放在 Phase 1 — 这是不可逆的公共 API surface；第三方采用取决于早期稳定性
+- 执行: 并发令牌池与执行引擎一起在 Phase 2 设计 — 稍后添加会创建 Dagster 死锁模式 (issue #25743)
+- 治理: 哈希链审计日志在第一个审计记录写入之前在 Phase 5 构建 — 改造需要重写所有现有记录
 
-### Pending Todos
+### 待办事项
 
-None yet.
+暂无。
 
-### Blockers/Concerns
+### 阻碍/关注
 
-- Phase 2 (Connector framework): go-plugin subprocess protocol + connect-go interface contract need a focused design spike before the Connector interface is committed; this is flagged by research as needing deeper investigation
-- Phase 4 (SQL lineage extraction): Go SQL parser landscape unvalidated against production query corpora; accuracy benchmark required before committing to an approach
-- Phase 5 (Warehouse-native masking sync): Snowflake and BigQuery masking provisioning API calls need validation before designing PolicyStore sync interface
+- Phase 2 (连接器框架): go-plugin 子进程协议 + connect-go 接口契约需要在连接器接口提交之前进行深入的设计 spike；研究标记这需要更深入的调查
+- Phase 4 (SQL 血缘提取): Go SQL 解析器生态未针对生产查询语料库进行验证；需要准确性基准测试后才能确定方案
+- Phase 5 (仓库原生掩码同步): Snowflake 和 BigQuery 掩码配置 API 调用需要在设计 PolicyStore 同步接口之前进行验证
 
-## Session Continuity
+## 会话连续性
 
-Last session: 2026-05-12T01:24:21.793Z
-Stopped at: Phase 6 context gathered
-Resume file: .planning/phases/06-web-ui-api/06-CONTEXT.md
+上次会话: 2026-05-12T01:24:21.793Z
+停止于: Phase 6 context gathered
+恢复文件: .planning/phases/06-web-ui-api/06-CONTEXT.md

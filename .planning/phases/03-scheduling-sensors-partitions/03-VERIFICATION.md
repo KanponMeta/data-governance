@@ -10,38 +10,38 @@ info: 6
 total: 10
 ---
 
-# Phase 3 Verification Report: Scheduling, Sensors & Partitions
+# Phase 3 验证报告：调度、传感器与分区
 
-**Phase Goal:** Phase 3 delivers the scheduling (cron), sensor evaluation, and partitioned backfill subsystems on top of the Phase 2 run-execution engine, enabling the platform to fire scheduled runs, poll sensor conditions, and submit bulk partitioned backfills.
+**Phase 目标：** Phase 3 在 Phase 2 运行执行引擎之上提供调度（cron）、传感器评估和分区回填子系统，使平台能够触发调度运行、轮询传感器条件并提交批量分区回填。
 
-**Verified:** 2026-05-08
-**Status:** passed
-**Re-verification:** No (initial verification)
+**验证时间：** 2026-05-08
+**状态：** passed
+**重新验证：** 否（初始验证）
 
 ---
 
-## Goal Achievement
+## 目标达成
 
-### Observable Truths
+### 可观察事实
 
-| # | Truth | Status | Evidence |
+| # | 事实 | 状态 | 证据 |
 |---|-------|--------|----------|
-| 1 | ClaimNext SQL ORDER BY is `CASE priority WHEN 'critical' THEN 0 WHEN 'normal' THEN 1 WHEN 'backfill' THEN 2 ELSE 1 END ASC, queued_at ASC` | VERIFIED | claim.go lines 84-91: verbatim CASE expression confirmed |
-| 2 | ClaimedRun struct exposes PartitionKey *string, Priority string, BackfillID *uuid.UUID | VERIFIED | claim.go lines 36-38: struct fields confirmed |
-| 3 | Executor.Run signature is `Run(ctx context.Context, claimed *run.ClaimedRun) error` — single migration, frozen | VERIFIED | executor.go line 78 (unchanged from plan 03-03 FROZEN signature) |
-| 4 | schedule.Daemon tick loop with unexported `run` method; FireOneSchedule EXPORTED for production use | VERIFIED | daemon.go run() unexported (line 44); FireOneSchedule exported (fire.go line 38) |
-| 5 | computeNextAndDetectMiss implements LatestOnly missed-window with `skipped_count` payload | VERIFIED | missed.go line 54; TestMissedWindowLatestOnly passes |
-| 6 | sensor.safeEvaluate wraps SensorFunc with context.WithTimeout + defer recover() | VERIFIED | evaluate.go lines 66-82; panic/timeouts caught |
-| 7 | handleFired implements two-layer dedup: RunKey check first, cooldown check second | VERIFIED | evaluate.go lines 236-267; both layers must pass before INSERT |
-| 8 | handleError auto-disables at AutoDisableThreshold=60 (consecutive_failures >= threshold) | VERIFIED | evaluate.go line 481; RETURNING clause exposes new count |
-| 9 | backfill.Submit uses base:=i*5 placeholders per row (5 NOT 8); ON CONFLICT predicate matches partial unique index VERBATIM | VERIFIED | submit.go line 92 confirmed `base := i*5`; line 101 ON CONFLICT WHERE matches plan 03-01 |
-| 10 | Executor reads claimed.Priority and acquires "backfill" concurrency tag for backfill-priority runs | VERIFIED | executor.go lines 245-251 confirmed |
+| 1 | ClaimNext SQL ORDER BY 是 `CASE priority WHEN 'critical' THEN 0 WHEN 'normal' THEN 1 WHEN 'backfill' THEN 2 ELSE 1 END ASC, queued_at ASC` | VERIFIED | claim.go 第 84-91 行：逐字 CASE 表达式已确认 |
+| 2 | ClaimedRun 结构体暴露 PartitionKey *string, Priority string, BackfillID *uuid.UUID | VERIFIED | claim.go 第 36-38 行：结构体字段已确认 |
+| 3 | Executor.Run 签名是 `Run(ctx context.Context, claimed *run.ClaimedRun) error` — 单一迁移，冻结 | VERIFIED | executor.go 第 78 行（与计划 03-03 FROZEN 签名一致） |
+| 4 | schedule.Daemon tick 循环带有未导出的 `run` 方法；FireOneSchedule 对外导出供生产使用 | VERIFIED | daemon.go run() 未导出（第 44 行）；FireOneSchedule 导出（fire.go 第 38 行） |
+| 5 | computeNextAndDetectMiss 实现 LatestOnly 遗漏窗口，`skipped_count` payload | VERIFIED | missed.go 第 54 行；TestMissedWindowLatestOnly 通过 |
+| 6 | sensor.safeEvaluate 用 context.WithTimeout + defer recover() 包装 SensorFunc | VERIFIED | evaluate.go 第 66-82 行；捕获 panic/超时 |
+| 7 | handleFired 实现两层去重：RunKey 检查首先，cooldown 检查第二 | VERIFIED | evaluate.go 第 236-267 行；两层必须都通过才插入 |
+| 8 | handleError 在 AutoDisableThreshold=60 时自动禁用（consecutive_failures >= threshold） | VERIFIED | evaluate.go 第 481 行；RETURNING 子句暴露新计数 |
+| 9 | backfill.Submit 每行使用 base:=i*5 占位符（5 不是 8）；ON CONFLICT 谓词逐字匹配部分唯一索引 | VERIFIED | submit.go 第 92 行确认 `base := i*5`；第 101 行 ON CONFLICT WHERE 与计划 03-01 一致 |
+| 10 | Executor 读取 claimed.Priority 并为 backfill-priority 运行获取 "backfill" 并发标签 | VERIFIED | executor.go 第 245-251 行已确认 |
 
-**Score:** 10/10 truths verified
+**得分：** 10/10 事实验证
 
 ---
 
-## Key Implementation Checks
+## 关键实现检查
 
 ### internal/schedule/daemon.go + fire.go
 
@@ -63,11 +63,11 @@ grep "recover()"                              -> FOUND (evaluate.go:77 - defer r
 grep "context.WithTimeout"                     -> FOUND (evaluate.go:73)
 grep "consecutive_failures \+ 1 >="            -> FOUND (evaluate.go:481)
 grep "EventTypeSensorFired"                    -> FOUND
-grep "EventTypeSensorDedupSkipped"            -> FOUND (RunKey layer)
-grep "EventTypeSensorCooldownSkipped"         -> FOUND (cooldown layer)
+grep "EventTypeSensorDedupSkipped"            -> FOUND (RunKey 层)
+grep "EventTypeSensorCooldownSkipped"         -> FOUND (cooldown 层)
 grep "EventTypeSensorDisabled"                 -> FOUND
-grep "RunKey.*last_run_key"                    -> FOUND (layer 1 dedup check)
-grep "cooldown_until"                         -> FOUND (layer 2 dedup check)
+grep "RunKey.*last_run_key"                    -> FOUND (第 1 层去重检查)
+grep "cooldown_until"                         -> FOUND (第 2 层去重检查)
 ```
 
 ### internal/run/priority.go + claim.go
@@ -84,10 +84,10 @@ grep "WHERE state = .queued."                  -> FOUND (claim.go:90, no WHERE p
 ### internal/backfill/submit.go + spec.go
 
 ```
-grep "base := i \* 5"                          -> FOUND (submit.go:92, 5 placeholders per row)
-grep "i\*8"                                    -> NOT FOUND (correct — no i*8 bug)
+grep "base := i \* 5"                          -> FOUND (submit.go:92, 每行 5 个占位符)
+grep "i\*8"                                    -> NOT FOUND (正确 — 无 i*8 bug)
 grep "ON CONFLICT.*WHERE state IN"             -> FOUND (submit.go:101)
-grep "AND partition_key IS NOT NULL DO NOTHING" -> FOUND (submit.go:101, matches plan 03-01 partial index)
+grep "AND partition_key IS NOT NULL DO NOTHING" -> FOUND (submit.go:101, 与计划 03-01 部分索引一致)
 grep "DefaultMaxPartitions = 3650"             -> FOUND (spec.go:24)
 grep "ErrTooManyPartitions"                    -> FOUND (spec.go:29)
 grep "ParsePartitionSpec"                     -> FOUND (spec.go:47)
@@ -114,7 +114,7 @@ grep "backfill.Submit"                          -> FOUND (backfill.go:746)
 grep "backfill.GetStatus"                       -> FOUND (backfill.go:776)
 ```
 
-### Migration Schema
+### 迁移 Schema
 
 ```
 grep "partition_key.*VARCHAR.*128"            -> FOUND (20260508120000_phase3_runs_columns.sql)
@@ -128,79 +128,79 @@ grep "CREATE TABLE.*backfills"                 -> FOUND
 
 ---
 
-## Deferred Items (Not Blocking Phase 3 Goal)
+## 推迟项目（不阻止 Phase 3 目标）
 
-These are known issues documented in deferred-items.md and 03-REVIEW.md that do not prevent Phase 3 from achieving its goal:
+这些是在 deferred-items.md 和 03-REVIEW.md 中记录的不阻止 Phase 3 实现其目标的问题：
 
-| Item | Description | Plan Owner |
+| 项目 | 描述 | 计划所有者 |
 |------|-------------|-----------|
-| DEFERRED-1 | internal/runtime executor tests fail with "unsupported driver: pgx" — pre-existing pgx-ent driver mismatch (stent.Open("pgx") vs entgosql.OpenDB("postgres")), NOT introduced by Phase 3. Deferred to future plan. | executor maintainer |
-| WR-01 | UpsertSchedules TOCTOU race: two replicas starting simultaneously can produce duplicate schedule rows (SELECT-then-INSERT with no unique constraint on asset_name). Fix: add UNIQUE constraint + INSERT ON CONFLICT. | Phase 4+ |
-| WR-02 | upsertOneSensor has identical race to WR-01. Fix: add UNIQUE (asset_name, sensor_name). | Phase 4+ |
-| WR-03 | shutdownCtx created but never used — graceful shutdown plumbing is a no-op. Dead code at scheduler.go:127. | Phase 4+ |
-| WR-04 | computeNextAndDetectMiss returns future window for clock-skewed lastFiredAt; FireOneSchedule then fires it without guard. | Phase 4+ |
-| IN-01 | sensor.evaluated defer comment over-promises (always emitted, but only for success paths). | Phase 4+ |
-| IN-02 | sensor.evaluated deferred event fires even when tx.Commit() failed. | Phase 4+ |
-| IN-03 | a.Sensors() called inside loop (minor perf — defensive copy each iteration). | Phase 4+ |
-| IN-04 | safeEvaluate timeout semantics: when MinInterval < DefaultMinInterval(30s), floor is min() not max() — docstring and code disagree. | Phase 4+ |
-| IN-05 | runBackfill arg-order parser: asset names starting with `-` misclassified. | Phase 4+ |
-| IN-06 | runHealthcheck calls os.Exit from inside defer scope. | Phase 4+ |
+| DEFERRED-1 | internal/runtime executor 测试失败，显示"unsupported driver: pgx" — 预存在的 pgx-ent driver 不匹配（stent.Open("pgx") vs entgosql.OpenDB("postgres")），非 Phase 3 引入。推迟到未来计划。 | executor 维护者 |
+| WR-01 | UpsertSchedules TOCTOU 竞争：两个副本同时启动可能产生重复 schedule 行（SELECT-then-INSERT，无唯一约束于 asset_name）。修复：添加唯一约束 + INSERT ON CONFLICT。 | Phase 4+ |
+| WR-02 | upsertOneSensor 有与 WR-01 相同的竞争。修复：添加唯一约束 (asset_name, sensor_name)。 | Phase 4+ |
+| WR-03 | shutdownCtx 已创建但从未使用 — graceful shutdown plumbing 是一个 no-op。scheduler.go:127 处的死代码。 | Phase 4+ |
+| WR-04 | computeNextAndDetectMiss 为时钟偏移的 lastFiredAt 返回未来窗口；FireOneSchedule 然后无 guard 地触发它。 | Phase 4+ |
+| IN-01 | sensor.evaluated defer 注释过度承诺（总是发出，但仅用于成功路径）。 | Phase 4+ |
+| IN-02 | sensor.evaluated 延迟事件在 tx.Commit() 失败时也会触发。 | Phase 4+ |
+| IN-03 | a.Sensors() 在循环内调用（minor perf — 每次迭代防御复制）。 | Phase 4+ |
+| IN-04 | safeEvaluate 超时语义：当 MinInterval < DefaultMinInterval(30s) 时，floor 是 min() 而不是 max() — 文档字符串和代码不一致。 | Phase 4+ |
+| IN-05 | runBackfill 参数顺序解析器：资产名称以 `-` 开头会被错误分类。 | Phase 4+ |
+| IN-06 | runHealthcheck 从 defer 作用域内调用 os.Exit。 | Phase 4+ |
 
-These are **not actionable gaps** for Phase 3 — they are documented for Phase 4 work and do not block the Phase 3 goal of delivering scheduling, sensors, partitions, and backfill CLI functionality.
+这些对于 Phase 3 来说是**不可操作的差距** — 它们为 Phase 4 工作记录，不阻止 Phase 3 实现其提供调度、传感器、分区和回填 CLI 功能的目标。
 
 ---
 
-## Behavioral Spot-Checks
+## 行为抽查
 
-| Behavior | Command | Result | Status |
+| 行为 | 命令 | 结果 | 状态 |
 |---------|---------|--------|--------|
-| go build ./... | `go build ./...` | 0 errors | PASS |
-| Schedule tests | `DATABASE_URL=... go test ./internal/schedule/... -count=1 -timeout 120s` | 8 tests pass | PASS |
-| Sensor tests | `DATABASE_URL=... go test ./internal/sensor/... -count=1 -timeout 120s` | 15 tests pass | PASS |
-| Backfill tests | `DATABASE_URL=... go test ./internal/backfill/... -count=1 -timeout 120s` | all pass | PASS |
-| Phase 2 regression | `go test ./internal/run/... -run TestClaimAtomicity50Goroutines` | PASS | PASS |
+| go build ./... | `go build ./...` | 0 错误 | PASS |
+| Schedule 测试 | `DATABASE_URL=... go test ./internal/schedule/... -count=1 -timeout 120s` | 8 个测试通过 | PASS |
+| Sensor 测试 | `DATABASE_URL=... go test ./internal/sensor/... -count=1 -timeout 120s` | 15 个测试通过 | PASS |
+| Backfill 测试 | `DATABASE_URL=... go test ./internal/backfill/... -count=1 -timeout 120s` | 全部通过 | PASS |
+| Phase 2 回归 | `go test ./internal/run/... -run TestClaimAtomicity50Goroutines` | PASS | PASS |
 | CLI scheduler | `go test ./cmd/platform/... -run TestSchedulerGracefulShutdown` | PASS | PASS |
-| Snowflake connector | test unrelated to Phase 3; skipped | N/A | SKIP |
+| Snowflake 连接器 | 与 Phase 3 无关；跳过 | N/A | SKIP |
 
-**Note:** Tests requiring DATABASE_URL were run against `postgres://platform_app:platform_app@localhost:5432/platform` (the actual local DB name). The summaries reference `data_governance` as the DB name — this is a DB-name discrepancy that does not affect code correctness. Phase 3 backfill/sensor/schedule tests all pass with the correct local DB.
+**注意：** 需要 DATABASE_URL 的测试针对 `postgres://platform_app:platform_app@localhost:5432/platform`（实际本地 DB 名称）运行。摘要引用 `data_governance` 作为 DB 名称 — 这是不影响代码正确性的 DB 名称差异。Phase 3 backfill/sensor/schedule 测试都使用正确的本地 DB 通过。
 
 ---
 
-## Requirements Coverage
+## 需求覆盖
 
-| Requirement | Source Plan | Test | Status |
+| 需求 | 来源计划 | 测试 | 状态 |
 |------------|------------|------|--------|
-| ORCH-05 scheduler subcommand + graceful shutdown | 03-06 | TestSchedulerGracefulShutdown | SATISFIED |
-| ORCH-06 sensor evaluation in scheduler tick | 03-05 | sensor tests + TestSchedulerGracefulShutdown | SATISFIED |
-| ORCH-07 time-partition backfill (distinct UUIDs/keys) | 03-07 | TestBackfillTimePartition | SATISFIED |
-| ORCH-08 category partition independence (D-16) | 03-07 | TestCategoryPartitionIndependence | SATISFIED |
+| ORCH-05 scheduler 子命令 + graceful shutdown | 03-06 | TestSchedulerGracefulShutdown | SATISFIED |
+| ORCH-06 传感器评估在 scheduler tick 中 | 03-05 | sensor 测试 + TestSchedulerGracefulShutdown | SATISFIED |
+| ORCH-07 时间分区回填（不同 UUID/键） | 03-07 | TestBackfillTimePartition | SATISFIED |
+| ORCH-08 类别分区独立性（D-16） | 03-07 | TestCategoryPartitionIndependence | SATISFIED |
 
 ---
 
-## Anti-Patterns Found
+## 发现的问题
 
-| File | Pattern | Severity | Impact |
+| 文件 | 模式 | 严重性 | 影响 |
 |------|---------|----------|--------|
-| internal/schedule/registry.go | TOCTOU race: SELECT-then-INSERT without unique constraint — duplicate schedule rows under concurrent startup | warning | Correctness gap in multi-replica deployments |
-| internal/sensor/registry.go | Same TOCTOU race as WR-01 | warning | Correctness gap in multi-replica deployments |
-| cmd/platform/scheduler.go:127 | shutdownCtx created but discarded (`_ = shutdownCtx`) | info | Dead shutdown timeout plumbing |
-| internal/schedule/missed.go:82-86 | Clock-skew: computeNextAndDetectMiss returns future window that FireOneSchedule fires without guard | info | Future-window partition keys in unusual clock conditions |
-| internal/sensor/evaluate.go:162-175 | sensor.evaluated defer comment vs actual behavior | info | Documentation discrepancy |
+| internal/schedule/registry.go | TOCTOU 竞争：SELECT-then-INSERT 无唯一约束 — 多副本启动时重复 schedule 行 | warning | 多副本部署中的正确性差距 |
+| internal/sensor/registry.go | 与 WR-01 相同的 TOCTOU 竞争 | warning | 多副本部署中的正确性差距 |
+| cmd/platform/scheduler.go:127 | shutdownCtx 已创建但被丢弃（`_ = shutdownCtx`） | info | 死的 shutdown timeout plumbing |
+| internal/schedule/missed.go:82-86 | 时钟偏移：computeNextAndDetectMiss 返回 FireOneSchedule 无 guard 触发的未来窗口 | info | 不寻常时钟条件下的未来窗口分区键 |
+| internal/sensor/evaluate.go:162-175 | sensor.evaluated defer 注释与实际行为 | info | 文档不一致 |
 
 ---
 
-## Phase 3 Acceptance Gate
+## Phase 3 验收门
 
-All four ORCH requirements are demonstrably satisfied:
+所有四个 ORCH 需求都有明确满足：
 
-- **ORCH-05** (scheduler subcommand): `./platform scheduler` starts, ticks, and shuts down via SIGTERM — confirmed by `TestSchedulerGracefulShutdown`
-- **ORCH-06** (sensor evaluation): sensor.Daemon.RunOnce drains in scheduler tick — confirmed by schedule tests + sensor tests
-- **ORCH-07** (time-partition backfill): `TestBackfillTimePartition` creates 7 daily runs with distinct UUIDs and partition_keys — confirmed by backfill tests
-- **ORCH-08** (category partition independence): `TestCategoryPartitionIndependence` flips one category to failed while siblings stay queued — confirmed by backfill tests
+- **ORCH-05**（scheduler 子命令）：`./platform scheduler` 启动、tick 并通过 SIGTERM 关闭 — 由 `TestSchedulerGracefulShutdown` 确认
+- **ORCH-06**（传感器评估）：sensor.Daemon.RunOnce 在 scheduler tick 中排出 — 由 schedule 测试 + sensor 测试确认
+- **ORCH-07**（时间分区回填）：`TestBackfillTimePartition` 创建 7 个具有不同 UUID 和 partition_keys 的每日运行 — 由 backfill 测试确认
+- **ORCH-08**（类别分区独立性）：`TestCategoryPartitionIndependence` 将一个类别翻转为 failed，而兄弟姐妹保持 queued — 由 backfill 测试确认
 
-The Phase 2 regression guard (`TestClaimAtomicity50Goroutines`) passes unchanged after all Phase 3 modifications.
+Phase 2 回归保护（`TestClaimAtomicity50Goroutines`）在所有 Phase 3 修改后继续通过。
 
 ---
 
-_Verified: 2026-05-08T21:00:00Z_
-_Verifier: Claude (gsd-verifier)_
+_验证时间：2026-05-08T21:00:00Z_
+_验证者：Claude (gsd-verifier)_

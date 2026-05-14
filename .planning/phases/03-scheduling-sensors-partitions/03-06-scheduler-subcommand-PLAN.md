@@ -1,7 +1,7 @@
 ---
 phase: 3
 plan: 06
-title: ./platform scheduler subcommand — wire schedule.FireOneSchedule + sensor.Daemon.RunOnce in single tick loop with graceful shutdown
+title: ./platform scheduler 子命令 — 在单个 tick 循环中连接 schedule.FireOneSchedule + sensor.Daemon.RunOnce，实现优雅关闭
 type: execute
 wave: 3
 depends_on: [04, 05]
@@ -14,37 +14,36 @@ files_modified:
 autonomous: true
 must_haves:
   truths:
-    - "./platform scheduler subcommand exists alongside server/worker/materialize cases in cmd/platform/main.go"
-    - "runScheduler() bootstraps storage + asset registry + event writer, then runs a single tick loop that calls schedule.FireOneSchedule (drained until ErrNoDueSchedule) followed by sensor.Daemon.RunOnce — D-05 single-loop architecture"
-    - "runScheduler does NOT call schedule.Daemon.Run (which is unexported in plan 03-04 anyway) — it owns its ticker and calls FireOneSchedule + sensor.RunOnce directly"
-    - "SIGINT/SIGTERM triggers graceful shutdown — current tick completes, no new ticks, daemon exits within configured GracefulShutdownTimeout (default 30s)"
-    - "./platform scheduler logs scheduler.started on entry and scheduler.shutdown on exit (slog structured)"
-    - "TestSchedulerGracefulShutdown spawns runScheduler in subprocess, sends SIGTERM, asserts process exits with code 0 within 5s and emits scheduler.shutdown log line"
+    - "./platform scheduler 子命令存在于 cmd/platform/main.go 中，与 server/worker/materialize 案例并列"
+    - "runScheduler() 引导 storage + asset registry + event writer，然后运行单个 tick 循环，调用 schedule.FireOneSchedule（耗尽直到 ErrNoDueSchedule）然后 sensor.Daemon.RunOnce — D-05 单循环架构"
+    - "runScheduler 不调用 schedule.Daemon.Run（该方法在计划 03-04 中是未导出的）— 它拥有自己的 ticker 并直接调用 FireOneSchedule + sensor.RunOnce"
+    - "SIGINT/SIGTERM 触发优雅关闭 — 当前 tick 完成，不再有新 tick，守护进程在配置的 GracefulShutdownTimeout（默认 30s）内退出"
+    - "./platform scheduler 在入口处记录 scheduler.started，退出时记录 scheduler.shutdown（slog 结构化日志）"
+    - "TestSchedulerGracefulShutdown 在子进程中生成 runScheduler，发送 SIGTERM，断言进程在 5s 内以代码 0 退出，并发送 scheduler.shutdown 日志行"
   artifacts:
     - path: "cmd/platform/scheduler.go"
-      provides: "runScheduler() entry point — owns its own tick loop, drives schedule.FireOneSchedule + sensor.Daemon.RunOnce per tick"
+      provides: "runScheduler() 入口点 — 拥有自己的 tick 循环，每 tick 驱动 schedule.FireOneSchedule + sensor.Daemon.RunOnce"
       contains: "func runScheduler"
     - path: "cmd/platform/main.go"
-      provides: "scheduler case in switch — calls runScheduler()"
+      provides: "switch 中的 scheduler case — 调用 runScheduler()"
       contains: "case \"scheduler\":"
     - path: "cmd/platform/scheduler_test.go"
-      provides: "TestSchedulerGracefulShutdown integration test"
+      provides: "TestSchedulerGracefulShutdown 集成测试"
       contains: "TestSchedulerGracefulShutdown"
   key_links:
     - from: "cmd/platform/scheduler.go runScheduler"
       to: "internal/schedule.FireOneSchedule + internal/sensor.Daemon.RunOnce"
-      via: "shared tick loop — runScheduler drains FireOneSchedule until ErrNoDueSchedule, then calls sensor.Daemon.RunOnce; the schedule.Daemon type itself is not constructed (its `run` driver is unexported and exists only for package-internal tests)"
+      via: "共享 tick 循环 — runScheduler 耗尽 FireOneSchedule 直到 ErrNoDueSchedule，然后调用 sensor.Daemon.RunOnce；schedule.Daemon 类型本身未被构造（其 `run` 驱动方法是未导出的，仅存在于包内测试中）"
       pattern: "schedule.FireOneSchedule|sensor.*RunOnce"
     - from: "cmd/platform/main.go switch"
       to: "cmd/platform/scheduler.go runScheduler"
       via: "case \"scheduler\": runScheduler()"
       pattern: "case \"scheduler\":"
 ---
-
 <objective>
-Wire the scheduler subcommand: `./platform scheduler` starts a process that runs the `schedule` and `sensor` evaluation passes together, sharing a single tick loop (D-05). On SIGINT/SIGTERM, the daemon completes its current tick and exits within `GracefulShutdownTimeout` (default 30s) — no in-flight schedule fires are abandoned mid-transaction; the per-row tx model from plan 03-04 ensures consistency.
+连接调度器子命令：`./platform scheduler` 启动一个进程，一起运行 `schedule` 和 `sensor` 评估通道，共享单个 tick 循环（D-05）。在 SIGINT/SIGTERM 时，守护进程完成当前 tick 并在 `GracefulShutdownTimeout`（默认 30s）内退出 — 没有进行中的调度器触发被在事务中途放弃；计划 03-04 的每行 tx 模型确保一致性。
 
-This is the only Phase 3 plan that touches `cmd/platform/main.go`. The backfill subcommand (plan 03-07) is layered on top of this in Wave 4 to avoid main.go merge conflicts within Wave 3.
+这是唯一一个涉及 `cmd/platform/main.go` 的第 3 阶段计划。backfill 子命令（计划 03-07）层叠在其上，位于 Wave 4，以避免 Wave 3 内 main.go 的合并冲突。
 </objective>
 
 <execution_context>
@@ -53,18 +52,18 @@ This is the only Phase 3 plan that touches `cmd/platform/main.go`. The backfill 
 </execution_context>
 
 <context>
-This plan implements D-01 (scheduler subcommand pattern, alongside server/worker/materialize) and D-05 (sensors share the scheduler subcommand goroutine). It bridges plans 03-04 (schedule.FireOneSchedule + UpsertSchedules) and 03-05 (sensor.Daemon.RunOnce + UpsertSensors) into a runnable binary mode.
+本计划实现 D-01（调度器子命令模式，与 server/worker/materialize 并列）和 D-05（传感器共享调度器子命令 goroutine）。它桥接计划 03-04（schedule.FireOneSchedule + UpsertSchedules）和计划 03-05（sensor.Daemon.RunOnce + UpsertSensors）到一个可运行的二进制模式。
 
-**Why Wave 3:** Depends on plans 03-04 and 03-05 — both must exist before scheduler.go can import them. Plans 03-04 and 03-05 are independent of each other (Wave 2 parallel), so the dependency graph is `04 || 05 → 06`. depends_on = [04, 05].
+**为什么是 Wave 3：** 依赖于计划 03-04 和 03-05 — 两者都必须存在才能让 scheduler.go 导入它们。计划 03-04 和 03-05 彼此独立（Wave 2 并行），因此依赖图是 `04 || 05 → 06`。depends_on = [04, 05]。
 
-**Why this plan does NOT depend on plan 03-03:** The scheduler subcommand never calls `run.ClaimNext` directly — it only INSERTs queued runs (via FireOneSchedule and handleFired in plans 03-04/03-05). Workers (separate `./platform worker` process) consume the queue. So the priority claim change (plan 03-03) is not a dependency.
+**为什么本计划不依赖于计划 03-03：** 调度器子命令从不直接调用 `run.ClaimNext` — 它只 INSERT 排队的运行（通过计划 03-04/03-05 中的 FireOneSchedule 和 handleFired）。Workers（单独的 `./platform worker` 进程）消费队列。因此优先级 claim 更改（计划 03-03）不是依赖项。
 
-**Why this plan owns its own tick loop (W3 resolution):** Plan 03-04's `schedule.Daemon` has an UNEXPORTED `run` method (used only by package-internal tests). It is NOT consumed by production code. Plan 03-04 exports `FireOneSchedule` from day one — this plan's runScheduler calls that directly. Two reasons for the layering:
+**为什么本计划拥有自己的 tick 循环（W3 决议）：** 计划 03-04 的 `schedule.Daemon` 有一个**未导出**的 `run` 方法（仅供包内测试使用）。它不被生产代码消费。计划 03-04 从第一天就导出 `FireOneSchedule` — 本计划的 runScheduler 直接调用它。两层层叠的理由：
 
-1. **Single tick loop drives BOTH schedule firing AND sensor evaluation (D-05):** The user-facing decision says "sensors share the scheduler subcommand goroutine, sharing the tick loop." If we used a hypothetical `schedule.Daemon.Run` for the schedule pass and a parallel `sensor.Daemon` ticker, we'd have two timers competing — bad for D-05's single-loop intent.
-2. **No dead exported surface:** Production code calls `FireOneSchedule` directly. Exporting `Daemon.Run` AND `FireOneSchedule` would leave one of them dead. Plan 03-04 keeps `Daemon.run` lowercase so this plan's `runScheduler` is the single production driver.
+1. **单个 tick 循环驱动调度器触发和传感器评估（D-05）：** 用户面对决策说"传感器与 cron 共享调度器子命令 goroutine，共享 tick 循环。"如果我们对调度器 pass 使用假设的 `schedule.Daemon.Run`，对传感器 pass 使用平行的 `sensor.Daemon` ticker，我们将有两个竞争定时器 — 这对 D-05 的单循环意图不利。
+2. **没有死的导出表面：** 生产代码直接调用 `FireOneSchedule`。同时导出 `Daemon.Run` 和 `FireOneSchedule` 会导致其中一个是死代码。计划 03-04 将 `Daemon.run` 保持为小写，因此本计划的 `runScheduler` 是唯一的生产驱动者。
 
-Concretely, runScheduler implements its own tick loop:
+具体来说，runScheduler 实现自己的 tick 循环：
 ```go
 ticker := time.NewTicker(interval)
 schedule.UpsertSchedules(ctx, store, registry)
@@ -90,15 +89,15 @@ for {
 }
 ```
 
-**Why GracefulShutdownTimeout = 30s:** A schedule fire takes <100ms typically (tx covers two SQL writes). 30s is overkill but matches Phase 2 worker shutdown expectations. Tunable via `PLATFORM_SCHEDULER_SHUTDOWN_TIMEOUT` env var.
+**为什么 GracefulShutdownTimeout = 30s：** 调度器触发通常需要 <100ms（tx 覆盖两个 SQL 写入）。30s 是过度杀伤，但匹配第 2 阶段 worker 关闭期望。可通过 `PLATFORM_SCHEDULER_SHUTDOWN_TIMEOUT` 环境变量调整。
 
-**Frozen interfaces consumed (no rename / refactor needed in this plan — plan 03-04 exports FireOneSchedule from day one):**
-- `internal/schedule.FireOneSchedule`, `schedule.UpsertSchedules`, `schedule.ErrNoDueSchedule` (plan 03-04 exported)
-- `internal/sensor.Daemon`, `sensor.UpsertSensors`, `sensor.AutoDisableThreshold` (plan 03-05)
-- `internal/storage.NewPostgres` (Phase 1)
-- `internal/event.NewWriter` (Phase 1)
-- `internal/asset.Default()` (Phase 2)
-- `internal/connector.Registry` (Phase 2 — needed because asset registry has connector dependencies)
+**消耗的冻结接口（无需重命名/重构 — 计划 03-04 从第一天就导出 FireOneSchedule）：**
+- `internal/schedule.FireOneSchedule`、`schedule.UpsertSchedules`、`schedule.ErrNoDueSchedule`（计划 03-04 导出）
+- `internal/sensor.Daemon`、`sensor.UpsertSensors`、`sensor.AutoDisableThreshold`（计划 03-05）
+- `internal/storage.NewPostgres`（第 1 阶段）
+- `internal/event.NewWriter`（第 1 阶段）
+- `internal/asset.Default()`（第 2 阶段）
+- `internal/connector.Registry`（第 2 阶段 — 需要因为 asset registry 有连接器依赖）
 
 @.planning/phases/03-scheduling-sensors-partitions/03-CONTEXT.md
 @.planning/phases/03-scheduling-sensors-partitions/03-RESEARCH.md
@@ -107,7 +106,7 @@ for {
 @cmd/platform/worker.go
 
 <interfaces>
-<!-- From plans 03-04 + 03-05. FireOneSchedule is EXPORTED from day one in plan 03-04 — no rename Task in this plan. -->
+<!-- 来自计划 03-04 + 03-05。FireOneSchedule 在计划 03-04 中从第一天就导出 — 本计划无需重命名。 -->
 
 ```go
 package schedule
@@ -120,11 +119,11 @@ type Daemon struct {
     Events   event.Writer
     Interval time.Duration
 }
-// `run` is UNEXPORTED — used only by package-internal tests in daemon_test.go.
-// This plan does NOT consume it. Production driver is FireOneSchedule below.
+// `run` 是未导出的 — 仅供 daemon_test.go 中的包内测试使用。
+// 本计划不消费它。生产驱动者是下面的 FireOneSchedule。
 // func (d *Daemon) run(ctx context.Context) error  // not used here
 
-// EXPORTED — production caller (this plan's runScheduler) uses these:
+// 导出的 — 生产调用者（本计划的 runScheduler）使用这些：
 var ErrNoDueSchedule = errors.New("schedule: no due schedule")
 func FireOneSchedule(ctx context.Context, store storage.Storage, reg *asset.DefinitionRegistry, events event.Writer, now time.Time) error
 func UpsertSchedules(ctx context.Context, store storage.Storage, reg *asset.DefinitionRegistry) error
@@ -148,28 +147,28 @@ func UpsertSensors(ctx context.Context, store storage.Storage, reg *asset.Defini
 <tasks>
 
 <task id="3.6.1" type="auto" tdd="true">
-  <name>Task 1: Create cmd/platform/scheduler.go runScheduler() — bootstrap + single tick loop driving FireOneSchedule + sensor.Daemon.RunOnce + graceful shutdown</name>
+  <name>Task 1: 创建 cmd/platform/scheduler.go runScheduler() — 引导 + 单 tick 循环驱动 FireOneSchedule + sensor.Daemon.RunOnce + 优雅关闭</name>
   <files>cmd/platform/scheduler.go, cmd/platform/main.go</files>
   <read_first>
-    - cmd/platform/main.go (existing switch block + runStart/runMaterialize/runWorker patterns)
-    - cmd/platform/worker.go (bootstrap helper pattern + signal.NotifyContext usage)
-    - internal/schedule/daemon.go (Daemon struct + DefaultInterval constant — plan 03-04; note: Daemon.run is unexported, not used here)
-    - internal/schedule/fire.go (FireOneSchedule + ErrNoDueSchedule — plan 03-04, EXPORTED)
-    - internal/sensor/daemon.go (Daemon struct + RunOnce method — plan 03-05)
-    - .planning/phases/03-scheduling-sensors-partitions/03-RESEARCH.md § Pattern 9 — CLI Subcommand Wiring
+    - cmd/platform/main.go（现有 switch 块 + runStart/runMaterialize/runWorker 模式）
+    - cmd/platform/worker.go（引导辅助模式 + signal.NotifyContext 使用）
+    - internal/schedule/daemon.go（Daemon 结构体 + DefaultInterval 常量 — 计划 03-04；注意：Daemon.run 是未导出的，不在这里使用）
+    - internal/schedule/fire.go（FireOneSchedule + ErrNoDueSchedule — 计划 03-04，导出）
+    - internal/sensor/daemon.go（Daemon 结构体 + RunOnce 方法 — 计划 03-05）
+    - .planning/phases/03-scheduling-sensors-partitions/03-RESEARCH.md § Pattern 9 — CLI 子命令连接
   </read_first>
   <behavior>
-    - cmd/platform/main.go switch has case "scheduler" calling runScheduler()
-    - runScheduler reads DATABASE_URL, opens storage, builds asset registry (uses asset.Default()), constructs event writer, calls schedule.UpsertSchedules + sensor.UpsertSensors at start
-    - runScheduler runs an internal tick loop calling schedule.FireOneSchedule (loop until ErrNoDueSchedule) then sensor.Daemon.RunOnce, ticking every PLATFORM_SCHEDULER_INTERVAL (default 30s) with 0..5s jitter
-    - SIGINT/SIGTERM triggers graceful shutdown: current tick completes, no new ticks, function returns within PLATFORM_SCHEDULER_SHUTDOWN_TIMEOUT (default 30s)
-    - Logs "scheduler.started" on entry with config (interval, shutdown_timeout) and "scheduler.shutdown" on exit
-    - Reports "scheduler.tick_completed" at debug level after each successful tick
-    - Does NOT construct or call schedule.Daemon — that type's loop driver is unexported (test-only)
+    - cmd/platform/main.go switch 有 case "scheduler" 调用 runScheduler()
+    - runScheduler 读取 DATABASE_URL，打开 storage，构建 asset registry（使用 asset.Default()），构造 event writer，在开始时调用 schedule.UpsertSchedules + sensor.UpsertSensors
+    - runScheduler 运行内部 tick 循环，每隔 PLATFORM_SCHEDULER_INTERVAL（默认 30s）调用 schedule.FireOneSchedule（循环直到 ErrNoDueSchedule）然后 sensor.Daemon.RunOnce，加上 0..5s 抖动
+    - SIGINT/SIGTERM 触发优雅关闭：当前 tick 完成，不再有新 tick，在 PLATFORM_SCHEDULER_SHUTDOWN_TIMEOUT（默认 30s）内返回
+    - 在入口处记录"scheduler.started"（包含配置 interval、shutdown_timeout），退出时记录"scheduler.shutdown"
+    - 在每次成功 tick 后以调试级别报告"scheduler.tick_completed"
+    - 不构造或调用 schedule.Daemon — 该类型的循环驱动方法是未导出的（仅用于测试）
   </behavior>
   <action>
-    1. Edit `cmd/platform/main.go`:
-       a. Add the `case "scheduler":` block to the switch (after the existing `case "materialize":` block):
+    1. 编辑 `cmd/platform/main.go`：
+       a. 在现有 `case "materialize":` 块之后添加 `case "scheduler":` 块：
           ```go
           case "scheduler":
               if err := runScheduler(); err != nil {
@@ -177,8 +176,8 @@ func UpsertSensors(ctx context.Context, store storage.Storage, reg *asset.Defini
                   os.Exit(1)
               }
           ```
-       b. Update the `default:` error message to include "scheduler" in the list of known commands (or omit if it just uses fmt). Existing format already prints a generic "unknown command" — no change needed unless help text explicitly enumerates.
-    2. Create `cmd/platform/scheduler.go`:
+       b. 更新 `default:` 错误消息，将"scheduler"包含在已知命令列表中（或如果只使用 fmt 则省略）。现有格式已经打印通用"unknown command" — 除非帮助文本明确枚举，否则无需更改。
+    2. 创建 `cmd/platform/scheduler.go`：
        ```go
        package main
 
@@ -312,47 +311,47 @@ func UpsertSensors(ctx context.Context, store storage.Storage, reg *asset.Defini
            }
        }
        ```
-    3. Run `go build ./...` to confirm.
+    3. 运行 `go build ./...` 确认。
   </action>
   <acceptance_criteria>
     - `grep -q 'case "scheduler":' cmd/platform/main.go`
     - `grep -q 'runScheduler()' cmd/platform/main.go`
-    - File `cmd/platform/scheduler.go` exists
+    - 文件 `cmd/platform/scheduler.go` 存在
     - `grep -q 'func runScheduler' cmd/platform/scheduler.go`
     - `grep -q 'schedule.FireOneSchedule' cmd/platform/scheduler.go`
-    - `! grep -q 'schedule.Daemon{' cmd/platform/scheduler.go` (does NOT construct schedule.Daemon — confirms W3 fix; production loop is owned by runScheduler)
-    - `! grep -q 'schedule.Daemon.Run\\|sched.Daemon.Run' cmd/platform/scheduler.go` (no calls to a hypothetical exported Daemon.Run)
-    - `grep -q 'sensor.Daemon' cmd/platform/scheduler.go` or `grep -q 'sd.RunOnce' cmd/platform/scheduler.go`
+    - `! grep -q 'schedule.Daemon{' cmd/platform/scheduler.go`（不构造 schedule.Daemon — 确认 W3 修复；生产循环由 runScheduler 拥有）
+    - `! grep -q 'schedule.Daemon.Run\|sched.Daemon.Run' cmd/platform/scheduler.go`（不调用假设的导出 Daemon.Run）
+    - `grep -q 'sensor.Daemon' cmd/platform/scheduler.go` 或 `grep -q 'sd.RunOnce' cmd/platform/scheduler.go`
     - `grep -q 'schedule.UpsertSchedules' cmd/platform/scheduler.go`
     - `grep -q 'sensor.UpsertSensors' cmd/platform/scheduler.go`
     - `grep -q 'signal.NotifyContext' cmd/platform/scheduler.go`
     - `grep -q '"scheduler.started"' cmd/platform/scheduler.go`
     - `grep -q '"scheduler.shutdown"' cmd/platform/scheduler.go`
-    - `go build ./...` exits 0
-    - Smoke test: `./platform scheduler` (with no DATABASE_URL) exits non-zero with the "DATABASE_URL is required" error: `PLATFORM_HTTP_ADDR= ./platform scheduler 2>&1 | grep -q "DATABASE_URL is required"`
+    - `go build ./...` 退出 0
+    - 冒烟测试：`./platform scheduler`（无 DATABASE_URL）以非零退出并显示"DATABASE_URL is required"错误：`PLATFORM_HTTP_ADDR= ./platform scheduler 2>&1 | grep -q "DATABASE_URL is required"`
   </acceptance_criteria>
   <verify>
     <automated>cd /home/developer/.kanpon/code/go/data-governance && go build ./... && grep -c 'runScheduler\|FireOneSchedule\|UpsertSchedules\|UpsertSensors' cmd/platform/scheduler.go</automated>
   </verify>
-  <done>./platform scheduler subcommand wired; main.go switch handles it; scheduler.go bootstraps storage + registry + events; tick loop drives schedule.FireOneSchedule (drained) + sensor.Daemon.RunOnce; graceful shutdown via signal.NotifyContext; does NOT depend on a hypothetical schedule.Daemon.Run (W3 fix — that method is unexported in plan 03-04).</done>
+  <done>./platform scheduler 子命令已连接；main.go switch 处理它；scheduler.go 引导 storage + registry + events；tick 循环驱动 schedule.FireOneSchedule（耗尽）+ sensor.Daemon.RunOnce；通过 signal.NotifyContext 实现优雅关闭；不依赖于假设的 schedule.Daemon.Run（W3 修复 — 该方法在计划 03-04 中是未导出的）。</done>
 </task>
 
 <task id="3.6.2" type="auto" tdd="true">
-  <name>Task 2: Create TestSchedulerGracefulShutdown integration test using subprocess invocation</name>
+  <name>Task 2: 创建 TestSchedulerGracefulShutdown 集成测试，使用子进程调用</name>
   <files>cmd/platform/scheduler_test.go</files>
   <read_first>
-    - cmd/platform/scheduler.go (just created — confirm exit conditions and log lines)
-    - cmd/platform/worker.go (existing subcommand for build pattern reference)
+    - cmd/platform/scheduler.go（刚创建 — 确认退出条件和日志行）
+    - cmd/platform/worker.go（现有子命令的构建模式参考）
   </read_first>
   <behavior>
-    - TestSchedulerGracefulShutdown builds the platform binary with `go build`, runs `./platform scheduler` as a child process with DATABASE_URL set, sends SIGTERM after 1s, asserts:
-      - Process exit code 0 within 5s
-      - stdout contains "scheduler.started" log line
-      - stdout contains "scheduler.shutdown" log line
-    - Test skips when DATABASE_URL is not set (mirrors claim_test.go pattern)
+    - TestSchedulerGracefulShutdown 使用 `go build` 构建 platform 二进制文件，作为子进程运行 `./platform scheduler`（设置 DATABASE_URL），1s 后发送 SIGTERM，断言：
+      - 进程在 5s 内以代码 0 退出
+      - stdout 包含"scheduler.started"日志行
+      - stdout 包含"scheduler.shutdown"日志行
+    - 当 DATABASE_URL 未设置时测试跳过（镜像 claim_test.go 模式）
   </behavior>
   <action>
-    1. Create `cmd/platform/scheduler_test.go`:
+    1. 创建 `cmd/platform/scheduler_test.go`：
        ```go
        package main_test
 
@@ -422,71 +421,71 @@ func UpsertSensors(ctx context.Context, store storage.Storage, reg *asset.Defini
                "expected 'scheduler.shutdown' log line, got: %s", output)
        }
        ```
-    2. Run the test:
+    2. 运行测试：
        ```bash
        DATABASE_URL=postgres://platform_app:platform_app@localhost:5432/data_governance?sslmode=disable \
          go test ./cmd/platform/... -run TestSchedulerGracefulShutdown -count=1 -timeout 60s
        ```
-       Expected: pass. (Build step inside the test recompiles ./cmd/platform — ensures the test always exercises current scheduler.go.)
+       预期：通过。（测试内部的构建步骤重新编译 ./cmd/platform — 确保测试始终使用当前 scheduler.go。）
   </action>
   <acceptance_criteria>
-    - File `cmd/platform/scheduler_test.go` exists
+    - 文件 `cmd/platform/scheduler_test.go` 存在
     - `grep -q 'func TestSchedulerGracefulShutdown' cmd/platform/scheduler_test.go`
     - `grep -q 'syscall.SIGTERM' cmd/platform/scheduler_test.go`
     - `grep -q '"scheduler.started"' cmd/platform/scheduler_test.go`
     - `grep -q '"scheduler.shutdown"' cmd/platform/scheduler_test.go`
-    - `DATABASE_URL=... go test ./cmd/platform/... -run TestSchedulerGracefulShutdown -count=1 -timeout 60s` exits 0
+    - `DATABASE_URL=... go test ./cmd/platform/... -run TestSchedulerGracefulShutdown -count=1 -timeout 60s` 退出 0
   </acceptance_criteria>
   <verify>
     <automated>DATABASE_URL=postgres://platform_app:platform_app@localhost:5432/data_governance?sslmode=disable go test ./cmd/platform/... -run TestSchedulerGracefulShutdown -count=1 -timeout 60s</automated>
   </verify>
-  <done>TestSchedulerGracefulShutdown passes — proves SIGTERM triggers graceful shutdown within 5s with proper log lines.</done>
+  <done>TestSchedulerGracefulShutdown 通过 — 证明 SIGTERM 在 5s 内触发优雅关闭，包含正确的日志行。</done>
 </task>
 
 </tasks>
 
 <threat_model>
-## Trust Boundaries
+## 信任边界
 
-| Boundary | Description |
+| 边界 | 描述 |
 |----------|-------------|
-| OS signals → runScheduler | SIGINT/SIGTERM is the canonical shutdown signal; signal.NotifyContext is the established pattern |
-| Env var config → runScheduler | DATABASE_URL, PLATFORM_SCHEDULER_INTERVAL, etc. are operator-controlled — no untrusted source |
-| Multiple scheduler replicas → schedules/sensors tables | SKIP LOCKED ensures multi-replica safety (already enforced by plans 03-04 and 03-05) |
+| OS signals → runScheduler | SIGINT/SIGTERM 是规范的关闭信号；signal.NotifyContext 是既定模式 |
+| Env var config → runScheduler | DATABASE_URL、PLATFORM_SCHEDULER_INTERVAL 等是操作员控制的 — 无不可信来源 |
+| 多个调度器副本 → schedules/sensors 表 | SKIP LOCKED 确保多副本安全（已由计划 03-04 和 03-05 强制执行）|
 
-## STRIDE Threat Register
+## STRIDE 威胁注册表
 
-| Threat ID | Category | Component | Disposition | Mitigation Plan |
+| 威胁 ID | 类别 | 组件 | 处理方式 | 缓解计划 |
 |-----------|----------|-----------|-------------|-----------------|
-| T-03-06-01 | Denial of Service | SIGTERM ignored — daemon never exits, blocks deployment | mitigate | signal.NotifyContext + ctx propagation through tick loop. TestSchedulerGracefulShutdown enforces 5s exit. |
-| T-03-06-02 | Tampering | env var PLATFORM_SCHEDULER_INTERVAL set to 0 → busy-loop pegging the DB | mitigate | runScheduler validates `d > 0` before assigning; falls back to DefaultInterval (30s). |
-| T-03-06-03 | Information Disclosure | DATABASE_URL logged at scheduler.started | mitigate | We log only `interval`, `shutdown_timeout`, `sensor_disable_after` — NOT the DSN. Acceptance criterion explicitly checks the start log payload. |
-| T-03-06-04 | Denial of Service | runScheduler crashes on transient DB error | mitigate | Tick errors are logged (slog.Error) and the loop continues; only DSN-level connection errors at startup return from runScheduler. Plan 03-04's per-row tx model already isolates per-fire failures. |
-| T-03-06-05 | Elevation of Privilege | Operator runs scheduler with DSN of a higher-privileged DB user | accept | Same trust model as Phase 2 worker — operator controls deployment. DB role grants (Phase 1+2+3) limit DML to platform_app. |
+| T-03-06-01 | 拒绝服务 | SIGTERM 被忽略 — 守护进程永不退出，阻止部署 | 缓解 | signal.NotifyContext + ctx 通过 tick 循环传播。TestSchedulerGracefulShutdown 强制 5s 退出。 |
+| T-03-06-02 | 篡改 | 环境变量 PLATFORM_SCHEDULER_INTERVAL 设置为 0 → 忙循环占用 DB | 缓解 | runScheduler 在赋值前验证 `d > 0`；回退到 DefaultInterval（30s）。 |
+| T-03-06-03 | 信息泄露 | DATABASE_URL 在 scheduler.started 时记录 | 缓解 | 我们只记录 `interval`、`shutdown_timeout`、`sensor_disable_after` — 不是 DSN。接受标准明确检查启动日志负载。 |
+| T-03-06-04 | 拒绝服务 | runScheduler 因瞬态 DB 错误崩溃 | 缓解 | Tick 错误被记录（slog.Error）且循环继续；只有启动时的 DSN 级连接错误才从 runScheduler 返回。计划 03-04 的每行 tx 模型已经隔离每次触发失败。 |
+| T-03-06-05 | 权限提升 | 操作员使用更高权限 DB 用户的 DSN 运行调度器 | 接受 | 与第 2 阶段 worker 相同的信任模型 — 操作员控制部署。DB 角色授权（第 1+2+3 阶段）将 DML 限制在 platform_app。 |
 </threat_model>
 
 <verification>
-- `go build ./...` passes; `./platform scheduler` is a runnable subcommand.
-- `DATABASE_URL=... go test ./cmd/platform/... -count=1 -timeout 60s` passes.
-- All Phase 3 tests still pass when run against the live DB after this plan lands.
-- Plan 03-04 tests still pass — `FireOneSchedule` is consumed by this plan from day one (no rename refactor needed).
+- `go build ./...` 通过；`./platform scheduler` 是一个可运行的子命令。
+- `DATABASE_URL=... go test ./cmd/platform/... -count=1 -timeout 60s` 通过。
+- 当针对本计划落地后的实时 DB 运行所有第 3 阶段测试时仍然通过。
+- 计划 03-04 测试仍然通过 — `FireOneSchedule` 从第一天就被本计划消费（无需重命名重构）。
 </verification>
 
 <success_criteria>
-- ./platform scheduler subcommand wired in cmd/platform/main.go switch.
-- runScheduler bootstraps storage + registry + events, runs UpsertSchedules + UpsertSensors at start.
-- Single tick loop drives schedule.FireOneSchedule (drain) + sensor.Daemon.RunOnce — D-05 single-loop architecture.
-- runScheduler does NOT construct schedule.Daemon — that type's `run` driver is unexported (test-only) per plan 03-04. Production loop is owned by runScheduler. (W3 resolution.)
-- SIGINT/SIGTERM triggers graceful shutdown within shutdown timeout.
-- TestSchedulerGracefulShutdown passes (validation map: TestSchedulerGracefulShutdown).
-- Build and full test suite green.
+- ./platform scheduler 子命令在 cmd/platform/main.go switch 中已连接。
+- runScheduler 引导 storage + registry + events，在开始时运行 UpsertSchedules + UpsertSensors。
+- 单 tick 循环驱动 schedule.FireOneSchedule（耗尽）+ sensor.Daemon.RunOnce — D-05 单循环架构。
+- runScheduler 不构造 schedule.Daemon — 该类型的 `run` 驱动方法是未导出的（仅用于测试）per 计划 03-04。生产循环由 runScheduler 拥有。（W3 决议。）
+- SIGINT/SIGTERM 在关闭超时内触发优雅关闭。
+- TestSchedulerGracefulShutdown 通过（验证映射：TestSchedulerGracefulShutdown）。
+- 构建和完整测试套件绿色。
 </success_criteria>
 
 <output>
-After completion, create `.planning/phases/03-scheduling-sensors-partitions/03-06-SUMMARY.md` documenting:
-- Final scheduler subcommand surface (env vars + behavior).
-- Tick loop sequence (schedule.FireOneSchedule drain → sensor.Daemon.RunOnce).
-- Decision-coverage: D-01 (subcommand pattern), D-05 (sensors share scheduler — single tick loop driving both passes).
-- Confirmation: this plan does NOT consume schedule.Daemon.Run (W3 fix; that method is unexported in plan 03-04).
-- TestSchedulerGracefulShutdown passes — proves graceful shutdown.
+完成后，创建 `.planning/phases/03-scheduling-sensors-partitions/03-06-SUMMARY.md`，记录：
+- 最终调度器子命令表面（环境变量 + 行为）。
+- Tick 循环序列（schedule.FireOneSchedule 耗尽 → sensor.Daemon.RunOnce）。
+- 决策覆盖：D-01（子命令模式）、D-05（传感器共享调度器 — 单 tick 循环驱动两个通道）。
+- 确认：本计划不消费 schedule.Daemon.Run（W3 修复；该方法在计划 03-04 中是未导出的）。
+- TestSchedulerGracefulShutdown 通过 — 证明优雅关闭。
 </output>

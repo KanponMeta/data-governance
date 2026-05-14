@@ -76,7 +76,7 @@ completed: 2026-05-08
 
 # Phase 3 Plan 02: Asset DSL Extensions and Partitions Summary
 
-**Stable Phase 3 SDK surface: `.Schedule(cron)` / `.Sensor(spec)` / `.Partitions(strategy)` chained builder methods plus the `internal/partition` package and `AssetIO.PartitionKey()` accessor — every downstream Phase 3 plan (scheduler tick loop, sensor evaluator, backfill CLI) now has its compile-time API frozen.**
+**稳定的 Phase 3 SDK 表面：`.Schedule(cron)` / `.Sensor(spec)` / `.Partitions(strategy)` 链式构建器方法，以及 `internal/partition` 包和 `AssetIO.PartitionKey()` 访问器——所有下游 Phase 3 计划（scheduler tick loop、sensor evaluator、backfill CLI）的编译时 API 已冻结。**
 
 ## Performance
 
@@ -89,17 +89,17 @@ completed: 2026-05-08
 
 ## Accomplishments
 
-- **internal/partition package** created with sealed `PartitionStrategy` interface and four concrete strategies (`DailyPartitions`, `WeeklyPartitions`, `MonthlyPartitions`, `CategoryPartitions`); six exported functions (`DailyKey`, `WeeklyKey`, `MonthlyKey`, `KeysBetween`, `CurrentDailyKey`, `ValidateCategoryKey`); two error sentinels (`ErrUnsupportedRangeStrategy`, `ErrInvalidCategoryKey`).
-- **9 partition tests** covering UTC encoding, ISO-week year-boundary cases (2019-12-30 → "2020-W01", 2015-12-31 → "2015-W53"), range expansion (31 daily / 5 weekly / 3 monthly), inverted-range rejection, category-strategy rejection, non-UTC input → UTC key, and category-key validation rules.
-- **`asset` package extended** with `ScheduleSpec`/`SensorSpec`/`SensorResult`/`SensorFunc` types; `Asset.Schedule()`/`Sensors()`/`Partitions()` accessors with defensive copies; `Builder.Schedule()`/`Sensor()`/`Partitions()` chained methods.
-- **Build()-time validation** for all Phase 3 inputs: `cronParser.Parse()` for cron expressions, name/Sense/MinInterval guards for sensors, `partition.ValidateCategoryKey` for category keys. All errors wrap typed sentinels (`ErrInvalidCron`, `ErrSensorNameRequired`, `ErrSensorFuncRequired`, `ErrSensorMinIntervalNegative`, `ErrPartitionInvalidKey`).
-- **`AssetIO.PartitionKey() string`** added to the interface; `NewAssetIO` constructor takes `partitionKey` as third arg; existing call sites in `internal/asset/builder_test.go` (×2) and `internal/runtime/executor.go` (×1) updated to pass `""` until plan 03-03+ wires the partition_key from claimed runs.
-- **`robfig/cron/v3 v3.0.1`** added as a direct dependency (D-03 — parser-only; `cron.Cron` runner is never instantiated).
-- **11 new asset-package tests:** `TestSchedule{Accepted, InvalidCron, Every}`, `TestSensor{Accepted, EmptyName, NilSense, NegativeMinInterval}`, `TestPartitions{DailyAccepted, CategoryInvalidKey, CategoryOversizeKey, LastWins}`, `TestOrthogonalComposition`, `TestAssetIOPartitionKey{Default, Set}`. **All pass** alongside the 9 existing Phase 2 builder tests — zero regressions.
+- **internal/partition 包**已创建，包含密封的 `PartitionStrategy` 接口和四个具体策略（`DailyPartitions`、`WeeklyPartitions`、`MonthlyPartitions`、`CategoryPartitions`）；六个导出函数（`DailyKey`、`WeeklyKey`、`MonthlyKey`、`KeysBetween`、`CurrentDailyKey`、`ValidateCategoryKey`）；两个错误 sentinel（`ErrUnsupportedRangeStrategy`、`ErrInvalidCategoryKey`）。
+- **9 个分区测试**覆盖 UTC 编码、ISO 周年末边界情况（2019-12-30 → "2020-W01"、2015-12-31 → "2015-W53"）、范围扩展（31 个 daily / 5 个 weekly / 3 个 monthly）、倒置范围拒绝、category 策略拒绝、非 UTC 输入 → UTC 键，以及 category 键验证规则。
+- **`asset` 包扩展**了 `ScheduleSpec`/`SensorSpec`/`SensorResult`/`SensorFunc` 类型；`Asset.Schedule()`/`Sensors()`/`Partitions()` 访问器（含防御性拷贝）；`Builder.Schedule()`/`Sensor()`/`Partitions()` 链式方法。
+- **Build()-time 验证**针对所有 Phase 3 输入：`cronParser.Parse()` 用于 cron 表达式、name/Sense/MinInterval 守卫用于传感器、`partition.ValidateCategoryKey` 用于 category 键。所有错误都包装类型 sentinel（`ErrInvalidCron`、`ErrSensorNameRequired`、`ErrSensorFuncRequired`、`ErrSensorMinIntervalNegative`、`ErrPartitionInvalidKey`）。
+- **`AssetIO.PartitionKey() string`** 已添加到接口；`NewAssetIO` 构造函数将 `partitionKey` 作为第三个参数；`internal/asset/builder_test.go` 中的现有调用点（×2）和 `internal/runtime/executor.go` 中的调用点（×1）已更新为传递 `""`，直到计划 03-03+ 将 partition_key 从 claimed runs 接入。
+- **`robfig/cron/v3 v3.0.1`** 添加为直接依赖（D-03——仅解析器；`cron.Cron` runner 永不实例化）。
+- **11 个新的 asset 包测试：** `TestSchedule{Accepted, InvalidCron, Every}`、`TestSensor{Accepted, EmptyName, NilSense, NegativeMinInterval}`、`TestPartitions{DailyAccepted, CategoryInvalidKey, CategoryOversizeKey, LastWins}`、`TestOrthogonalComposition`、`TestAssetIOPartitionKey{Default, Set}`。**全部通过**，与现有的 9 个 Phase 2 builder 测试一起——零回归。
 
 ## Task Commits
 
-Each task was committed atomically — RED test commit followed by GREEN implementation commit:
+每个任务原子提交——RED 测试提交后跟 GREEN 实现提交：
 
 | Task | Description                                                          | RED commit | GREEN commit |
 | ---- | -------------------------------------------------------------------- | ---------- | ------------ |

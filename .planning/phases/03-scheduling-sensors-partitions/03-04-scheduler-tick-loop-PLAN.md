@@ -63,15 +63,15 @@ must_haves:
 ---
 
 <objective>
-Land the cron scheduler daemon: a tick-loop goroutine that periodically scans the `schedules` table for due rows, fires the most recent missed window per row (D-04 LatestOnly), and enqueues a `runs` row in the same transaction. The daemon shares the SKIP LOCKED multi-replica safety primitive with the run claim path (D-03) — no leader election needed.
+部署 cron scheduler daemon：一个 tick-loop goroutine，定期扫描 `schedules` 表以查找到期行，按每个行触发最近错过的窗口（D-04 LatestOnly），并在同一事务中将 `runs` 行入队。daemon 与 run claim 路径共享 SKIP LOCKED 多副本安全原语（D-03）——无需 leader election。
 
-This plan delivers everything *internal* to the scheduler package (tick driver, fire logic, missed-window detection, schedule registry sync) but does **not** wire the subcommand. The `./platform scheduler` CLI entry point is in plan 03-06.
+本计划交付 scheduler 包内所有*内部*内容（tick driver、fire 逻辑、missed-window 检测、schedule registry 同步），但不包含 subcommand 接线。`./platform scheduler` CLI 入口点在计划 03-06 中。
 
-This plan also delivers `TestPartitionUniqueConstraint` — the integration test proving that `runs.partition_key` partial unique index rejects duplicate in-flight partition runs but accepts re-enqueue after terminal state (Pitfall 7).
+本计划还交付 `TestPartitionUniqueConstraint`——集成测试，证明 `runs.partition_key` 部分唯一索引在飞行中分区 runs 有重复时拒绝重复入队，但在终端状态后允许重新入队（Pitfall 7）。
 
-**Note on `Daemon.run` vs `schedule.FireOneSchedule` (W3 resolution):** Plan 03-06's scheduler subcommand drives its own tick loop and calls `schedule.FireOneSchedule(ctx, ...)` directly (so it can interleave sensor.Daemon.RunOnce after schedule firing per D-05). The package-internal `Daemon.run(ctx)` method is therefore UNEXPORTED — it is used only by tests in `internal/schedule/daemon_test.go` to verify the loop behavior in isolation. This avoids dead exported code in the production binary while keeping a self-contained test surface for the loop.
+**关于 `Daemon.run` 与 `schedule.FireOneSchedule` 的说明（W3 解决方案）：** 计划 03-06 的 scheduler subcommand 驱动自己的 tick loop 并直接调用 `schedule.FireOneSchedule(ctx, ...)`（因此可以在 D-05 中交错 sensor.Daemon.RunOnce）。因此包内 `Daemon.run(ctx)` 方法是 UNEXPORTED——仅被 `internal/schedule/daemon_test.go` 中的测试使用，用于隔离验证循环行为。这避免了生产二进制文件中的死代码，同时为循环保持自包含的测试表面。
 
-**Note on Task 1 file density (W2 justification):** Task 1 creates 7 files (daemon.go, daemon_test.go, fire.go, fire_test.go, missed.go, missed_test.go, registry.go) within one `<task>` element. The density is acceptable because the files are tightly cohesive single-package Go (~50–80 lines each, total ~400 lines): missed.go is a single function with a single test; registry.go is a single function with no test; fire.go and daemon.go reference each other and share the same `cronParser` package var. Splitting would require duplicating the file dependency graph across two tasks and would not reduce reviewer load. The plan still sits at 2 tasks (within the 2-3 budget) and leaves Task 2 (the partition unique constraint test) cleanly separated.
+**关于任务 1 文件密度的说明（W2 理由）：** 任务 1 在一个 `<task>` 元素内创建 7 个文件（daemon.go、daemon_test.go、fire.go、fire_test.go、missed.go、missed_test.go、registry.go）。密度可接受，因为这些文件是紧耦合的单包 Go（每个约 50-80 行，总计约 400 行）：missed.go 是带单个测试的单个函数；registry.go 是无测试的单个函数；fire.go 和 daemon.go 相互引用并共享相同的 `cronParser` 包变量。拆分会将文件依赖图重复到两个任务中，不会减少审阅者负担。计划仍为 2 个任务（在 2-3 预算内），并将任务 2（分区唯一约束测试）干净分离。
 </objective>
 
 <execution_context>
@@ -80,34 +80,34 @@ This plan also delivers `TestPartitionUniqueConstraint` — the integration test
 </execution_context>
 
 <context>
-This plan implements D-01 (scheduler subcommand pattern — daemon internal), D-02 (schedules table + lazy state), D-03 (robfig/cron/v3 parser-only + SKIP LOCKED multi-replica safety), D-04 (Missed-window LatestOnly), D-10 (partition_key column behavior — partial unique index test), D-12 (orthogonal Schedule×Partitions composition — schedule firing produces partition_key when asset has .Partitions).
+本计划实现了 D-01（scheduler subcommand 模式——daemon 内部）、D-02（schedules 表 + 延迟状态）、D-03（robfig/cron/v3 仅解析器 + SKIP LOCKED 多副本安全）、D-04（Missed-window LatestOnly）、D-10（partition_key 列行为——部分唯一索引测试）、D-12（正交 Schedule×Partitions 组合——schedule firing 在资产有 .Partitions 时生成 partition_key）。
 
-**Why Wave 2:** Depends on plan 03-01 (schedules table must exist) and plan 03-02 (asset.Asset.Schedule() accessor + partition.CurrentDailyKey + asset cron parser exists). Cannot run before either. depends_on = [01, 02].
+**为何 Wave 2：** 依赖于计划 03-01（schedules 表必须存在）和 03-02（asset.Asset.Schedule() 访问器 + partition.CurrentDailyKey + asset cron 解析器存在）。在任一之前无法运行。depends_on = [01, 02]。
 
-**Why parallel with 03-03 and 03-05 in Wave 2:** This plan touches `internal/schedule/*` and `internal/partition/partition_unique_test.go`. Plan 03-03 touches `internal/run/*`, `internal/runtime/*`, and `cmd/platform/{worker.go,materialize.go}`. Plan 03-05 touches `internal/sensor/*`. Zero file overlap on the production-code path.
+**为何与 03-03 和 03-05 在 Wave 2 并行：** 本计划涉及 `internal/schedule/*` 和 `internal/partition/partition_unique_test.go`。计划 03-03 涉及 `internal/run/*`、`internal/runtime/*` 和 `cmd/platform/{worker.go,materialize.go}`。计划 03-05 涉及 `internal/sensor/*`。生产代码路径零文件重叠。
 
-**Note on `internal/partition/partition_unique_test.go`:** Plan 03-02 created the partition keygen tests; this plan adds an INTEGRATION test (`partition_unique_test.go` is a separate file in the same package, requiring DATABASE_URL). The package builds fine because both files declare `package partition`. The validation map specifies this test belongs in this plan because it directly exercises the partial unique index behavior that plan 03-01 created.
+**关于 `internal/partition/partition_unique_test.go` 的说明：** 计划 03-02 创建了分区 keygen 测试；本计划添加了一个集成测试（`partition_unique_test.go` 是同一包中的单独文件，需要 DATABASE_URL）。包构建良好，因为两个文件都声明 `package partition`。验证 map 指定此测试属于本计划，因为它直接演练计划 03-01 创建的部分唯一索引行为。
 
-**Why FireOneSchedule per tx, not batch:** Per 03-RESEARCH.md Pattern 3 — "One transaction per schedule row (not a batch transaction) to minimize lock hold time." A long-running tx covering N schedules would block other replicas from claiming any. Per-row tx + SKIP LOCKED gives natural sharding across replicas with zero coordination.
+**为何 FireOneSchedule 每次 tx 一行，而非批量：** per 03-RESEARCH.md Pattern 3——"每个 schedule 行一个事务（而非批量事务）以最小化锁持有时间。"覆盖 N 个 schedules 的长期运行 tx 会阻止其他副本获取任何行。按行 tx + SKIP LOCKED 提供跨副本的自然分片，无需协调。
 
-**Why FireOneSchedule is exported (capital F) from this plan:** Plan 03-06's scheduler subcommand drives its own tick loop (interleaves schedule firing + sensor.Daemon.RunOnce + jitter). To drive the schedule pass, it calls `schedule.FireOneSchedule(ctx, store, registry, events, time.Now().UTC())` directly. So this plan exports the function from day one — there is no rename in plan 03-06.
+**为何 FireOneSchedule 是导出的（capital F）：** 计划 03-06 的 scheduler subcommand 驱动自己的 tick loop（交错 schedule firing + sensor.Daemon.RunOnce + jitter）。为了驱动 schedule pass，它直接调用 `schedule.FireOneSchedule(ctx, store, registry, events, time.Now().UTC())`。因此本计划从第一天就导出该函数——计划 03-06 中没有重命名。
 
-**Why `Daemon.run` is unexported:** With FireOneSchedule already exported, the only consumer of a wrapping ticker that calls FireOneSchedule in a loop is the package-internal `Daemon.run` (used by `daemon_test.go` to test loop behavior in isolation). Production callers use FireOneSchedule + their own ticker. To prevent dead exported surface — and to make `daemon_test.go` the only place the loop lives — `Daemon.run` is lowercase.
+**为何 `Daemon.run` 是未导出的：** 既然 FireOneSchedule 已经导出，唯一消费包装 ticker 调用 FireOneSchedule 的地方是包内 `Daemon.run`（被 `daemon_test.go` 用于隔离测试循环行为）。生产调用者使用 FireOneSchedule 和自己的 ticker。为了防止死代码导出表面——并使 `daemon_test.go` 成为循环生活的唯一地方——`Daemon.run` 是小写的。
 
-**Why missed-window logic is "find the most recent window <= now":** Per Pattern 1 in research — `sched.Next(lastFiredAt)` returns the immediate next window after lastFiredAt. If multiple windows have elapsed (e.g., daemon was down for hours), iterating `sched.Next` starting from lastFiredAt produces a sequence; we walk it forward until the next candidate would exceed `now`, fire the last one that didn't, and emit `schedule.missed` with `skipped_count = total_iterations - 1`. D-04 LatestOnly means we DON'T enqueue all the windows — only the most recent. Avoids run-avalanche after multi-hour outage (Dagster default behavior).
+**为何 missed-window 逻辑是"找到最晚的窗口 <= now"：** per research 中的 Pattern 1——`sched.Next(lastFiredAt)` 返回 lastFiredAt 之后的下一个窗口。如果多个窗口已过（例如 daemon 停机数小时），从 lastFiredAt 开始迭代 `sched.Next` 会产生一个序列；我们向前走直到下一个候选超过 `now`，触发最后一个未超出的，并发出 `schedule.missed` 和 `skipped_count = total_iterations - 1`。D-04 LatestOnly 意味着我们不排队所有窗口——只有最近的。这避免了多次停机后的 run-avalanche（Dagster 默认行为）。
 
-**Why UpsertSchedules at daemon start (Open Question 3):** The schedules table is the persistent source of truth for `next_fire_at`. When a deployment changes a cron expression, the daemon must reconcile the registry against the table. UPSERT semantics: if a schedule row exists with a different `cron_expr`, update it and recompute `next_fire_at` from "now" (not from the old `last_fire_at` — a different cron expr means the previous schedule is invalid). New schedules INSERT with `next_fire_at = parsed.Next(time.Now())`. Removed assets (registry no longer has them) leave their schedule rows in place — that's harmless (the row will fire forever to a non-existent asset, generating queue rows that fail to claim because no asset definition exists; operator must clean up explicitly via REST or SQL — full pause/disable surface is Phase 6).
+**为何 UpsertSchedules 在 daemon 启动时（Open Question 3）：** schedules 表是 `next_fire_at` 的持久真实来源。当部署更改 cron 表达式时，daemon 必须将 registry 与表协调。UPSERT 语义：如果 schedule 行存在不同的 `cron_expr`，则更新它并从"now"重新计算 `next_fire_at`（而非从旧的 `last_fire_at`——不同的 cron expr 意味着先前的 schedule 无效）。新 schedules 插入时 `next_fire_at = parsed.Next(time.Now())`。移除的资产（registry 中不再存在）将其 schedule 行留在原处——这无害（该行将永久触发到不存在的资产，生成队列行由于不存在资产定义而无法被 claim；操作员必须通过 REST 或 SQL 明确清理——完整的 pause/disable 表面是 Phase 6）。
 
-**Schedule×Partitions composition (D-12):** When a schedule fires for an asset with `.Partitions(daily)`, the inserted `runs.partition_key` is `partition.CurrentDailyKey(now, 24*time.Hour)` (yesterday's daily partition, matching Dagster's "cron fires for the preceding window"). For weekly: last week's ISO week. For monthly: last month. For category: schedule×category is uncommon but legal — fire one run per category at every cron tick, picking the first key. (Open Question 4 — schedule×category convention defaults to "first category in Keys list"; documented in fire.go comment.)
+**Schedule×Partitions 组合（D-12）：** 当 schedule 为具有 `.Partitions(daily)` 的资产触发时，插入的 `runs.partition_key` 是 `partition.CurrentDailyKey(now, 24*time.Hour)`（昨天的每日分区，匹配 Dagster 的"cron 为前一个窗口触发"）。对于 weekly：上周的 ISO 周。对于 monthly：上个月。对于 category：schedule×category 不常见但合法——在每个 cron tick 触发一个 run，选择第一个 key。（Open Question 4——schedule×category 约定默认为"Keys 列表中的第一个 category"；记录在 fire.go 注释中。）
 
-**Frozen interfaces consumed:**
-- `internal/asset.DefinitionRegistry`, `Asset.Schedule()`, `Asset.Partitions()` (plan 03-02 frozen)
-- `internal/partition.PartitionStrategy`, `partition.CurrentDailyKey`, `partition.WeeklyKey`, `partition.MonthlyKey` (plan 03-02 frozen)
-- `internal/event.Writer.Append`, `EventTypeScheduleFired`, `EventTypeScheduleMissed` (plan 03-01 frozen)
-- `internal/storage.Storage.DB()`, `Storage.Ent()` (Phase 1 frozen)
-- `internal/run.PriorityOrder`, `PriorityNormal` constant (plan 03-03 — but this plan does NOT depend on plan 03-03 because we can write the literal string "normal" in the INSERT statement; no goroutine in schedule.fire.go calls ClaimNext)
+**已冻结的接口：**
+- `internal/asset.DefinitionRegistry`、`Asset.Schedule()`、`Asset.Partitions()`（计划 03-02 冻结）
+- `internal/partition.PartitionStrategy`、`partition.CurrentDailyKey`、`partition.WeeklyKey`、`partition.MonthlyKey`（计划 03-02 冻结）
+- `internal/event.Writer.Append`、`EventTypeScheduleFired`、`EventTypeScheduleMissed`（计划 03-01 冻结）
+- `internal/storage.Storage.DB()`、`Storage.Ent()`（Phase 1 冻结）
+- `internal/run.PriorityOrder`、`PriorityNormal` 常量（计划 03-03——但本计划不依赖计划 03-03，因为我们可以在 INSERT 语句中写入字面字符串 "normal"；fire.go 中没有 goroutine 调用 ClaimNext）
 
-**Why this plan does NOT depend on 03-03:** This plan only INSERTs into the runs table (priority='normal' literal). It does not invoke `run.ClaimNext` or read `runs.priority`. Plan 03-03 changes the claim path; this plan only fires NEW runs. depends_on = [01, 02] is correct.
+**为何本计划不依赖 03-03：** 本计划仅向 runs 表 INSERT（priority='normal' 字面量）。它不调用 `run.ClaimNext` 或读取 `runs.priority`。计划 03-03 更改 claim 路径；本计划仅触发新的 runs。depends_on = [01, 02] 是正确的。
 
 @.planning/phases/03-scheduling-sensors-partitions/03-CONTEXT.md
 @.planning/phases/03-scheduling-sensors-partitions/03-RESEARCH.md
@@ -118,7 +118,7 @@ This plan implements D-01 (scheduler subcommand pattern — daemon internal), D-
 @internal/run/claim.go
 
 <interfaces>
-<!-- Plan 03-01 + 03-02 surfaces this plan consumes. -->
+<!-- 计划 03-01 + 03-02 表面，本计划消费。 -->
 
 From plan 03-01 (storage):
 ```sql
@@ -605,7 +605,7 @@ func computeNextAndDetectMiss(sched cron.Schedule, lastFiredAt, now time.Time) (
   </read_first>
   <behavior>
     - Two concurrent INSERTs into runs with state='queued' + same (asset_name, partition_key) — second INSERT fails with unique-constraint error
-    - INSERT with state='succeeded' and partition_key='X', then INSERT with state='queued' and partition_key='X' — both succeed (terminal state does not block re-enqueue)
+    - INSERT with state='succeeded' and partition_key='X', then INSERT with state='queued' with partition_key='X' — both succeed (terminal state does not block re-enqueue)
     - INSERT with state='queued' and partition_key=NULL, then second INSERT with same asset_name and partition_key=NULL — both succeed (NULL is not unique)
   </behavior>
   <action>
@@ -741,7 +741,7 @@ func computeNextAndDetectMiss(sched cron.Schedule, lastFiredAt, now time.Time) (
 - TestSchedulerFiresDueRow integration proves end-to-end firing.
 - TestPartitionUniqueConstraint proves D-10 partial unique index behavior.
 - No leader election, no advisory locks for scheduler — SKIP LOCKED is the only coordination primitive (D-03).
-- W3 resolution: `Daemon.run` is unexported; plan 03-06's scheduler subcommand calls `FireOneSchedule` directly (no dead exported Run method).
+- W3 resolution: `Daemon.run` is unexported; plan 03-06's scheduler subcommand calls `FireOneSchedule` directly (no `Daemon.Run` dependency).
 </success_criteria>
 
 <output>

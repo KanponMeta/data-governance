@@ -63,87 +63,87 @@ metrics:
   files_modified: 7
 ---
 
-# Phase 2 Plan 02: DAG executor + Run lifecycle state machine + atomic claim - Summary
+# Phase 2 Plan 02: DAG 执行器 + 运行生命周期状态机 + 原子声明 - 概要
 
-Atomic run claiming with SELECT FOR UPDATE SKIP LOCKED, a closed FSM state machine, and heimdalr/dag topological ordering — all backed by ent entities with PostgreSQL CHECK constraints.
+使用 SELECT FOR UPDATE SKIP LOCKED 的原子运行声明、受 CHECK 约束的封闭 FSM 状态机，以及使用 heimdalr/dag 的拓扑排序 — 全部由带有 PostgreSQL CHECK 约束的 ent 实体支持。
 
-## What Was Built
+## 已构建内容
 
-### Task 1: ent schema + Atlas migration + run.* event types
+### 任务 1: ent schema + Atlas 迁移 + run.* 事件类型
 
-**Run ent entity** (`internal/storage/ent/schema/run.go`):
-- Fields: id, asset_name, state (CHECK-constrained), trigger, triggered_by, claimed_by, queued_at, claimed_at, started_at, finished_at, last_heartbeat (nullable), error_message, metadata
-- Indexes: (state, queued_at) for claim path, (asset_name, queued_at), (state, last_heartbeat) for reaper scan
-- `last_heartbeat` is the crash recovery signal — set on claim, ticked by 02-03 executor every 30s, used by 02-04 reaper to detect stale runs
+**Run ent 实体** (`internal/storage/ent/schema/run.go`):
+- 字段: id, asset_name, state (CHECK 约束), trigger, triggered_by, claimed_by, queued_at, claimed_at, started_at, finished_at, last_heartbeat (nullable), error_message, metadata
+- 索引: (state, queued_at) 用于声明路径, (asset_name, queued_at), (state, last_heartbeat) 用于 reaper 扫描
+- `last_heartbeat` 是崩溃恢复信号 — 在声明时设置, 由 02-03 executor 每 30s tick 一次, 由 02-04 reaper 用于检测过时运行
 
-**RunStep ent entity** (`internal/storage/ent/schema/run_step.go`):
-- Fields: id, run_id, asset_name, state (CHECK-constrained), attempt, topo_order, started_at, finished_at, rows_written, error_message, metadata
-- Indexes: (run_id, topo_order) for execution ordering, (run_id, state), (asset_name)
+**RunStep ent 实体** (`internal/storage/ent/schema/run_step.go`):
+- 字段: id, run_id, asset_name, state (CHECK 约束), attempt, topo_order, started_at, finished_at, rows_written, error_message, metadata
+- 索引: (run_id, topo_order) 用于执行排序, (run_id, state), (asset_name)
 
-**Migration** (`migrations/20260507120000_phase2_run_tables.sql`):
-- Hand-crafted SQL (atlas-provider-ent not available in network-isolated environment)
-- Exact CHECK constraint: `CHECK (state IN ('queued','starting','running','succeeded','failed','canceled'))`
+**迁移** (`migrations/20260507120000_phase2_run_tables.sql`):
+- 手工编写 SQL (网络隔离环境中 atlas-provider-ent 不可用)
+- 精确的 CHECK 约束: `CHECK (state IN ('queued','starting','running','succeeded','failed','canceled'))`
 - Run steps CHECK: `CHECK (state IN ('pending','running','succeeded','failed','skipped'))`
-- Hand-managed appendix: ownership grants (platform_owner), DML grants (platform_app), COMMENT on last_heartbeat
+- 手工管理的附录: 所有权授予 (platform_owner), DML 授予 (platform_app), COMMENT on last_heartbeat
 
-**Run event types** (`internal/event/types.go`):
-- 8 EventType constants added: run.queued, run.started, run.step.started, run.step.succeeded, run.step.failed, run.succeeded, run.failed, run.canceled
-- retry_scheduled is reserved for plan 02-03
-- `AllKnownTypes()` added (superset); `AllPhase1Types()` kept as deprecated alias for backward compatibility
-- Typed payload structs for each event: RunQueuedPayload, RunStartedPayload, RunStepStartedPayload, RunStepSucceededPayload, RunStepFailedPayload, RunSucceededPayload, RunFailedPayload, RunCanceledPayload
+**Run 事件类型** (`internal/event/types.go`):
+- 添加了 8 个 EventType 常量: run.queued, run.started, run.step.started, run.step.succeeded, run.step.failed, run.succeeded, run.failed, run.canceled
+- retry_scheduled 保留给 plan 02-03
+- `AllKnownTypes()` 添加 (超集); `AllPhase1Types()` 作为向后兼容的废弃别名保留
+- 每个事件的类型化 payload 结构: RunQueuedPayload, RunStartedPayload, RunStepStartedPayload, RunStepSucceededPayload, RunStepFailedPayload, RunSucceededPayload, RunFailedPayload, RunCanceledPayload
 
-### Task 2: Run lifecycle FSM + atomic claim + DAG builder
+### 任务 2: 运行生命周期 FSM + 原子声明 + DAG 构建器
 
-**State machine** (`internal/run/lifecycle.go`):
-- `Transition(from, to State) error` — validates forward-only edges; rejects backward transitions and self-loops
-- `TransitionForReset(from, to State) error` — separate function permitting only starting→queued and running→queued (crash recovery path for 02-04 reaper)
-- `legalTransitions` and `resetTransitions` as separate maps — clear contract separation
-- `IsTerminal(s State) bool` — identifies succeeded, failed, canceled as terminal states
+**状态机** (`internal/run/lifecycle.go`):
+- `Transition(from, to State) error` — 验证仅前向边; 拒绝后向转换和自循环
+- `TransitionForReset(from, to State) error` — 单独函数,仅允许 starting→queued 和 running→queued (02-04 reaper 的崩溃恢复路径)
+- `legalTransitions` 和 `resetTransitions` 作为单独的 map — 清晰的合约分离
+- `IsTerminal(s State) bool` — 识别 succeeded, failed, canceled 为终止状态
 
-**Atomic claim** (`internal/run/claim.go`):
-- `ClaimNext(ctx, store, workerID) (*ClaimedRun, error)` — single-transaction claim:
+**原子声明** (`internal/run/claim.go`):
+- `ClaimNext(ctx, store, workerID) (*ClaimedRun, error)` — 单事务声明:
   1. `SELECT id, asset_name, trigger, queued_at FROM runs WHERE state='queued' ORDER BY queued_at FOR UPDATE SKIP LOCKED LIMIT 1`
   2. `UPDATE runs SET state='starting', claimed_by=$1, claimed_at=$2, last_heartbeat=$2 WHERE id=$3 AND state='queued'`
-  - Defense-in-depth: WHERE guards even after SKIP LOCKED
-  - FIFO via ORDER BY queued_at (T-02-02-07)
-  - Returns ErrNoQueuedRun when no eligible row exists
-- `Heartbeat(ctx, store, runID) error` — exported for plan 02-03's executor tick
+  - 纵深防御: WHERE 守卫即使在 SKIP LOCKED 之后
+  - FIFO 通过 ORDER BY queued_at (T-02-02-07)
+  - 当没有符合条件的行时返回 ErrNoQueuedRun
+- `Heartbeat(ctx, store, runID) error` — 为 plan 02-03 的 executor tick 导出
 
-**DAG builder** (`internal/dag/dag.go`):
-- `BuildDAG([]*asset.Asset) (*Graph, error)` — two-pass: add vertices, then add directed edges (upstream → asset)
-- Returns ErrUnknownUpstream if asset references a name not in input slice
-- Returns ErrCycle if heimdalr detects a cycle on AddEdge
-- `TopologicalOrder() ([]string, error)` — Kahn's algorithm; returns asset names in valid execution order
-- `Order() int` — vertex count
+**DAG 构建器** (`internal/dag/dag.go`):
+- `BuildDAG([]*asset.Asset) (*Graph, error)` — 两遍: 添加顶点,然后添加有向边 (upstream → asset)
+- 如果 asset 引用名称不在输入 slice 中则返回 ErrUnknownUpstream
+- 如果 heimdalr 在 AddEdge 时检测到循环则返回 ErrCycle
+- `TopologicalOrder() ([]string, error)` — Kahn 算法; 返回有效执行顺序的 asset 名称
+- `Order() int` — 顶点计数
 
-## Test Results
+## 测试结果
 
-**50-goroutine atomicity test** (TestClaimAtomicity50Goroutines):
-- Seeds exactly 1 queued run, spawns 50 goroutines all calling ClaimNext concurrently
-- Result: exactly 1 winner, 49 ErrNoQueuedRun (proven by atomic counters)
-- Post-condition: state='starting', claimed_by non-empty, last_heartbeat non-NULL and within 5 seconds of NOW()
-- Passes against local PostgreSQL 16 (postgres://platform:platform@localhost:5432/platform)
-- Skipped when DATABASE_URL is unset (unit test mode)
+**50-goroutine 原子性测试** (TestClaimAtomicity50Goroutines):
+- 只播下 1 个排队运行,生成 50 个 goroutines 同时调用 ClaimNext
+- 结果: 恰好 1 个赢家,49 个 ErrNoQueuedRun (通过原子计数器证明)
+- 后置条件: state='starting', claimed_by 非空, last_heartbeat 非空且在 NOW() 的 5 秒内
+- 在本地 PostgreSQL 16 上通过 (postgres://platform:platform@localhost:5432/platform)
+- 当 DATABASE_URL 未设置时跳过 (unit test mode)
 
-**Lifecycle tests** (TestTransitionForwardEdges, TestTransitionIllegalBackwardEdges, TestTransitionTerminalStates, TestTransitionForReset):
-- All 8 forward transitions verified as permitted
-- 6 illegal backward/self-loop edges verified as rejected with ErrIllegalTransition
-- All 18 terminal-state outgoing edges verified as rejected
-- TransitionForReset permits starting/running→queued ONLY; normal Transition still rejects these
+**生命周期测试** (TestTransitionForwardEdges, TestTransitionIllegalBackwardEdges, TestTransitionTerminalStates, TestTransitionForReset):
+- 所有 8 个前向转换经验证为允许
+- 6 个非法后向/自循环边经验证为被 ErrIllegalTransition 拒绝
+- 所有 18 个终止状态传出边经验证为被拒绝
+- TransitionForReset 仅允许 starting/running→queued; 正常 Transition 仍然拒绝这些
 
-**DAG tests** (TestDAGLinearChain, TestDAGFanIn, TestDAGFanOut, TestDAGCycle, TestDAGUnknownUpstream, TestDAGBuildDoesNotRegister):
-- Linear chain a→b→c: position(a) < position(b) < position(c) verified
-- Fan-in (a→c, b→c): c appears after both a and b
-- Fan-out (a→b, a→c): a appears before both b and c
-- Cycle: ErrCycle returned
-- Unknown upstream: ErrUnknownUpstream returned
-- Build() does NOT register in Default() registry (hermetic test isolation)
+**DAG 测试** (TestDAGLinearChain, TestDAGFanIn, TestDAGFanOut, TestDAGCycle, TestDAGUnknownUpstream, TestDAGBuildDoesNotRegister):
+- 线性链 a→b→c: position(a) < position(b) < position(c) 已验证
+- 扇入 (a→c, b→c): c 出现在 a 和 b 之后
+- 扇出 (a→b, a→c): a 出现在 b 和 c 之前
+- 循环: 返回 ErrCycle
+- 未知上游: 返回 ErrUnknownUpstream
+- Build() 不在 Default() 注册表中注册 ( hermetic test isolation)
 
-All tests pass (unit mode: `go test ./internal/run/... ./internal/dag/... ./internal/event/...`).
+所有测试通过 (unit mode: `go test ./internal/run/... ./internal/dag/... ./internal/event/...`)。
 
-## run.* Event Types Added (D-18)
+## 添加的 run.* 事件类型 (D-18)
 
-| Constant | Value | Payload Struct |
+| 常量 | 值 | Payload 结构 |
 |---|---|---|
 | EventTypeRunQueued | run.queued | RunQueuedPayload |
 | EventTypeRunStarted | run.started | RunStartedPayload |
@@ -154,20 +154,20 @@ All tests pass (unit mode: `go test ./internal/run/... ./internal/dag/... ./inte
 | EventTypeRunFailed | run.failed | RunFailedPayload |
 | EventTypeRunCanceled | run.canceled | RunCanceledPayload |
 
-Note: `run.step.retry_scheduled` is reserved for plan 02-03.
+注意: `run.step.retry_scheduled` 保留给 plan 02-03。
 
-## TransitionForReset Contract (plan 02-04 consumer)
+## TransitionForReset 合约 (plan 02-04 消费者)
 
 ```go
-// Plan 02-04 reaper MUST use TransitionForReset, NOT Transition:
+// Plan 02-04 reaper 必须使用 TransitionForReset, 而不是 Transition:
 if err := run.TransitionForReset(run.StateRunning, run.StateQueued); err != nil {
-    return err // reaper attempted invalid reset edge
+    return err // reaper 尝试了无效的重置边
 }
 ```
 
-The reaper's SQL should only reset rows where `last_heartbeat < NOW() - interval '5 minutes'` — this is enforced by the (state, last_heartbeat) index on runs.
+reaper 的 SQL 应该只重置 `last_heartbeat < NOW() - interval '5 minutes'` 的行 — 这由 runs 上的 (state, last_heartbeat) 索引强制执行。
 
-## API Surface for Plan 02-03 / 02-04 Consumers
+## Plan 02-03 / 02-04 消费者的 API 表面
 
 ```go
 // internal/run
@@ -187,51 +187,51 @@ var ErrCycle = errors.New("dag: cycle detected")
 var ErrUnknownUpstream = errors.New("dag: upstream not registered")
 ```
 
-## Deviations from Plan
+## 与计划的偏差
 
-### Auto-fixed Issues
+### 自动修复的问题
 
-**1. [Rule 3 - Blocking] atlas-provider-ent not available in network-isolated environment**
-- **Found during:** Task 1, Step D (atlas migrate diff)
-- **Issue:** `atlas migrate diff phase2_run_tables --env local` failed because `ariga.io/atlas-provider-ent` package is not accessible (network restriction)
-- **Fix:** Wrote migration SQL manually, inspecting ent generated code for field types. The manual SQL matches the ent schema exactly. `atlas migrate hash --env local` updated atlas.sum; `atlas migrate validate --dir` (checksum validation) passes.
-- **Files modified:** migrations/20260507120000_phase2_run_tables.sql, migrations/atlas.sum
-- **Note:** The `atlas migrate validate --env local` with Postgres replay fails due to a pre-existing bug in the initial migration (`ALTER TABLE user OWNER TO platform_owner` — `user` is reserved in PostgreSQL). This is NOT caused by this plan.
+**1. [规则 3 - 阻塞] atlas-provider-ent 在网络隔离环境中不可用**
+- **发现于:** 任务 1, 步骤 D (atlas migrate diff)
+- **问题:** `atlas migrate diff phase2_run_tables --env local` 失败,因为 `ariga.io/atlas-provider-ent` 包不可访问 (网络限制)
+- **修复:** 手工编写迁移 SQL,检查 ent 生成的代码以了解字段类型。手工 SQL 与 ent schema 完全匹配。`atlas migrate hash --env local` 更新了 atlas.sum; `atlas migrate validate --dir` (校验和验证) 通过。
+- **修改的文件:** migrations/20260507120000_phase2_run_tables.sql, migrations/atlas.sum
+- **注意:** 使用 Postgres replay 的 `atlas migrate validate --env local` 由于初始迁移中的预先存在的 bug 而失败 (`ALTER TABLE user OWNER TO platform_owner` — `user` 在 PostgreSQL 中是保留字)。这不是由此计划引起的。
 
-**2. [Rule 1 - Bug] Pre-existing broken import in integration test**
-- **Found during:** Task 1, Step F (go mod tidy blocked)
-- **Issue:** `test/integration/integration_test.go` had `_ "github.com/kanpon/data-governance/internal/storage/ent/dialect"` which is a non-existent package, blocking `go mod tidy`
-- **Fix:** Replaced blank import with a comment explaining the pgx stdlib driver handles dialect registration
-- **Files modified:** test/integration/integration_test.go
-- **Commit:** df34beb (cherry-picked to worktree branch)
+**2. [规则 1 - Bug] 集成测试中预先存在的损坏导入**
+- **发现于:** 任务 1, 步骤 F (go mod tidy 阻塞)
+- **问题:** `test/integration/integration_test.go` 有 `_ "github.com/kanpon/data-governance/internal/storage/ent/dialect"` 这是一个不存在的包,阻塞 `go mod tidy`
+- **修复:** 用解释 pgx stdlib 驱动程序处理方言注册的注释替换空白导入
+- **修改的文件:** test/integration/integration_test.go
+- **提交:** df34beb (cherry-picked 到 worktree 分支)
 
-**3. [Rule 3 - Blocking] internal/asset package unavailable in worktree**
-- **Found during:** Task 2 (dag.go compilation in worktree context)
-- **Issue:** Plan 02-01 runs in parallel in a different worktree. The dag package imports `internal/asset` which is not yet present in this worktree branch
-- **Fix:** No action needed — this is expected parallel execution behavior. The build will succeed after the orchestrator merges all wave-1 worktree branches. Packages that don't import `internal/asset` (run, event, storage) build and test cleanly within this worktree.
-- **Note:** TestClaimAtomicity50Goroutines and all lifecycle/dag unit tests pass in the main repo where internal/asset was temporarily available during development.
+**3. [规则 3 - 阻塞] worktree 中 internal/asset 包不可用**
+- **发现于:** 任务 2 (worktree 上下文中的 dag.go 编译)
+- **问题:** Plan 02-01 在不同的 worktree 中并行运行。dag 包导入 `internal/asset`,而该包在此 worktree 分支中尚不存在
+- **修复:** 无需操作 — 这是预期的并行执行行为。构建将在编排器合并所有 wave-1 worktree 分支后成功。不导入 `internal/asset` 的包 (run, event, storage) 在此 worktree 中干净地构建和测试。
+- **注意:** TestClaimAtomicity50Goroutines 和所有 lifecycle/dag 单元测试在主仓库中通过,内部/资产在开发期间暂时可用。
 
-**4. [Rule 3 - Blocking] go.get version upgrade required**
-- **Found during:** Task 1, Step F (go get github.com/riverqueue/river@v0.35.0)
-- **Issue:** River v0.35.0 requires go >= 1.25.0; module was at go 1.23
-- **Fix:** `go get` automatically upgraded go directive to 1.25.0. Also upgraded pgx v5.5.0 → v5.9.1 as required by the new Go version
-- **Files modified:** go.mod, go.sum
+**4. [规则 3 - 阻塞] 需要 go.get 版本升级**
+- **发现于:** 任务 1, 步骤 F (go get github.com/riverqueue/river@v0.35.0)
+- **问题:** River v0.35.0 需要 go >= 1.25.0; 模块当时是 go 1.23
+- **修复:** `go get` 自动将 go 指令升级到 1.25.0。还根据新 Go 版本要求将 pgx v5.5.0 → v5.9.1 升级
+- **修改的文件:** go.mod, go.sum
 
-## Known Stubs
+## 已知的桩
 
-None — all implementation is complete. The `internal/dag` package's compile-time dependency on `internal/asset` is satisfied upon merge of plan 02-01's worktree branch.
+无 — 所有实现都已完成。`internal/dag` 包对 `internal/asset` 的编译时依赖在 plan 02-01 的 worktree 分支合并时得到满足。
 
-## Threat Flags
+## 威胁标志
 
-No new security-relevant surfaces introduced beyond the threat model declared in the plan. The runs and run_steps tables, ClaimNext SQL, and Heartbeat function are all within the pre-planned trust boundary.
+除了计划中声明的威胁模型外,没有引入新的安全相关表面。runs 和 run_steps 表、ClaimNext SQL 和 Heartbeat 函数都在预先规划的信义边界内。
 
-## Self-Check: PASSED
+## 自我检查: 通过
 
-- `internal/storage/ent/schema/run.go` — exists, contains Table "runs" annotation
-- `internal/storage/ent/schema/run_step.go` — exists, contains Table "run_steps" annotation
-- `internal/storage/ent/run.go`, `internal/storage/ent/runstep.go` — generated by ent
-- `migrations/20260507120000_phase2_run_tables.sql` — exists with CHECK constraints
-- `internal/run/state.go`, `lifecycle.go`, `claim.go` — all exist
-- `internal/dag/dag.go`, `dag_test.go` — all exist
-- `internal/event/types.go` — 8 EventTypeRun* constants + 8 payload structs + AllKnownTypes()
-- Commits: df34beb (task 1), b71afeb (task 2) on branch worktree-agent-a473336788cebe179
+- `internal/storage/ent/schema/run.go` — 存在,包含 Table "runs" 注解
+- `internal/storage/ent/schema/run_step.go` — 存在,包含 Table "run_steps" 注解
+- `internal/storage/ent/run.go`, `internal/storage/ent/runstep.go` — 由 ent 生成
+- `migrations/20260507120000_phase2_run_tables.sql` — 存在并包含 CHECK 约束
+- `internal/run/state.go`, `lifecycle.go`, `claim.go` — 都存在
+- `internal/dag/dag.go`, `dag_test.go` — 都存在
+- `internal/event/types.go` — 8 个 EventTypeRun* 常量 + 8 个 payload 结构 + AllKnownTypes()
+- 提交: df34beb (任务 1), b71afeb (任务 2) 在分支 worktree-agent-a473336788cebe179 上

@@ -1,31 +1,31 @@
-# Phase 4 — Recursive CTE EXPLAIN ANALYZE Capture
+# Phase 4 — 递归 CTE EXPLAIN ANALYZE 捕获
 
-Status: DEFERRED. The harness (`scripts/seed_lineage_10k.sql` + `scripts/explain_analyze_lineage.sh`) is built and ready to run. The actual capture is deferred to a manual run against a live PostgreSQL dev instance with Phase 4 migrations applied; the result must be pasted into the sections below before final ship.
+状态：已延期。辅助工具（`scripts/seed_lineage_10k.sql` + `scripts/explain_analyze_lineage.sh`）已构建并可运行。实际捕获延期至在应用 Phase 4 migrations 的实时 PostgreSQL dev 实例上手动运行；结果必须粘贴到以下部分，然后才能最终交付。
 
-Logical sign-off recorded by the user on 2026-05-09 to unblock Phase 4 closure. The capture remains an outstanding human-UAT item — surfaced via `04-HUMAN-UAT.md` (if produced by the verifier) and the phase VERIFICATION.md.
+逻辑签收已由用户在 2026-05-09 记录以解除 Phase 4 关闭阻塞。捕获仍然是待处理的人工-UAT 项目 — 通过 `04-HUMAN-UAT.md`（如果验证者产生）和 phase VERIFICATION.md 浮出水面。
 
-## How to Run
+## 如何运行
 
 ```bash
 cd /home/developer/.kanpon/code/go/data-governance
 export DATABASE_URL="postgres://platform_owner:platform_owner@localhost:5432/platform?sslmode=disable"
-# (Ensure platform migrations are applied: ./platform migrate)
+# (确保 platform migrations 已应用：./platform migrate)
 bash scripts/explain_analyze_lineage.sh
 ```
 
-The script will overwrite this file with the actual EXPLAIN ANALYZE output.
+脚本将用实际的 EXPLAIN ANALYZE 输出覆盖此文件。
 
-## Verification
+## 验证
 
-After running the harness, confirm each item:
+运行辅助工具后，确认每个项目：
 
-- [ ] Index Scan on asset_edges_active_from / asset_edges_active_to (NOT Seq Scan)
-      (indicates partial index WHERE superseded_at IS NULL is used — D-13 structural mitigation)
-- [ ] Depth-10 runtime < 200ms
-      (PITFALLS §4 threshold: 'if depth-10 CTE > 200ms, plan graph-DB migration')
-- [ ] Depth-25 runtime < 1000ms
-      (acceptable upper bound for the hard-cap edge case — not the hot path)
-- [ ] No CTE materialization fence ('CTE Scan' + 'Materialize' in plan output)
+- [ ] asset_edges_active_from / asset_edges_active_to 上的 Index Scan（不是 Seq Scan）
+      （表示使用了部分索引 WHERE superseded_at IS NULL — D-13 结构缓解措施）
+- [ ] Depth-10 运行时 < 200ms
+      （PITFALLS §4 阈值：'如果 depth-10 CTE > 200ms，计划 graph-DB 迁移'）
+- [ ] Depth-25 运行时 < 1000ms
+      （可接受的硬上限边缘情况 — 不是热路径）
+- [ ] 无 CTE 物化屏障（计划输出中无 'CTE Scan' + 'Materialize'）
 
-Verified by: kanpon (logical approval — actual capture deferred)
-Date: 2026-05-09
+验证者：kanpon（逻辑批准 — 实际捕获延期）
+日期：2026-05-09

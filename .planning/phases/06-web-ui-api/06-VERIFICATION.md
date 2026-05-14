@@ -1,5 +1,5 @@
 ---
-phase: 06-web-ui-api
+phase: "06-web-ui-api"
 verified: 2026-05-12T16:00:00Z
 status: gaps_found
 score: 10/11 must-haves verified (3 intentional scaffolds + UI-SPEC.md created)
@@ -50,17 +50,17 @@ gaps:
 deferred: []
 ---
 
-# Phase 6: Web UI & API — Verification Report
+# Phase 6: Web UI 与 API — 验证报告
 
 **Phase Goal:** All platform capabilities accessible via complete REST + ConnectRPC API and React Web UI, including asset dashboard, interactive lineage DAG, quality trends, governance inbox, catalog search, and admin panel.
 
-**Verified:** 2026-05-12T16:00:00Z
-**Status:** gaps_found
-**Re-verification:** No — initial verification
+**验证时间:** 2026-05-12T16:00:00Z
+**状态:** 发现差距
+**重新验证:** 否 — 首次验证
 
-## Goal Achievement
+## 目标达成情况
 
-### Observable Truths
+### 可观察的事实
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
@@ -76,13 +76,13 @@ deferred: []
 | 10 | Governance team can approve/reject with comment (UI-06) | VERIFIED | GovernanceService handlers implemented; ReviewModal works but CSRF token extraction has bug |
 | 11 | Admin panel with user/role/policy management (UI-07) | PARTIAL | Admin panel UI renders with permission gating; but AdminService methods return Unimplemented due to missing ColumnPolicy schema |
 
-**Score:** 10/11 truths verified (3 intentional scaffolds remain)
+**得分:** 10/11 truths verified (3 intentional scaffolds remain)
 
-### Deferred Items
+### 延期项目
 
 No deferred items — all Phase 6 requirements are in scope for this phase.
 
-### Required Artifacts
+### 所需产物
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
@@ -96,10 +96,10 @@ No deferred items — all Phase 6 requirements are in scope for this phase.
 | `internal/api/connect_admin.go` | AdminService | FAILED | All methods return Unimplemented |
 | `web/src/pages/governance/index.tsx` | Governance inbox | VERIFIED | But CSRF cookie mismatch bug |
 
-### Key Link Verification
+### 关键链接验证
 
 | From | To | Via | Status | Details |
-|------|---|-----|--------|---------|
+|------|---|-----|--------|--------|
 | web/src/pages/assets/index.tsx | GET /v1/connect/api.v1.AssetService/ListAssets | useQuery(['assets']) | VERIFIED | Polling at 60s |
 | web/src/pages/catalog/index.tsx | GET /v1/catalog/search | performSearch | VERIFIED | FTS + tag/owner filters |
 | web/src/components/LineageDAG.tsx | GET /v1/connect/api.v1.LineageService/Neighborhood | useQuery | VERIFIED | ReactFlow + dagre layout |
@@ -116,7 +116,7 @@ No deferred items — all Phase 6 requirements are in scope for this phase.
 | QualityTrendChart | chartData | fetchQualityTrend | No | DISCONNECTED — stub returns [] |
 | AlertList | alerts | listAlertsHandler | No | DISCONNECTED — stub returns [] |
 
-### Behavioral Spot-Checks
+### 行为抽查
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
@@ -126,7 +126,7 @@ No deferred items — all Phase 6 requirements are in scope for this phase.
 | FTS migration exists | `ls migrations/20260512043000_add_fts_search.sql` | Found | PASS |
 | go:embed directive | `grep "go:embed" cmd/platform/main.go` | Found | PASS |
 
-### Requirements Coverage
+### 需求覆盖
 
 | Requirement | Source Plan | Description | Status | Evidence |
 |-------------|-------------|-------------|--------|----------|
@@ -145,7 +145,7 @@ No deferred items — all Phase 6 requirements are in scope for this phase.
 | CORE-05 | 06-01 | REST + ConnectRPC API | VERIFIED | Proto IDL + chi router integration |
 | AUTH-04 | 06-01 | Session expires after TTL | VERIFIED | JWT TTL + cookie-based session |
 
-### Anti-Patterns Found
+### 发现的反模式
 
 | File | Line | Pattern | Severity | Impact |
 |------|------|---------|----------|--------|
@@ -154,37 +154,37 @@ No deferred items — all Phase 6 requirements are in scope for this phase.
 | internal/api/connect_admin.go | 27-65 | All methods return Unimplemented | WARNING | UI-07 policy management non-functional |
 | web/src/pages/governance/index.tsx | 111 | Wrong cookie name for CSRF extraction | WARNING | CSRF validation fails, blocking approve/reject |
 
-### Human Verification Required
+### 需要人工验证的项目
 
-1. **CSRF token validation test** — Submit a governance review approve/reject action and verify CSRF token is correctly passed. The bug at line 111 uses wrong cookie name.
+1. **CSRF 令牌验证测试** — 提交一个治理审查批准/拒绝操作，并验证 CSRF 令牌是否正确传递。第 111 行的 bug 使用了错误的 cookie 名称。
 
-2. **Embedded SPA serving** — Run `./platform start` (production binary) and verify React SPA is served at non-API routes while API routes are handled by chi.
+2. **嵌入式 SPA 服务** — 运行 `./platform start`（生产二进制文件）并验证 React SPA 在非 API 路由上提供服务，而 API 路由由 chi 处理。
 
-3. **UI component appearance** — Verify all UI pages render correctly (asset cards, lineage DAG, governance inbox, admin panel tabs). Build succeeds but visual appearance needs human check.
+3. **UI 组件外观** — 验证所有 UI 页面是否正确渲染（资产卡片、血缘 DAG、治理收件箱、管理面板选项卡）。构建成功，但外观需要人工检查。
 
-4. **Permission gating** — Verify non-admin users cannot access /admin, users without canApprove cannot access /governance.
+4. **权限门控** — 验证非管理员用户无法访问 /admin，没有 canApprove 权限的用户无法访问 /governance。
 
-### Gaps Summary
+### 差距摘要
 
-Phase 6 has 5 gaps blocking full goal achievement:
+Phase 6 有 5 个阻碍目标完全实现的差距：
 
-1. **Quality trend is a stub (QUAL-06)** — The Recharts chart component exists and renders but receives no data. `fetchQualityTrend` always returns empty slice. The ent schema for quality rule results exists (from Phase 5) but queries are not wired.
+1. **质量趋势是一个桩（QUAL-06）** — Recharts 图表组件存在并渲染，但没有接收数据。`fetchQualityTrend` 始终返回空切片。质量规则结果的 ent schema 存在（来自 Phase 5），但查询没有连接。
 
-2. **Quality alerts are stubs (UI-05)** — `listAlertsHandler` and `acknowledgeAlertHandler` return empty data. The `quality_alerts` table may not exist in ent schema.
+2. **质量警报是桩（UI-05）** — `listAlertsHandler` 和 `acknowledgeAlertHandler` 返回空数据。`quality_alerts` 表可能在 ent schema 中不存在。
 
-3. **Admin policy management non-functional (UI-07)** — All AdminService methods return CodeUnimplemented. The policy CRUD UI exists but cannot create/update/delete policies because ColumnPolicy ent schema is missing.
+3. **管理员策略管理功能缺失（UI-07）** — 所有 AdminService 方法返回 CodeUnimplemented。策略 CRUD UI 存在，但由于缺少 ColumnPolicy ent schema，无法创建/更新/删除策略。
 
-4. **CSRF token extraction bug** — Governance page looks for `dg_csrf` cookie but backend sets `dg_session`. This blocks approve/reject operations in the governance inbox.
+4. **CSRF 令牌提取 bug** — Governance 页面查找 `dg_csrf` cookie，但后端设置的是 `dg_session`。这阻止了治理收件箱中的批准/拒绝操作。
 
-5. **UI-SPEC.md not created** — The success criteria check mentioned "UI-SPEC.md exists for frontend components (per Phase 6 scope)" but this file was never created.
+5. **UI-SPEC.md 未创建** — 成功标准检查提到"UI-SPEC.md 存在用于前端组件（根据 Phase 6 范围说明）"，但此文件从未创建。
 
-The first three gaps appear to be intentional scaffold behavior (scaffold phase deferring full implementation to later phases). They are documented as stubs with "will be implemented" comments.
+前三个差距是有意的脚手架行为（脚手架阶段将完整实现推迟到后续阶段）。它们被记录为带有"将实现"注释的桩。
 
-**Post-verification fixes applied:**
-- CSRF bug fixed: changed `dg_csrf` → `dg_session` in governance/index.tsx (commit 9887cb9)
-- UI-SPEC.md created documenting component specs, routes, API integration
+**验证后修复：**
+- CSRF bug 已修复：在 governance/index.tsx 中将 `dg_csrf` → `dg_session`（commit 9887cb9）
+- UI-SPEC.md 已创建，记录组件规范、路由、API 集成
 
 ---
 
-_Verified: 2026-05-12T16:00:00Z_
-_Verifier: Claude (gsd-verifier)_
+_验证时间: 2026-05-12T16:00:00Z_
+_验证者: Claude (gsd-verifier)_

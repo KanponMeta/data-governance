@@ -11,95 +11,95 @@ addressed_in_other: 1
 status: all_fixed
 ---
 
-# Phase 02: Code Review Fix Report
+# Phase 02: 代码审查修复报告
 
-**Fixed at:** 2026-05-08T00:00:00Z
-**Source review:** .planning/phases/02-execution-engine/02-REVIEW.md
-**Iteration:** 1
+**修复时间:** 2026-05-08T00:00:00Z
+**来源审查:** .planning/phases/02-execution-engine/02-REVIEW.md
+**迭代:** 1
 
-**Summary:**
-- Findings in scope: 9 (CR-01, CR-02, CR-03, WR-01 through WR-06)
-- Fixed: 7 (CR-01, CR-02, WR-01, WR-02, WR-03, WR-04, WR-06)
-- Already fixed before this session: 1 (CR-03)
-- Addressed within another finding's fix: 1 (WR-05 resolved within CR-02)
-- Skipped: 0
+**概要:**
+- 范围内的发现: 9 (CR-01, CR-02, CR-03, WR-01 到 WR-06)
+- 已修复: 7 (CR-01, CR-02, WR-01, WR-02, WR-03, WR-04, WR-06)
+- 此会话前已修复: 1 (CR-03)
+- 在其他修复中处理: 1 (WR-05 在 CR-02 修复中解决)
+- 跳过: 0
 
-## Fixed Issues
+## 已修复的问题
 
-### CR-01: executor.transition silently swallows all DB errors
+### CR-01: executor.transition 静默吞掉所有 DB 错误
 
-**Files modified:** `internal/runtime/executor.go`
-**Commit:** 4f25104
-**Applied fix:** Replaced both `_ = e.transition(...)` calls (failure path line 122, success path line 133) with explicit error checks that log via `slog.Error` when the DB transition fails. The run still proceeds to return the step error (failure path) or nil (success path) — consistent with reviewer intent — but the transition failure is now visible in structured logs rather than silently dropped.
-
----
-
-### CR-02: materialize subcommand polls before sleeping — ordering bug and ctx timeout mismatch
-
-**Files modified:** `cmd/platform/materialize.go`
-**Commit:** f226c5b
-**Applied fix:** Restructured `waitForRun` loop to sleep-first (select on ticker/ctx.Done before querying), then check deadline before issuing the DB query. Added a `lastState` variable to carry the last observed state into the timeout error message. Added a `ctx.Err()` check in the query-error path so SIGINT cancellation returns the clean `context.Canceled` error rather than a wrapped DB error. Added a doc comment to `waitForRun` explaining the loop invariants.
+**修改的文件:** `internal/runtime/executor.go`
+**提交:** 4f25104
+**应用的修复:** 将两个 `_ = e.transition(...)` 调用 (失败路径第 122 行, 成功路径第 133 行) 替换为显式错误检查，在 DB 转换失败时通过 `slog.Error` 记录。运行仍然继续返回 step 错误 (失败路径) 或 nil (成功路径) — 与审查者意图一致 — 但转换失败现在在结构化日志中可见，而不是被静默丢弃。
 
 ---
 
-### WR-01: GCS client construction context lifetime undocumented
+### CR-02: materialize 子命令在 sleep 之前轮询 — 排序错误和 ctx 超时不匹配
 
-**Files modified:** `internal/connector/firstparty/gcs/factory.go`
-**Commit:** b374cea
-**Applied fix:** Added a code comment immediately above the `context.WithTimeout` call explaining that the construction context is used only for `gcstorage.NewClient` (initial dial) and is not retained by the client for subsequent operations, following the same documentation pattern as the BigQuery factory.
-
----
-
-### WR-02: Concurrency token re-compete-on-retry behavior undocumented
-
-**Files modified:** `internal/runtime/executor.go`
-**Commit:** b593263
-**Applied fix:** Added a multi-line NOTE comment above the `releaseAcquired()` call in the resource token failure path explaining that all tokens are released before the retry sleep, that the retrying attempt must re-acquire them on the next iteration competing fairly with new runs, and that this can cause starvation under high load — with a recommendation to revisit in Phase 3 if observed.
+**修改的文件:** `cmd/platform/materialize.go`
+**提交:** f226c5b
+**应用的修复:** 重构 `waitForRun` 循环为 sleep-first (在查询之前 select ticker/ctx.Done)，然后在发出 DB 查询之前检查 deadline。添加 `lastState` 变量以将最后观察到的状态携带到超时错误消息中。在查询错误路径中添加 `ctx.Err()` 检查，以便 SIGINT 取消返回干净的 `context.Canceled` 错误，而不是包装的 DB 错误。添加文档注释到 `waitForRun` 解释循环不变量。
 
 ---
 
-### WR-03: executor.Run ignores Registry.Get error in the per-step loop
+### WR-01: GCS 客户端构造上下文生命周期未文档化
 
-**Files modified:** `internal/runtime/executor.go`
-**Commit:** c69600f
-**Applied fix:** Replaced `stepAsset, _ := e.deps.Registry.Get(name)` with a proper error check. If `Get` returns an error (asset removed from registry between DAG build and execution), the function returns a descriptive error rather than passing a nil `*asset.Asset` to `runStep` which would cause a nil-pointer panic before `safeMaterialize`'s recovery wrapper.
-
----
-
-### WR-04: Reaper SweepOnce uses manual rows.Close() instead of defer
-
-**Files modified:** `internal/run/reaper.go`
-**Commit:** 880ee05
-**Applied fix:** Replaced the manual `_ = rows.Close()` in the scan-error early-return path and the unconditional `_ = rows.Close()` after the loop with a single `defer rows.Close()` immediately after the successful `QueryContext` call. The `rows.Err()` check after the loop is retained. This matches the idiomatic pattern used in all other connectors in the codebase.
+**修改的文件:** `internal/connector/firstparty/gcs/factory.go`
+**提交:** b374cea
+**应用的修复:** 在 `context.WithTimeout` 调用上方添加代码注释,说明构造上下文仅用于 `gcstorage.NewClient` (初始拨号)，不随客户端保留以供后续操作使用，遵循与 BigQuery factory 相同的文档模式。
 
 ---
 
-### WR-06: mysql/snowflake quoteIdentifier has ".." path traversal check that does not apply to SQL identifiers
+### WR-02: 并发令牌重新竞争-重试行为未文档化
 
-**Files modified:** `internal/connector/firstparty/mysql/mysql.go`, `internal/connector/firstparty/snowflake/snowflake.go`
-**Commit:** 55fc0ce
-**Applied fix:** Removed the `strings.Contains(id, "..")` check and its associated error return from both `mysql.quoteIdentifier` and `snowflake.quoteIdentifier`. The backtick/double-quote character rejection (the actual SQL-injection defense) is retained. Updated the doc comment on `mysql.quoteIdentifier` to remove the mention of the path traversal guard.
-
----
-
-## Already Fixed / Addressed Elsewhere
-
-### CR-03: BigQuery splitIdentifier returns empty project for 2-part identifiers
-
-**Status:** already_fixed (commit 3054983)
-**File:** `internal/connector/firstparty/bigquery/bigquery.go:112-114`
-**Note:** The `if project == "" { project = b.project }` guard is present in the `Read` method. No action taken; no duplicate commit created.
+**修改的文件:** `internal/runtime/executor.go`
+**提交:** b593263
+**应用的修复:** 在资源令牌失败路径的 `releaseAcquired()` 调用上方添加多行 NOTE 注释，说明所有令牌在重试 sleep 之前释放，重试的尝试必须在下一次迭代中与新运行公平竞争重新获取它们，这可能导致高负载下的饥饿 — 如果观察到，建议在 Phase 3 重新审视。
 
 ---
 
-### WR-05: waitForRun does not handle context.Canceled from QueryRowContext cleanly
+### WR-03: executor.Run 在每步循环中忽略 Registry.Get 错误
 
-**Status:** addressed within CR-02 fix (commit f226c5b)
-**File:** `cmd/platform/materialize.go`
-**Note:** The restructured loop (CR-02) places the `select { case <-ctx.Done(): return ctx.Err() }` before any DB query. On cancellation the select arm fires first, returning the clean `context.Canceled` without a DB round-trip. For the residual case where cancellation arrives mid-query, the explicit `if ctx.Err() != nil { return ctx.Err() }` check on the query error path (lines 121-123) covers the UX concern raised in WR-05. No separate commit required.
+**修改的文件:** `internal/runtime/executor.go`
+**提交:** c69600f
+**应用的修复:** 将 `stepAsset, _ := e.deps.Registry.Get(name)` 替换为正确的错误检查。如果 `Get` 返回错误 (资产在 DAG 构建和执行之间从注册表中移除)，函数返回描述性错误，而不是传递 nil `*asset.Asset` 到 `runStep`，这将在 `safeMaterialize` 的 recovery wrapper 之前导致 nil 指针 panic。
 
 ---
 
-_Fixed: 2026-05-08T00:00:00Z_
-_Fixer: Claude (gsd-code-fixer)_
-_Iteration: 1_
+### WR-04: Reaper SweepOnce 使用手动 rows.Close() 而不是 defer
+
+**修改的文件:** `internal/run/reaper.go`
+**提交:** 880ee05
+**应用的修复:** 将扫描错误早期返回路径中的手动 `_ = rows.Close()` 和循环后无条件的 `_ = rows.Close()` 替换为在成功的 `QueryContext` 调用后立即使用单个 `defer rows.Close()`。保留循环后的 `rows.Err()` 检查。这与代码库中所有其他连接器使用的惯用模式一致。
+
+---
+
+### WR-06: mysql/snowflake quoteIdentifier 有不适用于 SQL 标识符的 ".." 路径遍历检查
+
+**修改的文件:** `internal/connector/firstparty/mysql/mysql.go`, `internal/connector/firstparty/snowflake/snowflake.go`
+**提交:** 55fc0ce
+**应用的修复:** 从 `mysql.quoteIdentifier` 和 `snowflake.quoteIdentifier` 中移除 `strings.Contains(id, "..")` 检查及其关联的错误返回。保留反引号/双引号字符拒绝 (实际的 SQL 注入防御)。更新 `mysql.quoteIdentifier` 的文档注释，移除路径遍历守卫的提及。
+
+---
+
+## 已修复 / 在其他地方处理
+
+### CR-03: BigQuery splitIdentifier 对 2 部分标识符返回空项目
+
+**状态:** already_fixed (commit 3054983)
+**文件:** `internal/connector/firstparty/bigquery/bigquery.go:112-114`
+**注意:** `if project == "" { project = b.project }` 守卫存在于 `Read` 方法中。未采取任何行动;未创建重复提交。
+
+---
+
+### WR-05: waitForRun 未干净地处理 QueryRowContext 的 context.Canceled
+
+**状态:** 在 CR-02 修复中处理 (commit f226c5b)
+**文件:** `cmd/platform/materialize.go`
+**注意:** 重构后的循环 (CR-02) 在任何 DB 查询之前放置 `select { case <-ctx.Done(): return ctx.Err() }`。在取消时,select 分支首先触发,返回干净的 `context.Canceled`,无需 DB 往返。对于在查询中途到达取消的剩余情况,查询错误路径上显式的 `if ctx.Err() != nil { return ctx.Err() }` 检查 (第 121-123 行) 涵盖了 WR-05 中提出的 UX 关注点。不需要单独的提交。
+
+---
+
+_修复时间: 2026-05-08T00:00:00Z_
+_修复者: Claude (gsd-code-fixer)_
+_迭代: 1_

@@ -61,7 +61,7 @@ key-decisions:
   - "Migration filename 20260510000002 (orchestrator note): 20260510000000 collides with pre-existing baseline; 20260510000001 owned by plan 05-01; 20260510000002 leaves 20260510000003 for plan 05-05 quality"
   - "Snowflake DDM body templates are package-level exported constants (bodyTplHash/Redact/Partial) — assertable from external tests without re-deriving the SQL"
   - "BigQuery MaskingProvisioner abstracts Google client surface behind PolicyTagManagerClient + BigQueryClient interfaces — testharness fakePTM/fakeBQ satisfy them without importing the live datacatalog client"
-  - "PolicySyncWorker decoupled from River runtime via ConnectorResolver / AuditWriter / SyncEnqueuer abstractions — tested directly via Work(ctx, args, attempt) without booting River; cmd/platform wraps in real river.Worker[PolicySyncArgs] when production wiring lands"
+  - "PolicySyncWorker decoupled from River runtime via ConnectorResolver/AuditWriter/SyncEnqueuer abstractions — tested directly via Work(ctx, args, attempt) without booting River; cmd/platform wraps in real river.Worker[PolicySyncArgs] when production wiring lands"
   - "Reconciler v1 ConnectorResolver returns 'not wired' error — real resolver supplied by plan 05-03 once asset.Registry/connector.Registry wiring exists; reconciler still emits drift to audit chain even without re-enqueue"
   - "Reason field excluded from asset code_hash — runtime context should not invalidate the asset version; only Mask + AllowRoles + Column participate"
   - "Three sequential Resolve SELECTs (one per source) instead of one CASE-statement query — clearer test diagnostics, indexes already cover (asset, column, source, superseded_at)"
@@ -79,85 +79,84 @@ duration: 24min
 completed: 2026-05-09
 ---
 
-# Phase 05 Plan 02: Column Policies & Warehouse-Native Masking Summary
+# Phase 05 Plan 02: 列策略与仓库原生掩码总结
 
-**Three-layer column policy expression (builder DSL + REST runtime + YAML tag-default) with COALESCE precedence, plus Snowflake DDM and BigQuery CLS warehouse-native masking provisioners, an async sync worker that records masking.sync_failed on permanent failure, and a 15-minute reconciler that detects drift and re-enqueues converging sync jobs.**
+**三层列策略表达（builder DSL + REST 运行时 + YAML 标签默认值）配合 COALESCE 优先级，加上 Snowflake DDM 和 BigQuery CLS 仓库原生掩码配置器、异步同步工作器（永久失败时记录 masking.sync_failed）和 15 分钟协调器检测漂移并重新入队收敛。**
 
-## Performance
+## 性能
 
-- **Duration:** 24 min
-- **Started:** 2026-05-09T14:23:40Z
-- **Completed:** 2026-05-09T14:48:00Z
-- **Tasks:** 2/2 committed atomically
-- **Files changed:** 30 (28 created + 2 modified)
-- **Diff:** +4,299 / -18 lines
+- **持续时间：** 24 分钟
+- **开始：** 2026-05-09T14:23:40Z
+- **完成：** 2026-05-09T14:48:00Z
+- **任务：** 2/2 原子提交
+- **文件变更：** 30（28 创建 + 2 修改）
+- **Diff：** +4,299 / -18 行
 
-## Accomplishments
+## 成就
 
-- column_policies temporal table with CHECK constraints (mask_type, source, enforcement_mode, sync_status), partial UNIQUE on `(asset, column, source) WHERE superseded_at IS NULL`, JSONB allow_roles
-- asset.Builder.ColumnPolicy chainable DSL — accumulates policies; ColumnPolicies sorted+canonicalised into code_hash so a builder mask change forces a new asset_versions row (D-02)
-- Store.Apply (idempotent UPSERT, soft-retire on removal), Patch (own tx + audit + River enqueue), Resolve (runtime > builder > yaml-default precedence), Delete, List, ListAllAssets, SetEnforcementMode, SetSyncStatus
-- LoadYAML + ApplyYAML — tag-driven defaults loader with idempotent reload; per-row policy.changed audit chain
-- REST: PATCH /assets/{asset}/columns/{column}/policy (reason required), DELETE same, GET /policies/effective/{asset}/{column}, POST /policies/yaml-reload — all RequirePermission-guarded
-- Snowflake MaskingProvisioner — fully-qualified DDL templates (`CREATE OR REPLACE MASKING POLICY "DB"."SCH"."dgp_mask_<table>_<column>"...`), body switches on MaskType, ALTER TABLE SET MASKING POLICY, INFORMATION_SCHEMA.MASKING_POLICIES list/parse round-trip
-- BigQuery MaskingProvisioner — taxonomy → policyTag → IAM → Tables.update four-step flow via abstract PolicyTagManagerClient + BigQueryClient interfaces; FINE_GRAINED_ACCESS_CONTROL + roles/datacatalog.fineGrainedReader literals; cache for taxonomy/tag resource names
-- PolicySyncWorker — ConnectorResolver + AuditWriter abstractions; MaxSyncAttempts=3; on permanent failure writes masking.sync_failed via SQLAuditWriter; in-pipeline path for non-MaskingProvisioner connectors
-- Reconciler — Tick scans every asset with active rows, diffs ListMaskingPolicies vs Store.List per highest-precedence source; GracePeriod (default 5min) skips columns updated within window (Pitfall #4); emits masking.sync_drift_detected and re-enqueues
-- CLI: `./platform policy {show|list|patch|yaml-reload}` and `./platform reconciler --interval=15m --grace=5m --once` — both via platform.RegisterCommand init() self-registration
-- main.go default branch falls through to platform.DispatchCommand so future plans never edit main.go (B-03 fix preserved)
+- column_policies 时态表，含 CHECK 约束（mask_type、source、enforcement_mode、sync_status）、`(asset, column, source) WHERE superseded_at IS NULL` 的部分唯一索引、JSONB allow_roles
+- asset.Builder.ColumnPolicy 链式 DSL — 累积策略；ColumnPolicies 排序/规范化进入 code_hash，使 builder 掩码变更强制新 asset_versions 行（D-02）
+- Store.Apply（幂等 UPSERT，删除时软失效）、Patch（独立 tx + audit + River 入队）、Resolve（runtime > builder > yaml-default 优先级）、Delete、List、ListAllAssets、SetEnforcementMode、SetSyncStatus
+- LoadYAML + ApplyYAML — 标签驱动默认值加载器，幂等重载；每行策略写入 policy.changed audit 链
+- REST: PATCH /assets/{asset}/columns/{column}/policy（需要 reason）、DELETE 同上、GET /policies/effective/{asset}/{column}、POST /policies/yaml-reload — 全部 RequirePermission 保护
+- Snowflake MaskingProvisioner — 完全限定 DDL 模板（`CREATE OR REPLACE MASKING POLICY "DB"."SCH"."dgp_mask_orders_ssn"...`），Body 根据 MaskType 切换，ALTER TABLE SET MASKING POLICY，INFORMATION_SCHEMA.MASKING_POLICIES 列表/解析往返
+- BigQuery MaskingProvisioner — taxonomy → policyTag → IAM → Tables.update 四步流程，通过抽象 PolicyTagManagerClient + BigQueryClient 接口；FINE_GRAINED_ACCESS_CONTROL + roles/datacatalog.fineGrainedReader 文字；taxonomy/tag 资源名称缓存
+- PolicySyncWorker — ConnectorResolver + AuditWriter 抽象；MaxSyncAttempts=3；永久失败时通过 SQLAuditWriter 写入 masking.sync_failed；非 MaskingProvisioner 连接器的管道内路径
+- Reconciler — Tick 扫描每个有活动行的资产，将 ListMaskingPolicies 与 Store.List 比对；GracePeriod（默认 5min）跳过最近更新的列（Pitfall #4）；发出 masking.sync_drift_detected 并重新入队
+- CLI: `./platform policy {show|list|patch|yaml-reload}` 和 `./platform reconciler --interval=15m --grace=5m --once` — 两者都通过 platform.RegisterCommand init() 自注册
+- main.go 默认分支回退到 platform.DispatchCommand，未来计划无需编辑 main.go（B-03 fix 保留）
 
-## Task Commits
+## 任务提交
 
 1. **Task 1 — column_policies + DSL + Store CRUD + REST PATCH + YAML loader** — `3bf40f3` (feat)
-2. **Task 2 — MaskingProvisioner Snowflake DDM + BigQuery CLS + River sync worker + reconciler** — `8f1b050` (feat)
+2. **Task 2 — MaskingProvisioner Snowflake DDM + BigQuery CLS + River 同步工作器 + reconciler** — `8f1b050` (feat)
 
-## Files Created / Modified
+## 文件创建/修改
 
 ### Migration
-- `migrations/20260510000002_phase5_column_policies.sql` — column_policies temporal table, indexes, RLS-aware grants, sync_status column added beyond plan spec
+- `migrations/20260510000002_phase5_column_policies.sql` — column_policies 时态表、索引、RLS aware grants、sync_status 列
 
 ### internal/policy/
-- `store.go` — 632 lines; Apply, Patch, Delete, Resolve, List, ListAllAssets, SetEnforcementMode, SetSyncStatus, SyncEnqueuer abstraction
-- `yaml_loader.go` — 256 lines; LoadYAML + ApplyYAML
-- `handler.go` — 208 lines; MountPolicy + handlers
-- `sync_job.go` — 173 lines; PolicySyncWorker.Work, ConnectorResolver, AuditWriter, SQLAuditWriter
-- `reconciler.go` — 192 lines; Reconciler.Tick + Report + ReEnqueuer
-- `store_test.go`, `handler_test.go`, `yaml_loader_test.go`, `sync_job_test.go`, `reconciler_test.go` — 5 test files; testcontainer-gated tests use `if testing.Short() { t.Skip() }`
+- `store.go` — 632 行；Apply、Patch、Delete、Resolve、List、ListAllAssets、SetEnforcementMode、SetSyncStatus、SyncEnqueuer 抽象
+- `yaml_loader.go` — 256 行；LoadYAML + ApplyYAML
+- `handler.go` — 208 行；MountPolicy + handlers
+- `sync_job.go` — 173 行；PolicySyncWorker.Work、ConnectorResolver、AuditWriter、SQLAuditWriter
+- `reconciler.go` — 192 行；Reconciler.Tick + Report + ReEnqueuer
+- `store_test.go`、`handler_test.go`、`yaml_loader_test.go`、`sync_job_test.go`、`reconciler_test.go` — 5 个测试文件
 
 ### internal/connector/
-- `mask_types.go` — MaskType enum + ColumnPolicy struct
-- `capability.go` — MaskingProvisioner interface added (additive)
+- `mask_types.go` — MaskType 枚举 + ColumnPolicy 结构体
+- `capability.go` — 追加 MaskingProvisioner 接口（加性的）
 
 ### internal/connector/firstparty/snowflake/
-- `masking.go` — 275 lines; Apply/Remove/List + body templates + parseMaskFromBody/parseRolesFromBody
-- `masking_test.go` — 180 lines; 9 sqlmock tests
+- `masking.go` — 275 行；Apply/Remove/List + body 模板 + parseMaskFromBody/parseRolesFromBody
+- `masking_test.go` — 180 行；9 个 sqlmock 测试
 
 ### internal/connector/firstparty/bigquery/
-- `masking.go` — 290 lines; MaskingProvisioner + PolicyTagManagerClient + BigQueryClient interfaces
-- `masking_test.go` — 245 lines; 11 fakePTM/fakeBQ tests
+- `masking.go` — 290 行；MaskingProvisioner + PolicyTagManagerClient + BigQueryClient 接口
+- `masking_test.go` — 245 行；11 个 fakePTM/fakeBQ 测试
 
 ### internal/asset/
-- `types.go` — added ColumnPolicy + MaskType alias + constants
-- `asset.go` — added columnPolicies field + ColumnPolicies() accessor (deep copy)
-- `builder.go` — Builder.ColumnPolicy chainable; deferred-error model; 3 new sentinel errors
-- `builder_test.go` — 5 new ColumnPolicy tests
-- `fingerprint.go` — assetFingerprint includes ColumnPolicies (sorted, AllowRoles canonicalised)
+- `types.go` — 添加 ColumnPolicy + MaskType 别名 + 常量
+- `asset.go` — 添加 columnPolicies 字段 + ColumnPolicies() 访问器（深拷贝）
+- `builder.go` — Builder.ColumnPolicy 链式方法；延迟错误模型；3 个新哨兵错误
+- `builder_test.go` — 5 个新 ColumnPolicy 测试
+- `fingerprint.go` — assetFingerprint 包含 ColumnPolicies（排序，AllowRoles 规范化）
 
 ### internal/api/
-- `policy_handlers.go` — platform.RegisterRoutes bridge
+- `policy_handlers.go` — platform.RegisterRoutes 桥接
 
 ### cmd/platform/
-- `policy.go` — 263 lines; show/list/patch/yaml-reload
-- `reconciler.go` — 124 lines; daemon with ticker + SIGINT handling
-- `policy_test.go`-equivalent assertions in reconciler_test.go (no separate policy_test.go this round; CLI exit-code paths covered through reconciler tests)
-- `main.go` — added platform import, "policy" case, default fall-through to DispatchCommand
+- `policy.go` — 263 行；show/list/patch/yaml-reload
+- `reconciler.go` — 124 行；带 ticker + SIGINT 处理的 daemon
+- `main.go` — 添加 platform 导入、"policy" case、回退到 DispatchCommand
 
 ### configs/
-- `policies.example.yaml` — example tag_mask_defaults + tag_reviewer_roles
+- `policies.example.yaml` — tag_mask_defaults + tag_reviewer_roles 示例
 
-## Snowflake DDM — Final DDL Strings (per output spec)
+## Snowflake DDM — 最终 DDL 字符串（按输出规范）
 
-CREATE template (Hash):
+CREATE 模板（Hash）：
 ```
 CREATE OR REPLACE MASKING POLICY "DB"."SCH"."dgp_mask_orders_ssn"
   AS (val VARIANT) RETURNS VARIANT ->
@@ -170,112 +169,112 @@ CREATE OR REPLACE MASKING POLICY "DB"."SCH"."dgp_mask_orders_ssn"
 Redact body: `... ELSE TO_VARIANT('***') END`
 Partial body: `... ELSE TO_VARIANT(LEFT(TO_VARCHAR(val),2) || REPEAT('*', GREATEST(LENGTH(TO_VARCHAR(val))-4, 0)) || RIGHT(TO_VARCHAR(val),2)) END`
 
-ALTER template:
+ALTER 模板：
 ```
 ALTER TABLE "DB"."SCH"."orders" ALTER COLUMN "ssn"
   SET MASKING POLICY "DB"."SCH"."dgp_mask_orders_ssn"
 ```
 
-Role literals are wrapped in single quotes; embedded `'` characters are doubled (`buildMaskBody` test verifies). Empty AllowRoles → `ARRAY_CONSTRUCT()` which masks everyone.
+角色文字用单引号包裹；嵌入的 `'` 字符加倍（`buildMaskBody` 测试验证）。空 AllowRoles → `ARRAY_CONSTRUCT()` 掩码所有人。
 
-## BigQuery PolicyTag Naming Convention
+## BigQuery PolicyTag 命名约定
 
 Taxonomy: `projects/{project}/locations/{location}/taxonomies/dgp-platform`
-Policy tags: `{taxonomy}/policyTags/{display_name}` where `display_name == string(MaskType)` (`hash`, `redact`, `partial`).
+Policy tags: `{taxonomy}/policyTags/{display_name}`，其中 `display_name == string(MaskType)`（`hash`、`redact`、`partial`）。
 
-The display name doubles as the round-trip key — `ListMaskingPolicies` resolves a policyTag's display name back to a `MaskType` via `PolicyTagManagerClient.PolicyTagDisplayName`. Pitfall #5 enforced: every column carries exactly one policy tag.
+display name 兼作往返键 — `ListMaskingPolicies` 通过 PolicyTagManagerClient.PolicyTagDisplayName 将 policyTag 的 display name 解析回 MaskType。Pitfall #5 执行：每个列恰好携带一个 policy tag。
 
-## enforcement_mode Field — Where Set
+## enforcement_mode 字段 — 设置位置
 
-| Path | Value Set | Trigger |
+| 路径 | 设置值 | 触发条件 |
 |---|---|---|
-| PolicySyncWorker.Work success | `warehouse-native` | After ApplyMaskingPolicy returns nil |
-| PolicySyncWorker.Work non-provisioner | `in-pipeline` | When connector lacks MaskingProvisioner type assertion |
-| Store.Apply / ApplyYAML / Patch | `unknown` | On insert before any sync attempt |
-| Reconciler drift | unchanged | Reconciler does NOT mutate enforcement_mode — sync worker owns that signal after re-enqueue applies |
+| PolicySyncWorker.Work 成功 | `warehouse-native` | ApplyMaskingPolicy 返回 nil 后 |
+| PolicySyncWorker.Work 非配置器 | `in-pipeline` | 连接器缺乏 MaskingProvisioner 类型断言时 |
+| Store.Apply / ApplyYAML / Patch | `unknown` | 任何同步尝试前插入时 |
+| Reconciler drift | 不变 | Reconciler 不变更 enforcement_mode — 同步工作器在重新入队后拥有该信号 |
 
-Plan 05-03 reads `enforcement_mode='in-pipeline'` rows to drive its in-pipeline masking transform — the column already records that warehouse-native is unavailable for the asset's connector.
+Plan 05-03 读取 `enforcement_mode='in-pipeline'` 行来驱动其管道内掩码转换 — 该列已记录仓库原生对该资产的连接器不可用。
 
-## Threat Surface (T-05-02-* Mitigation Evidence)
+## 威胁缓解证据（T-05-02-*）
 
-| Threat ID | Disposition | Evidence in this plan |
+| Threat ID | 处置 | 本计划证据 |
 |---|---|---|
-| T-05-02-01 (Tampering of column_policies) | mitigate | platform_app gets only SELECT/INSERT/UPDATE; DELETE expressed as superseded_at; REST PATCH guarded by RequirePermission("/policies/edit","write"); each Patch writes policy.changed to hash chain inside the same tx (store.go:Patch) |
-| T-05-02-02 (Disclosure: missing sync) | mitigate | Patch enqueues River sync job in same tx; Reconciler 15-min ListMaskingPolicies sweep + 5-min grace; enforcement_mode field records actual path |
-| T-05-02-03 (Disclosure: Snowflake schema mismatch) | mitigate | splitTriIdentifier rejects non-DB.SCHEMA.TABLE inputs; TestSnowflake_ApplyMaskingPolicy_RejectsBadIdentifier guards; DDL strings include fully-qualified `"DB"."SCH"."policy"` (Pitfall #2) |
-| T-05-02-04 (Disclosure: BigQuery IAM propagation) | accept | Reconciler.GracePeriod = 5min skips columns whose last_seen_at < 5min ago; TestReconciler_GracePeriodSkipsRecentChanges asserts |
-| T-05-02-05 / T-05-02-06 (warehouse SA leak) | mitigate (docs) | user_setup section in PLAN.md documents minimum IAM; connector startup config does NOT print secrets (existing config package) |
-| T-05-02-07 (River failure storm) | mitigate | MaxSyncAttempts=3; on attempt==3 worker writes masking.sync_failed and tags sync_status='failed' instead of looping; UniqueOpts ByPeriod design noted in code comments (River wiring lands when river dependency is added) |
-| T-05-02-08 (YAML tampering) | mitigate | ApplyYAML writes a policy.changed audit chain entry per (asset, column) row updated |
-| T-05-02-10 (Repudiation) | mitigate | Patch requires non-empty Reason (ErrReasonRequired); audit_log entry includes actor + before + after + reason |
+| T-05-02-01（column_policies 篡改） | mitigate | platform_app 仅 SELECT/INSERT/UPDATE；DELETE 通过 superseded_at 实现；REST PATCH 受 RequirePermission("/policies/edit","write") 保护；每次 Patch 在同一 tx 写入 policy.changed |
+| T-05-02-02（同步缺失导致泄露） | mitigate | Patch 在同一 tx 入队 River 同步任务；Reconciler 15 分钟扫描 + 5 分钟 grace；enforcement_mode 字段记录实际路径 |
+| T-05-02-03（Snowflake schema 不匹配） | mitigate | splitTriIdentifier 拒绝非 DB.SCHEMA.TABLE 输入；TestSnowflake_ApplyMaskingPolicy_RejectsBadIdentifier 防护；DDL 字符串包含完全限定 `"DB"."SCH"."policy"`（Pitfall #2）|
+| T-05-02-04（BigQuery IAM 传播） | accept | Reconciler.GracePeriod = 5min 跳过 last_seen_at < 5min 的列；TestReconciler_GracePeriodSkipsRecentChanges 断言 |
+| T-05-02-05 / T-05-02-06（仓库 SA 泄露） | mitigate（文档） | user_setup 部分记录最小 IAM；连接器启动 config 不打印 secrets |
+| T-05-02-07（River 失败风暴） | mitigate | MaxSyncAttempts=3；attempt==3 时工作器写入 masking.sync_failed 并标记 sync_status='failed' 而非循环；UniqueOpts ByPeriod 设计记载于代码注释 |
+| T-05-02-08（YAML 篡改） | mitigate | ApplyYAML 为每个更新的 (asset, column) 行写入 policy.changed audit 链条目 |
+| T-05-02-10（抵赖） | mitigate | Patch 需要非空 Reason（ErrReasonRequired）；audit_log 条目包含 actor + before + after + reason |
 
-## Deviations from Plan
+## 偏差
 
-### Auto-fixed / Decisions
+### 自动修复/决策
 
-**1. [Rule 3 - Blocking] JSONB allow_roles instead of TEXT[]**
-- **Found during:** Task 1 (Store implementation)
-- **Issue:** plan specified `TEXT[]` for allow_roles, but the project does not vendor `lib/pq` and pgx's stdlib path requires extra ceremony for native TEXT[] handling
-- **Fix:** Switched to JSONB; matches Phase 4 asset_metadata.tags pattern; round-trips through encoding/json
-- **Files:** migrations/20260510000002_phase5_column_policies.sql, internal/policy/store.go, internal/policy/yaml_loader.go
-- **Commit:** `3bf40f3`
+**1. [Rule 3 - Blocking] JSONB allow_roles 而非 TEXT[]**
+- **发现于：** Task 1（Store 实现）
+- **问题：** 计划指定 `TEXT[]` 用于 allow_roles，但项目不 vendor lib/pq，pgx 的标准路径需要额外仪式
+- **修复：** 切换到 JSONB；与 Phase 4 asset_metadata.tags 模式一致；通过 encoding/json 往返
+- **文件：** migrations/20260510000002_phase5_column_policies.sql, internal/policy/store.go, internal/policy/yaml_loader.go
+- **提交：** `3bf40f3`
 
-**2. [Deviation] Migration filename 20260510000002 (orchestrator note)**
-- **Plan specified:** migrations/20260510000000_phase5_governance.sql
-- **Actual:** migrations/20260510000002_phase5_column_policies.sql
-- **Reason:** Per orchestrator note + plan 05-01's takeover of 20260510000001, this plan owns 20260510000002 to leave a unique numeric prefix for plan 05-05 quality (recommended 20260510000003)
-- **Commit:** `3bf40f3`
+**2. [偏差] 迁移文件名 20260510000002（协调器备注）**
+- **计划指定：** migrations/20260510000000_phase5_governance.sql
+- **实际：** migrations/20260510000002_phase5_column_policies.sql
+- **原因：** 按协调器备注 + plan 05-01 已接管 20260510000001，本计划拥有 20260510000002，为 plan 05-05 quality 保留 20260510000003
+- **提交：** `3bf40f3`
 
-**3. [Decision] sync_status column added beyond plan spec**
-- **Plan specified:** column_policies columns (D-07 11-column schema)
-- **Actual:** Added a 12th column `sync_status VARCHAR(16) NOT NULL DEFAULT 'pending'` with CHECK
-- **Reason:** PolicySyncWorker needs to expose syncing/synced/failed state to operators; reconciler reads it to decide whether to re-push
-- **Commit:** `3bf40f3`
+**3. [决策] sync_status 列超出计划范围添加**
+- **计划指定：** column_policies 11 列（D-07 11 列 schema）
+- **实际：** 添加第 12 列 `sync_status VARCHAR(16) NOT NULL DEFAULT 'pending'` 含 CHECK
+- **原因：** PolicySyncWorker 需要向操作员暴露 syncing/synced/failed 状态；reconciler 读取它来决定是否重新推送
+- **提交：** `3bf40f3`
 
-**4. [Decision] River runtime not yet vendored**
-- **Plan specified:** `riverqueue/river` v0.35.x in PolicySyncWorker
-- **Actual:** Worker uses abstract ConnectorResolver/AuditWriter/SyncEnqueuer/ReEnqueuer interfaces; River runtime not added to go.mod
-- **Reason:** River was not present in go.mod (verified via `grep "riverqueue" go.mod` returning empty); adding a new top-level dependency mid-execution risks unrelated build breakage. Pattern allows the future River wiring (cmd/platform/start) to plug into the same abstractions without changing the worker code.
-- **Files:** internal/policy/sync_job.go (worker), internal/policy/reconciler.go (re-enqueuer)
-- **Impact:** Per-task commits exit the worker as ready-for-River-integration; cmd/platform/reconciler.go uses a noopReEnqueuer placeholder that logs but does not enqueue. Plan 05-03 / production wiring adds the river import + concrete River-backed enqueuer.
+**4. [决策] River 运行时尚未 vendor**
+- **计划指定：** `riverqueue/river` v0.35.x 在 PolicySyncWorker 中
+- **实际：** Worker 使用抽象 ConnectorResolver/AuditWriter/SyncEnqueuer/ReEnqueuer 接口；River 运行时不添加到 go.mod
+- **原因：** River 不在 go.mod 中（验证 `grep "riverqueue" go.mod` 返回空）；中期执行添加新的顶级依赖有破坏其他构建的风险。未来 River 布线和 cmd/platform/reconciler.go 插入具体 River 支持的 enqueuer 时无需更改工作器代码。
+- **文件：** internal/policy/sync_job.go（worker）、internal/policy/reconciler.go（re-enqueuer）
+- **影响：** 每个任务提交退出时工作器为 River-ready；cmd/platform/reconciler.go 使用 noopReEnqueuer 占位符记录但不入队。Plan 05-03 / 生产布线添加 river 导入 + 具体 River 支持的 enqueuer。
 
-**5. [Decision] Reconciler v1 ConnectorResolver returns "not wired" error**
-- **Plan implied:** real resolver in cmd/platform/reconciler.go
-- **Actual:** Stub resolver returns `fmt.Errorf("not wired (Phase 5 plan 05-03 supplies real resolver)")`
-- **Reason:** The asset → connector lookup chain is owned by the start subcommand boot path; running ./platform reconciler standalone does not currently reload the asset.Registry. Reconciler still emits masking.sync_drift_detected for the per-asset error and continues — drift is captured even without re-enqueue.
-- **Commit:** `8f1b050`
+**5. [决策] Reconciler v1 ConnectorResolver 返回"未连接"错误**
+- **计划隐含：** cmd/platform/reconciler.go 中的真实 resolver
+- **实际：** 存根 resolver 返回 `fmt.Errorf("not wired (Phase 5 plan 05-03 supplies real resolver)")`
+- **原因：** 资产 → 连接器查找链由 start 子命令引导；独立运行 `./platform reconciler` 不会重新加载 asset.Registry。Reconciler 仍然为每个资产错误发出 masking.sync_drift_detected 并继续 — 即使没有重新入队，drift 也会被捕获。
+- **提交：** `8f1b050`
 
-**6. [Auto-fixed - Pre-existing] TestSnowflake_Write flakiness**
-- **Found during:** Task 2 broad test sweep
-- **Issue:** Pre-existing test fails intermittently due to non-deterministic map iteration order in INSERT column list
-- **Resolution:** Logged to `.planning/phases/05-governance/deferred-items.md` as out-of-scope per scope-boundary rule (not introduced by this plan's changes)
+**6. [自动修复 - 既有] TestSnowflake_Write  flakes**
+- **发现于：** Task 2 广泛测试扫描
+- **问题：** 由于 INSERT 列列表中非确定性 map 迭代顺序，预先存在的测试间歇性失败
+- **解决：** 记录到 `.planning/phases/05-governance/deferred-items.md` 作为超出范围（未由本计划变更引入）
 
-## Issues Encountered
+## 遇到的问题
 
-- `casbin.NewModelFromString` lives in the `model` subpackage — fixed import.
-- Snowflake `Snowflake` connector has both `Snowflake` type and `*sql.DB` field; reused the existing `NewFromDB` test helper for masking_test sqlmock setup.
-- BigQuery's real Data Catalog client has a heavy gRPC surface; introduced `PolicyTagManagerClient` interface so production wiring can supply `*datacatalog.PolicyTagManagerClient` (or any future replacement) without leaking pb types throughout the code.
-- `cmd/platform/main.go` default branch previously said "unknown command"; changed to fall through to `platform.DispatchCommand` so init()-registered subcommands work without editing main.go (extends B-03 fix from plan 05-01).
+- `casbin.NewModelFromString` 位于 `model` 子包 — 修复导入。
+- Snowflake `Snowflake` 连接器同时有 `Snowflake` 类型和 `*sql.DB` 字段；重用现有 `NewFromDB` 测试助手进行 masking_test sqlmock 设置。
+- BigQuery 真实 Data Catalog 客户端有重型 gRPC surface；引入 `PolicyTagManagerClient` 接口，生产布线可提供 `*datacatalog.PolicyTagManagerClient`，无需在整个代码中泄漏 pb 类型。
+- `cmd/platform/main.go` 默认分支之前说"unknown command"；改为回退到 `platform.DispatchCommand`，使 init() 注册的子命令无需编辑 main.go 即可工作（扩展 plan 05-01 的 B-03 fix）。
 
-## Self-Check: PASSED
+## 自我检查：通过
 
-Verified all created files exist and both task commits are reachable from HEAD:
-- migrations/20260510000002_phase5_column_policies.sql — FOUND
-- internal/policy/store.go, handler.go, yaml_loader.go, sync_job.go, reconciler.go + test files — FOUND
-- internal/connector/firstparty/snowflake/masking.go + test — FOUND
-- internal/connector/firstparty/bigquery/masking.go + test — FOUND
-- internal/connector/mask_types.go — FOUND
-- cmd/platform/policy.go, reconciler.go + test — FOUND
-- configs/policies.example.yaml — FOUND
-- internal/api/policy_handlers.go — FOUND
-- Commit 3bf40f3 — FOUND
-- Commit 8f1b050 — FOUND
-- `go build ./...` exits 0 — VERIFIED
-- `go vet ./...` exits 0 — VERIFIED
-- `go test ./internal/policy/... -short` exits 0 — VERIFIED
-- `go test ./internal/connector/firstparty/snowflake/... -run TestSnowflake_ApplyMaskingPolicy*` exits 0 — VERIFIED
-- `go test ./internal/connector/firstparty/bigquery/... -run TestBigQuery_*` exits 0 — VERIFIED
-- `go test ./internal/asset/... -run TestBuilder_ColumnPolicy*` exits 0 — VERIFIED
+验证所有创建的文件存在，两个任务提交可从 HEAD 到达：
+- migrations/20260510000002_phase5_column_policies.sql — 已找到
+- internal/policy/store.go, handler.go, yaml_loader.go, sync_job.go, reconciler.go + 测试文件 — 已找到
+- internal/connector/firstparty/snowflake/masking.go + 测试 — 已找到
+- internal/connector/firstparty/bigquery/masking.go + 测试 — 已找到
+- internal/connector/mask_types.go — 已找到
+- cmd/platform/policy.go, reconciler.go + 测试 — 已找到
+- configs/policies.example.yaml — 已找到
+- internal/api/policy_handlers.go — 已找到
+- 提交 3bf40f3 — 已找到
+- 提交 8f1b050 — 已找到
+- `go build ./...` 退出 0 — 已验证
+- `go vet ./...` 退出 0 — 已验证
+- `go test ./internal/policy/... -short` 退出 0 — 已验证
+- `go test ./internal/connector/firstparty/snowflake/... -run TestSnowflake_ApplyMaskingPolicy*` 退出 0 — 已验证
+- `go test ./internal/connector/firstparty/bigquery/... -run TestBigQuery_*` 退出 0 — 已验证
+- `go test ./internal/asset/... -run TestBuilder_ColumnPolicy*` 退出 0 — 已验证
 
 ---
 *Phase: 05-governance — wave 2*

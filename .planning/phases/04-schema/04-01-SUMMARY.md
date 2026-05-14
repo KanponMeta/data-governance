@@ -66,11 +66,11 @@ duration: 6min
 completed: 2026-05-09
 ---
 
-# Phase 4 Plan 01: Wave 0 Test Infrastructure + Migration Stub Summary
+# Phase 4 Plan 01: Wave 0 测试基础设施 + Migration 桩 — 摘要
 
-**Shared test scaffolding for Phase 4: lineage fixtures (4+3 cases), schema diff fixtures (9 D-09 ChangeKind cases), recursive CTE DAG seeder, testcontainers PostgreSQL helper with migration apply, and empty Phase 4 migration stub with updated atlas.sum**
+**Phase 4 的共享测试脚手架：lineage fixtures（4+3 个 case）、schema diff fixtures（9 个 D-09 ChangeKind case）、递归 CTE DAG seeder、testcontainers PostgreSQL 辅助工具（含 migration apply），以及带更新 atlas.sum 的空 Phase 4 migration 桩**
 
-## Performance
+## 性能
 
 - **Duration:** ~6 min
 - **Started:** 2026-05-09T02:37:31Z
@@ -78,110 +78,110 @@ completed: 2026-05-09
 - **Tasks:** 2 of 2
 - **Files modified:** 12 (11 created, 1 modified)
 
-## Accomplishments
+## 完成事项
 
-- Three test-only Go packages compile cleanly: `lineagetest`, `schematest`, `executortest`
-- All 9 D-09 ChangeKind values have a fixture pair in `DiffPairs()`: column_added, column_dropped, type_narrowed, type_widened, nullable_added, nullable_removed, pk_changed, comment_changed, default_changed
-- DAG seeder supports linear chains (`SeedDAG`), balanced binary trees (`SeedBranching`), and cyclic graphs (`SeedCycle`)
-- `StartPhase4Container` boots PostgreSQL 16 via testcontainers, applies all Phase 1–4 migrations in lexicographic order, returns ready `*sql.DB`
-- Empty Phase 4 migration stub (Wave 0 slot) is lint-compatible; `atlas.sum` updated with file hash
+- 三个纯测试 Go 包编译通过：`lineagetest`、`schematest`、`executortest`
+- `DiffPairs()` 包含全部 9 个 D-09 ChangeKind 值的 fixture 对：column_added、column_dropped、type_narrowed、type_widened、nullable_added、nullable_removed、pk_changed、comment_changed、default_changed
+- DAG seeder 支持线性链（`SeedDAG`）、平衡二叉树（`SeedBranching`）和循环图（`SeedCycle`）
+- `StartPhase4Container` 通过 testcontainers 启动 PostgreSQL 16，按字典序应用所有 Phase 1–4 migrations，返回就绪的 `*sql.DB`
+- 空 Phase 4 migration 桩（Wave 0 槽位）lint 兼容；`atlas.sum` 已更新文件哈希
 
-## Wave 0 → Wave 1 Contract
+## Wave 0 → Wave 1 契约
 
-| Consumer Plan | Fixture / Helper | What It Reads |
+| Consumer Plan | Fixture / Helper | 读取内容 |
 |---|---|---|
-| 04-02 (Wave 1 — migration) | `migrations/20260509120000_phase4_lineage_schema.sql` | Fills in CREATE TABLE statements for asset_edges, column_edges, etc. |
-| 04-03 (Wave 3 — lineage writer) | `lineagetest.StaticEdgeFixtures()`, `lineagetest.ColumnLineageFixtures()` | Expected edges for LINE-01/LINE-02 unit tests |
-| 04-05 (Wave 4 — diff classifier) | `schematest.DiffPairs()` | 9 A/B schema pairs for META-02 classifier TDD |
-| 04-06 (Wave 5 — CTE traversal) | `lineagetest.SeedDAG()`, `SeedBranching()`, `SeedCycle()` | DAG shapes for LINE-03/LINE-06 recursive CTE tests |
-| any Wave 3+ integration test | `executortest.StartPhase4Container()` | Full PostgreSQL container with all migrations applied |
+| 04-02 (Wave 1 — migration) | `migrations/20260509120000_phase4_lineage_schema.sql` | 填充 CREATE TABLE 语句：asset_edges、column_edges 等 |
+| 04-03 (Wave 3 — lineage writer) | `lineagetest.StaticEdgeFixtures()`、`lineagetest.ColumnLineageFixtures()` | LINE-01/LINE-02 单元测试的预期边 |
+| 04-05 (Wave 4 — diff classifier) | `schematest.DiffPairs()` | META-02 分类器 TDD 的 9 个 A/B schema 对 |
+| 04-06 (Wave 5 — CTE traversal) | `lineagetest.SeedDAG()`、`SeedBranching()`、`SeedCycle()` | LINE-03/LINE-06 递归 CTE 测试的 DAG 形状 |
+| Wave 3+ 任意集成测试 | `executortest.StartPhase4Container()` | 应用全部 migrations 的完整 PostgreSQL 容器 |
 
-## Task Commits
+## Task 提交
 
 1. **Task 1: Lineage fixtures + schema diff fixtures + DAG seeder** - `735772e` (feat)
 2. **Task 2: testcontainers helper + migration stub** - `3f921d1` (feat)
 
-## Files Created/Modified
+## 创建/修改的文件
 
-- `internal/lineage/lineagetest/doc.go` — Package documentation
-- `internal/lineage/lineagetest/fixtures.go` — `StaticEdgeFixtures()` (4 cases) + `ColumnLineageFixtures()` (3 cases) with `ExpectedEdge` + `ColumnEdgeRow` types
-- `internal/lineage/lineagetest/recursive_cte_seed.go` — `SeedDAG`, `SeedBranching`, `SeedCycle` + package-level `edge` type + `insertEdges` helper
-- `internal/lineage/lineagetest/fixtures_smoke_test.go` — Smoke tests (no DB)
-- `internal/schema/schematest/doc.go` — Package documentation
-- `internal/schema/schematest/fixtures.go` — Local mirror `Column` + `Schema` types; `DiffPairs()` returning 9 D-09 ChangeKind cases
-- `internal/schema/schematest/fixtures_smoke_test.go` — Smoke test asserting exactly 9 pairs
-- `internal/runtime/executortest/doc.go` — Package documentation
-- `internal/runtime/executortest/lineage_helpers.go` — `Phase4Container` struct; `StartPhase4Container`; `Reset`; `applyMigrations`; `migrationsDir`
-- `internal/runtime/executortest/lineage_helpers_smoke_test.go` — Integration smoke test (build tag: `integration`)
-- `migrations/20260509120000_phase4_lineage_schema.sql` — Empty Wave 0 stub with `SELECT 1` placeholder
-- `migrations/atlas.sum` — Updated with hash for new stub file
+- `internal/lineage/lineagetest/doc.go` — 包文档
+- `internal/lineage/lineagetest/fixtures.go` — `StaticEdgeFixtures()`（4 个 case）+ `ColumnLineageFixtures()`（3 个 case）及 `ExpectedEdge` + `ColumnEdgeRow` 类型
+- `internal/lineage/lineagetest/recursive_cte_seed.go` — `SeedDAG`、`SeedBranching`、`SeedCycle` + 包级别 `edge` 类型 + `insertEdges` 辅助函数
+- `internal/lineage/lineagetest/fixtures_smoke_test.go` — 冒烟测试（无需 DB）
+- `internal/schema/schematest/doc.go` — 包文档
+- `internal/schema/schematest/fixtures.go` — 本地镜像 `Column` + `Schema` 类型；返回 9 个 D-09 ChangeKind case 的 `DiffPairs()`
+- `internal/schema/schematest/fixtures_smoke_test.go` — 冒烟测试，断言恰好 9 个对
+- `internal/runtime/executortest/doc.go` — 包文档
+- `internal/runtime/executortest/lineage_helpers.go` — `Phase4Container` 结构体；`StartPhase4Container`；`Reset`；`applyMigrations`；`migrationsDir`
+- `internal/runtime/executortest/lineage_helpers_smoke_test.go` — 集成冒烟测试（build tag: `integration`）
+- `migrations/20260509120000_phase4_lineage_schema.sql` — 带 `SELECT 1` 占位符的空 Wave 0 桩
+- `migrations/atlas.sum` — 已更新新桩文件的哈希
 
-## Decisions Made
+## 作出的决策
 
-**Filename convention:** Used `.sql` suffix (not `.up.sql`) for the Phase 4 migration stub. The VALIDATION.md mentioned `*.up.sql` as an Atlas generic convention; the project's established convention from Phases 1–3 uses plain `.sql`. Confirmed by examining all files in `migrations/`.
+**文件名约定：** 使用 `.sql` 后缀（而非 `.up.sql`）作为 Phase 4 migration 桩。VALIDATION.md 提到 `*.up.sql` 是 Atlas 通用约定；项目的既定约定来自 Phase 1–3 使用纯 `.sql`。通过检查 `migrations/` 中的所有文件确认。
 
-**Local mirror types:** `schematest.Column` and `schematest.Schema` are Wave 0-only mirrors of the planned `connector.Schema` types from D-07. The local mirror approach was chosen (per plan context) because Wave 1 is parallel and forward-importing unshipped types breaks the build. Wave 4 swaps to `connector.Column`/`connector.Schema` once those land.
+**本地镜像类型：** `schematest.Column` 和 `schematest.Schema` 是 Wave 0 专用的计划 `connector.Schema` 类型（D-07）的镜像。选择本地镜像方法（根据 plan context）是因为 Wave 1 是并行的，提前导入未交付的类型会破坏构建。Wave 4 通过用 `connector.Column`/`connector.Schema` 替换来切换。
 
-**`atlas migrate hash` vs `make migrate-lint`:** The `migrate-lint` target requires Atlas Pro (v0.38+ gate). The acceptance criterion mentioning `make migrate-lint exits 0` cannot be met without Atlas Pro; CI already uses `|| true`. The equivalent check (`atlas migrate hash --env local`) was run successfully, updating `atlas.sum` with the correct hash for the stub file. Documented as deviation.
+**`atlas migrate hash` vs `make migrate-lint`：** `migrate-lint` 目标需要 Atlas Pro（v0.38+ gate）。提到的验收标准 `make migrate-lint exits 0` 在没有 Atlas Pro 的情况下无法满足；CI 已使用 `|| true`。等效检查（`atlas migrate hash --env local`）已成功运行，用桩文件的正确哈希更新了 `atlas.sum`。记录为偏差。
 
-**executortest DB role:** `StartPhase4Container` opens the `*sql.DB` using the superuser DSN (same as the container was started with) rather than creating a separate platform_app login role. The testcontainers postgres module doesn't support multi-user setup natively; superuser access is standard in integration test helpers across the codebase (see `test/integration/e2e_postgres_test.go`).
+**executortest DB 角色：** `StartPhase4Container` 使用超级用户 DSN 打开 `*sql.DB`（与容器启动时使用的一致），而非创建单独的 platform_app 登录角色。testcontainers postgres 模块本身不支持多用户设置；超级用户访问是集成测试辅助工具中的标准模式（参见 `test/integration/e2e_postgres_test.go`）。
 
-## Deviations from Plan
+## 偏离计划之处
 
-### Auto-fixed Issues
+### 自动修复的问题
 
-**1. [Rule 1 - Bug] Fixed type mismatch in `insertEdges` signature**
-- **Found during:** Task 1 (build verification)
-- **Issue:** The `insertEdges` function was typed with `[]struct{from, to string}` but callers passed the local named `edge` type — Go does not allow implicit conversion between named and anonymous struct types
-- **Fix:** Promoted `type edge struct{ from, to string }` to package-level and changed `insertEdges` parameter to `[]edge`; removed inline `type edge` declarations in the three seeder functions
-- **Files modified:** `internal/lineage/lineagetest/recursive_cte_seed.go`
-- **Verification:** `go build ./internal/lineage/lineagetest/...` exits 0
-- **Committed in:** `735772e` (Task 1 commit)
+**1. [Rule 1 - Bug] 修复 `insertEdges` 签名中的类型不匹配**
+- **发现于：** Task 1（build verification）
+- **问题：** `insertEdges` 函数使用 `[]struct{from, to string}` 类型化，但调用方传入了本地命名 `edge` 类型 — Go 不允许命名类型和匿名结构体之间的隐式转换
+- **修复：** 将 `type edge struct{ from, to string }` 提升为包级别，并将 `insertEdges` 参数改为 `[]edge`；从三个 seeder 函数中移除内联 `type edge` 声明
+- **修改的文件：** `internal/lineage/lineagetest/recursive_cte_seed.go`
+- **验证：** `go build ./internal/lineage/lineagetest/...` 退出 0
+- **提交于：** `735772e`（Task 1 提交）
 
-**2. [Rule 3 - Blocking] `make migrate-lint` is Atlas Pro-only (v0.38+)**
-- **Found during:** Task 2 (verification)
-- **Issue:** `atlas migrate lint --env local --latest 1` returns: "Abort: Starting with v0.38, 'atlas migrate lint' is available only to Atlas Pro users." This is a pre-existing constraint; CI uses `|| true`
-- **Fix:** Used `atlas migrate hash --env local` to update `atlas.sum` instead; verified the new stub file hash appears in `atlas.sum`; confirmed CI tolerance via `.github/workflows/ci.yml` line 64 (`|| true`)
-- **Files modified:** `migrations/atlas.sum` (correct)
-- **Verification:** `atlas.sum` contains `20260509120000_phase4_lineage_schema.sql h1:RnvMHSb+...`
-- **Committed in:** `3f921d1` (Task 2 commit)
+**2. [Rule 3 - Blocking] `make migrate-lint` 仅限 Atlas Pro（v0.38+）**
+- **发现于：** Task 2（verification）
+- **问题：** `atlas migrate lint --env local --latest 1` 返回："Abort: Starting with v0.38, 'atlas migrate lint' is available only to Atlas Pro users." 这是既有的约束；CI 使用 `|| true`
+- **修复：** 使用 `atlas migrate hash --env local` 代替更新 `atlas.sum`；验证新桩文件哈希出现在 `atlas.sum` 中；通过 `.github/workflows/ci.yml` 第 64 行（`|| true`）确认 CI 容限
+- **修改的文件：** `migrations/atlas.sum`（正确）
+- **验证：** `atlas.sum` 包含 `20260509120000_phase4_lineage_schema.sql h1:RnvMHSb+...`
+- **提交于：** `3f921d1`（Task 2 提交）
 
 ---
 
-**Total deviations:** 2 auto-fixed (1 build bug, 1 pre-existing tooling constraint)
-**Impact on plan:** Both handled automatically. No scope creep. All acceptance criteria met except `make migrate-lint` (Atlas Pro gate — pre-existing, CI-tolerated).
+**总偏差：** 2 个自动修复（1 个 build bug，1 个既有工具约束）
+**对计划的影响：** 两者均自动处理。无范围蔓延。所有验收标准均满足，除了 `make migrate-lint`（Atlas Pro gate — 既有，CI 容限）。
 
-## Issues Encountered
+## 遇到的问题
 
-None beyond the deviations documented above.
+除上述偏差外无其他问题。
 
-## User Setup Required
+## 用户设置要求
 
-None — no external service configuration required. The `StartPhase4Container` helper handles Docker container lifecycle automatically.
+无需 — 无需外部服务配置。`StartPhase4Container` 辅助工具自动处理 Docker 容器生命周期。
 
-## Next Phase Readiness
+## 下一 Phase 就绪状态
 
-- **04-02 (Wave 1)** can now fill in `migrations/20260509120000_phase4_lineage_schema.sql` with `CREATE TABLE asset_edges`, `column_edges`, etc.
-- **04-03 (Wave 3)** can import `lineagetest.StaticEdgeFixtures()` and `ColumnLineageFixtures()` for LINE-01/LINE-02 unit tests
-- **04-05 (Wave 4)** can import `schematest.DiffPairs()` for META-02 classifier TDD
-- **04-06 (Wave 5)** can use `SeedDAG(depth=1,5,10,25,26)` + `SeedBranching` + `SeedCycle` for LINE-03/LINE-06 tests
-- Any integration test can call `executortest.StartPhase4Container(ctx, t)` to get a fully migrated PostgreSQL instance
+- **04-02（Wave 1）** 现在可以填充 `migrations/20260509120000_phase4_lineage_schema.sql`，添加 `CREATE TABLE asset_edges`、`column_edges` 等
+- **04-03（Wave 3）** 可以导入 `lineagetest.StaticEdgeFixtures()` 和 `ColumnLineageFixtures()` 用于 LINE-01/LINE-02 单元测试
+- **04-05（Wave 4）** 可以导入 `schematest.DiffPairs()` 用于 META-02 分类器 TDD
+- **04-06（Wave 5）** 可以使用 `SeedDAG(depth=1,5,10,25,26)` + `SeedBranching` + `SeedCycle` 用于 LINE-03/LINE-06 测试
+- 任何集成测试都可以调用 `executortest.StartPhase4Container(ctx, t)` 获取完全 migrated 的 PostgreSQL 实例
 
-**Blocker:** `asset_edges` table does not exist yet (Wave 1 creates it). DAG seeder functions will return an error if called before Plan 04-02 completes; callers should use `t.Skip()` until Wave 1 migration is applied.
+**Blocker：** `asset_edges` 表尚不存在（Wave 1 创建）。DAG seeder 函数在 Plan 04-02 完成前调用会返回错误；调用方应使用 `t.Skip()` 直到 Wave 1 migration 应用。
 
-## Self-Check: PASSED
+## 自检：通过
 
-| Check | Status |
+| 检查 | 状态 |
 |-------|--------|
 | `go build ./internal/lineage/lineagetest/... ./internal/schema/schematest/... ./internal/runtime/executortest/...` | PASS |
-| Smoke tests (`-run Smoke`) | PASS |
-| `StaticEdgeFixtures`, `ColumnLineageFixtures` functions exist | PASS |
-| `SeedDAG`, `SeedBranching`, `SeedCycle` functions exist | PASS |
-| `DiffPairs` function exists with 9 ChangeKind cases | PASS |
-| `StartPhase4Container`, `Reset` functions exist | PASS |
-| `migrations/20260509120000_phase4_lineage_schema.sql` exists | PASS |
-| `migrations/atlas.sum` updated with stub hash | PASS |
-| Commits 735772e and 3f921d1 exist in history | PASS |
+| 冒烟测试（`-run Smoke`） | PASS |
+| `StaticEdgeFixtures`、`ColumnLineageFixtures` 函数存在 | PASS |
+| `SeedDAG`、`SeedBranching`、`SeedCycle` 函数存在 | PASS |
+| `DiffPairs` 函数存在，包含 9 个 ChangeKind case | PASS |
+| `StartPhase4Container`、`Reset` 函数存在 | PASS |
+| `migrations/20260509120000_phase4_lineage_schema.sql` 存在 | PASS |
+| `migrations/atlas.sum` 已更新桩文件哈希 | PASS |
+| 提交 735772e 和 3f921d1 存在于历史中 | PASS |
 
 ---
 *Phase: 04-schema*

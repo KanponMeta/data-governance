@@ -7,6 +7,7 @@
 ---
 
 <user_constraints>
+
 ## User Constraints (from CONTEXT.md)
 
 ### Locked Decisions
@@ -52,27 +53,28 @@
 </user_constraints>
 
 <phase_requirements>
+
 ## Phase Requirements
 
 | ID | Description | Research Support |
 |----|-------------|-----------------|
-| ORCH-05 | Data engineer can attach cron schedule to asset for automatic periodic materialization | D-01..D-04 + robfig/cron/v3 parser API + schedules table schema + tick-loop pattern |
-| ORCH-06 | Data engineer can define event sensor that fires asset materialization when external condition becomes true | D-05..D-08 + SensorSpec DSL + sensor evaluation harness + dedup + cooldown |
-| ORCH-07 | Data engineer can define time-partitioned assets (daily, weekly, monthly) | D-09..D-11 + partition-key generation algorithms + ISO week edge cases + backfill date-range parsing |
-| ORCH-08 | Data engineer can define category-partitioned assets (per region, per customer) | D-09, D-11 + CategoryPartitions builder + backfill comma-list parsing + independent per-partition failure |
+| ORCH-05 | 数据工程师可以为资产附加 cron 调度以实现自动周期性物化 | D-01..D-04 + robfig/cron/v3 parser API + schedules table schema + tick-loop pattern |
+| ORCH-06 | 数据工程师可以定义事件传感器，在外部条件变为真时触发资产物化 | D-05..D-08 + SensorSpec DSL + sensor evaluation harness + dedup + cooldown |
+| ORCH-07 | 数据工程师可以定义时间分区资产（daily, weekly, monthly）| D-09..D-11 + partition-key generation algorithms + ISO week edge cases + backfill date-range parsing |
+| ORCH-08 | 数据工程师可以定义类别分区资产（按区域、按客户）| D-09, D-11 + CategoryPartitions builder + backfill comma-list parsing + independent per-partition failure |
 </phase_requirements>
 
 ---
 
 ## Summary
 
-Phase 3 adds the auto-trigger and partition layer atop Phase 2's execution kernel. The core primitive — `SELECT ... FOR UPDATE SKIP LOCKED` — is already proven for multi-replica safety and is reused without modification for schedule/sensor tick-loop safety. The main new work is: (1) a scheduler daemon with a custom tick loop that drives all firing decisions via a single Postgres query per tick; (2) a sensor evaluation harness with panic recovery, timeout enforcement, and dedup; (3) a partition-key encoding system with well-defined UTC string representations; (4) a three-layer backfill isolation scheme that extends the existing claim query and concurrency token pool without breaking the 50-goroutine atomicity test.
+Phase 3 在 Phase 2 的执行内核之上添加自动触发和分区层。核心原语 —— `SELECT ... FOR UPDATE SKIP LOCKED` —— 已通过多副本安全验证，并被复用以确保 schedule/sensor tick 循环的安全，无需修改。主要新工作包括：（1）一个调度器守护进程，带有自定义 tick 循环，通过单次 Postgres 查询驱动所有 firing 决策；（2）一个传感器评估 harness，具有 panic recovery、超时强制执行和去重；（3）一个具有明确 UTC 字符串表示的分区键编码系统；（4）一个三层 backfill 隔离方案，扩展现有 claim 查询和并发令牌池，且不破坏 50-goroutine 原子性测试。
 
-**robfig/cron/v3** (v3.0.1, stable since 2020) is used exclusively as a parser + `Next()` call — its built-in Cron runner is not instantiated. The library's `Schedule.Next(time.Time) time.Time` is the only API required by the scheduler tick loop. No new scheduler framework is introduced.
+**robfig/cron/v3** (v3.0.1, 自 2020 年起稳定) 仅作为解析器 + `Next()` 调用使用——不实例化其内置的 Cron 运行器。库的 `Schedule.Next(time.Time) time.Time` 是调度器 tick 循环所需的唯一 API。不引入新的调度器框架。
 
-**Key architectural insight:** The Phase 2 50-goroutine atomicity test is preserved by keeping SKIP LOCKED + `WHERE state='queued'` + the new `WHERE priority...` only in the ORDER BY clause, not in the WHERE clause. The unique constraint on `(asset_name, partition_key)` scoped to in-flight states prevents duplicate partition runs independently of the claim atomicity mechanism.
+**关键架构洞察：** Phase 2 的 50-goroutine 原子性测试通过以下方式保留：将 SKIP LOCKED + `WHERE state='queued'` + 新的 `WHERE priority...` 仅保留在 ORDER BY 子句中，而非 WHERE 子句中。`(asset_name, partition_key)` 上的唯一约束限于 in-flight 状态，防止重复分区 run 独立于 claim 原子性机制。
 
-**Primary recommendation:** Implement the scheduler as a single tick goroutine that queries both `schedules` and `sensors` tables in sequence within a 30-second loop. Priority-aware claim is a one-line ORDER BY change to `claim.go`. All else is additive schema + new packages.
+**主要建议：** 将调度器实现为单 tick goroutine，在 30 秒循环内依次查询 `schedules` 和 `sensors` 表。优先级感知 claim 是 `claim.go` 中 ORDER BY 的一行变更。所有其他都是增量 schema + 新包。
 
 ---
 
@@ -82,17 +84,17 @@ Phase 3 adds the auto-trigger and partition layer atop Phase 2's execution kerne
 
 | Library | Version | Purpose | Why Standard |
 |---------|---------|---------|--------------|
-| `github.com/robfig/cron/v3` | v3.0.1 [VERIFIED: proxy.golang.org] | Cron expression parsing + `Schedule.Next()` API | Only parser used — not its in-process runner. Parser-only use is the established expert pattern for custom tick-loop schedulers |
-| `entgo.io/ent` | v0.14.0 (already in go.mod) [VERIFIED: go.mod] | ent schema for `schedules`, `sensors`, `backfills` entities | Already used for all schema work in Phase 1+2 |
-| `database/sql` + `pgx/v5` | pgx v5.9.1 (already in go.mod) [VERIFIED: go.mod] | Raw claim query (priority ORDER BY), schedule/sensor tick SELECT FOR UPDATE SKIP LOCKED | Phase 2 ClaimNext already uses raw SQL for claim atomicity |
+| `github.com/robfig/cron/v3` | v3.0.1 [VERIFIED: proxy.golang.org] | Cron expression parsing + `Schedule.Next()` API | 仅用作解析器——不实例化其内置运行器。自定义 tick 循环调度器的既定专家模式 |
+| `entgo.io/ent` | v0.14.0 (已在 go.mod 中) [VERIFIED: go.mod] | schedules、sensors、backfills 实体的 ent schema | Phase 1+2 所有 schema 工作已使用 |
+| `database/sql` + `pgx/v5` | pgx v5.9.1 (已在 go.mod 中) [VERIFIED: go.mod] | 原始 claim 查询（priority ORDER BY）、schedule/sensor tick SELECT FOR UPDATE SKIP LOCKED | Phase 2 ClaimNext 已使用原始 SQL 实现 claim 原子性 |
 
 ### Supporting (Unchanged from Phase 2)
 
 | Library | Version | Purpose | When to Use |
 |---------|---------|---------|-------------|
-| `ariga.io/atlas` | already in go.mod [VERIFIED] | Atlas migrations for new tables + run column additions | Every Phase 3 schema change goes through Atlas per established pattern |
-| `github.com/google/uuid` | v1.6.0 (already in go.mod) [VERIFIED: go.mod] | backfill_id generation | UUID for backfill_id recommended (see Claude's Discretion below) |
-| `log/slog` | stdlib (Go 1.25.0) [VERIFIED: go version] | Structured logging in scheduler/sensor loops | Already used throughout Phase 2 |
+| `ariga.io/atlas` | 已在 go.mod 中 [VERIFIED] | 新表 + run 列的 Atlas 迁移 | 每个 Phase 3 schema 变更都通过 Atlas 按既定模式进行 |
+| `github.com/google/uuid` | v1.6.0 (已在 go.mod 中) [VERIFIED: go.mod] | backfill_id 生成 | UUID 用于 backfill_id（见下方 Claude's Discretion）|
+| `log/slog` | stdlib (Go 1.25.0) [VERIFIED: go version] | Scheduler/sensor 循环中的结构化日志 | Phase 2 中已全面使用 |
 
 ### New Dependency
 
@@ -100,7 +102,7 @@ Phase 3 adds the auto-trigger and partition layer atop Phase 2's execution kerne
 go get github.com/robfig/cron/v3@v3.0.1
 ```
 
-robfig/cron/v3 is the only net-new dependency. Everything else reuses what Phase 2 already imports.
+robfig/cron/v3 是唯一的净新依赖项。其他所有内容都是 Phase 2 已导入的复用。
 
 ---
 
@@ -153,11 +155,11 @@ migrations/
 
 ## Pattern 1: robfig/cron/v3 — Parser-Only Usage
 
-**What:** Use `cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)` to parse user-supplied cron strings and call `schedule.Next(t)` for computing `next_fire_at`. Never instantiate `cron.New()` — the built-in runner would compete with the custom tick loop.
+**内容：** 使用 `cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)` 解析用户提供的 cron 字符串，并调用 `schedule.Next(t)` 计算 `next_fire_at`。永不实例化 `cron.New()`——内置运行器会与自定义 tick 循环竞争。
 
-**Why parser-only:** The built-in `cron.Cron` runner runs each job in its own goroutine and does not use the database as the coordination primitive. Phase 3's multi-replica safety requirement (D-03) demands that only one scheduler instance fires per cron tick, which is achieved via `SELECT ... FOR UPDATE SKIP LOCKED` on the `schedules` table. Using the built-in runner would bypass this.
+**为何仅用解析器：** 内置的 `cron.Cron` 运行器在独立 goroutine 中运行每个 job，且不使用数据库作为协调原语。Phase 3 的多副本安全需求（D-03）要求每次 cron tick 仅有一个调度器实例触发，这通过 `SELECT ... FOR UPDATE SKIP LOCKED` 在 `schedules` 表上实现。使用内置运行器会绕过这一点。
 
-**API surface needed:** [VERIFIED: pkg.go.dev/github.com/robfig/cron/v3]
+**所需 API surface：** [VERIFIED: pkg.go.dev/github.com/robfig/cron/v3]
 
 ```go
 // Source: pkg.go.dev/github.com/robfig/cron/v3
@@ -188,7 +190,7 @@ nextFire = sched.Next(lastFiredAt.In(loc))
 // wall-clock window the partition represents (cron alignment), not the stored key.
 ```
 
-**Missed-window detection (D-04 LatestOnly):**
+**漏窗检测（D-04 LatestOnly）：**
 
 ```go
 // Source: custom logic, cron.Schedule.Next() semantics [VERIFIED: pkg.go.dev]
@@ -211,20 +213,20 @@ func computeNextAndDetectMiss(sched cron.Schedule, lastFiredAt time.Time, now ti
 }
 ```
 
-**Error modes for invalid expressions:**
-- `"bad field"` for wrong number of fields
-- `"end of range (X) < start of range (Y)"` for inverted ranges like `5-3`
-- `""` (empty string) → parser returns descriptive error
-- `"@every 0s"` → accepted but fires immediately on every tick; log a warning
-- Error type is `error` (interface) — no sentinel type [VERIFIED: pkg.go.dev/github.com/robfig/cron/v3]
+**无效表达式的错误模式：**
+- `"bad field"` 表示字段数量错误
+- `"end of range (X) < start of range (Y)"` 表示类似 `5-3` 的反向范围
+- `""`（空字符串）→ 解析器返回描述性错误
+- `"@every 0s"` → 被接受但会在每次 tick 时立即触发；记录警告
+- 错误类型是 `error`（接口）——没有 sentinel 类型 [VERIFIED: pkg.go.dev/github.com/robfig/cron/v3]
 
-**Version note:** v3.0.1 (2020-01-04) is the only v3 release. The library is stable and maintenance-only. [VERIFIED: proxy.golang.org]
+**版本说明：** v3.0.1 (2020-01-04) 是唯一的 v3 发布。该库稳定且仅维护。 [VERIFIED: proxy.golang.org]
 
 ---
 
 ## Pattern 2: Schedules Table Schema (ent + SQL migration)
 
-**ent schema `internal/storage/ent/schema/schedule.go`:**
+**ent schema `internal/storage/ent/schema/schedule.go`：**
 
 ```go
 // Source: ent v0.14.0 patterns, consistent with Phase 2 run.go schema [VERIFIED: go.mod]
@@ -261,7 +263,7 @@ func (Schedule) Indexes() []ent.Index {
 }
 ```
 
-**ent schema `internal/storage/ent/schema/sensor.go`:**
+**ent schema `internal/storage/ent/schema/sensor.go`：**
 
 ```go
 type Sensor struct{ ent.Schema }
@@ -301,7 +303,7 @@ func (Sensor) Indexes() []ent.Index {
 }
 ```
 
-**ent schema `internal/storage/ent/schema/backfill.go`:**
+**ent schema `internal/storage/ent/schema/backfill.go`：**
 
 ```go
 type Backfill struct{ ent.Schema }
@@ -332,7 +334,7 @@ func (Backfill) Indexes() []ent.Index {
 }
 ```
 
-**runs table additions (SQL migration fragment):**
+**runs 表补充（SQL 迁移片段）：**
 
 ```sql
 -- Phase 3 additive changes to runs table
@@ -366,9 +368,9 @@ CREATE INDEX IF NOT EXISTS run_backfill_id ON runs (backfill_id) WHERE backfill_
 
 ## Pattern 3: Scheduler Tick Loop
 
-**What:** A single goroutine runs every 30 seconds (configurable). Each tick fires two queries in sequence: `fireSchedules()` and `evaluateSensors()`. Both use `SELECT ... FOR UPDATE SKIP LOCKED` on their respective tables to achieve multi-replica safety without leader election.
+**内容：** 单个 goroutine 每 30 秒运行一次（可配置）。每次 tick 依次执行两个查询：`fireSchedules()` 和 `evaluateSensors()`。两者都在各自表上使用 `SELECT ... FOR UPDATE SKIP LOCKED` 以实现多副本安全，无需 leader 选举。
 
-**Graceful shutdown pattern:**
+**优雅关闭模式：**
 
 ```go
 // Source: standard Go shutdown pattern [ASSUMED - well-established idiom]
@@ -402,7 +404,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 }
 ```
 
-**Tick-loop atomicity — schedule firing (SELECT FOR UPDATE SKIP LOCKED per D-02):**
+**Tick 循环原子性——schedule firing（每行一个事务，最小化锁持有时间）：**
 
 ```go
 // internal/schedule/fire.go
@@ -444,22 +446,22 @@ func (d *Daemon) fireOneSchedule(ctx context.Context, schedID uuid.UUID, ...) er
 }
 ```
 
-**Jitter strategy (Claude's Discretion):** Add `rand.Int63n(5000)` milliseconds (up to 5s) to the next tick start time to prevent thundering herd when multiple scheduler replicas start simultaneously. Each replica draws its own jitter, so they naturally stagger. Jitter is applied to the ticker interval, not to `next_fire_at` in the database — the database time is the source of truth.
+**抖动策略（Claude's Discretion）：** 将 `rand.Int63n(5000)` 毫秒（最多 5 秒）添加到下一个 tick 开始时间，以防止多个调度器副本同时启动时的雷鸣群效应。每个副本绘制自己的抖动，因此自然错开。抖动应用于 ticker 间隔，而非数据库中的 `next_fire_at`——数据库时间是真相的来源。
 
-**Missed-window detection:** When `last_fire_at` is old and multiple windows have elapsed, compute `missed = count windows between last_fire_at and now`, fire the most recent one (D-04 LatestOnly), set `next_fire_at = sched.Next(now)`, emit `schedule.missed` event with `skipped_count = missed - 1` in payload.
+**漏窗检测：** 当 `last_fire_at` 较旧且已过多个窗口时，计算 `missed = last_fire_at 和 now 之间窗口数`，触发最近的一个（D-04 LatestOnly），设置 `next_fire_at = sched.Next(now)`，发出 `schedule.missed` 事件，payload 中 `skipped_count = missed - 1`。
 
 ---
 
 ## Pattern 4: Priority-Aware Claim SQL
 
-**Exact query change to `internal/run/claim.go`:** [VERIFIED against existing claim.go source]
+**对 `internal/run/claim.go` 的精确查询变更：** [VERIFIED against existing claim.go source]
 
-The existing ORDER BY is:
+现有 ORDER BY 为：
 ```sql
 ORDER BY queued_at
 ```
 
-Phase 3 change (priority-then-FIFO, D-13):
+Phase 3 变更（优先级然后 FIFO，D-13）：
 ```sql
 ORDER BY
     CASE priority
@@ -471,7 +473,7 @@ ORDER BY
     queued_at ASC
 ```
 
-The full updated SELECT query:
+完整更新的 SELECT 查询：
 ```sql
 SELECT id, asset_name, trigger, queued_at, partition_key, priority, backfill_id
 FROM runs
@@ -488,16 +490,16 @@ FOR UPDATE SKIP LOCKED
 LIMIT 1
 ```
 
-**Why this preserves the 50-goroutine test:** The test inserts one `state='queued'` run with `priority='normal'` and asserts exactly one goroutine wins. The ORDER BY change only affects which row is selected when multiple rows are eligible — with a single row, the ordering is irrelevant. SKIP LOCKED + `WHERE state='queued'` + the defense-in-depth `WHERE id=$N AND state='queued'` UPDATE guard all remain intact. [VERIFIED: claim_test.go reviewed — test inserts `priority` default value (`normal`)]
+**为何保留 50-goroutine 测试：** 测试插入一个 `state='queued'` run 且 `priority='normal'`，断言恰好一个 goroutine 获胜。ORDER BY 变更仅影响有多行时哪行被选中——单行时排序无关。SKIP LOCKED + `WHERE state='queued'` + 纵深防御 `WHERE id=$N AND state='queued'` UPDATE guard 均保持完整。 [VERIFIED: claim_test.go reviewed — test inserts `priority` default value (`normal`)]
 
-**Index required for priority-aware scan:**
+**优先级感知扫描所需索引：**
 ```sql
 -- Already planned in migration fragment above
 CREATE INDEX run_state_priority_queued_at ON runs (state, priority, queued_at);
 ```
-PostgreSQL will use this for `WHERE state='queued' ORDER BY priority_case, queued_at` because the CASE expression over a low-cardinality column (`critical|normal|backfill`) on a pre-filtered set is cheap. The index on `(state, priority, queued_at)` avoids a sort step. [ASSUMED — standard Postgres index selection behavior; exact plan should be verified with EXPLAIN ANALYZE in the 1000-backfill load test]
+PostgreSQL 将用于 `WHERE state='queued' ORDER BY priority_case, queued_at`，因为 CASE 表达式在低基数列（`critical|normal|backfill`）上的预过滤集上很便宜。`(state, priority, queued_at)` 上的索引避免了排序步骤。 [ASSUMED — standard Postgres index selection behavior; exact plan should be verified with EXPLAIN ANALYZE in the 1000-backfill load test]
 
-**ClaimedRun struct update:**
+**ClaimedRun 结构更新：**
 ```go
 type ClaimedRun struct {
     ID           uuid.UUID
@@ -514,7 +516,7 @@ type ClaimedRun struct {
 
 ## Pattern 5: Sensor Evaluation Harness
 
-**Safety contract:** Sensors are user-supplied code. The harness must: (1) enforce a per-evaluation timeout, (2) recover from panics, (3) propagate ctx cancellation. [ASSUMED - standard Go patterns for running untrusted user functions]
+**安全契约：** 传感器是用户提供的代码。harness 必须：（1）强制执行每次求值的超时，（2）从 panic 中恢复，（3）传播 ctx 取消。 [ASSUMED - standard Go patterns for running untrusted user functions]
 
 ```go
 // internal/sensor/evaluate.go
@@ -537,14 +539,14 @@ func safeEvaluate(
 }
 ```
 
-**Dedup state persistence:** After a successful `Sense()` call that returns `Fired=true`:
-1. Compare `result.RunKey` to `sensors.last_run_key`. If equal, emit `sensor.dedup_skipped`, no enqueue.
-2. Check `NOW() < sensors.cooldown_until`. If true, emit `sensor.cooldown_skipped`, no enqueue.
-3. Otherwise: INSERT run row, UPDATE `sensors.last_run_key=result.RunKey`, `last_fired_at=NOW()`, `cooldown_until=NOW()+spec.Cooldown`.
+**去重状态持久化：** 成功 `Sense()` 调用返回 `Fired=true` 后：
+1. 比较 `result.RunKey` 和 `sensors.last_run_key`。如果相等，发出 `sensor.dedup_skipped`，不加入队列。
+2. 检查 `NOW() < sensors.cooldown_until`。如果为真，发出 `sensor.cooldown_skipped`，不加入队列。
+3. 否则：INSERT run 行，UPDATE `sensors.last_run_key=result.RunKey`，`last_fired_at=NOW()`，`cooldown_until=NOW()+spec.Cooldown`。
 
-All three steps are within one transaction to prevent a partial update racing with a second tick. [VERIFIED: the SELECT FOR UPDATE SKIP LOCKED on the sensors row is the lock mechanism]
+三个步骤在同一个事务中完成，以防止部分更新与第二个 tick 竞争。 [VERIFIED: SELECT FOR UPDATE SKIP LOCKED on the sensors row is the lock mechanism]
 
-**Consecutive failure handling (D-08):**
+**连续失败处理（D-08）：**
 
 ```go
 func (d *Daemon) handleSenseError(ctx context.Context, sensorID uuid.UUID, err error, threshold int) {
@@ -566,13 +568,13 @@ func (d *Daemon) handleSenseError(ctx context.Context, sensorID uuid.UUID, err e
 }
 ```
 
-**Auto-reset on success (Claude's Discretion — recommend yes):** On a successful evaluation reset `consecutive_failures = 0`. This means a sensor that fails 59 times and then succeeds once starts fresh. This avoids operators being woken up for a sensor that self-recovered. [ASSUMED — reasonable default; document in code comment]
+**成功后自动重置（Claude's Discretion——推荐是）：** 成功求值时将 `consecutive_failures` 重置为 `0`。这意味着一个传感器失败 59 次后成功一次就开始重新计数。这避免了操作员被一个自我恢复的传感器唤醒。 [ASSUMED — reasonable default; document in code comment]
 
 ---
 
 ## Pattern 6: Partition Key Generation
 
-**All algorithms are UTC-based (D-11). TZ on the spec is only for cron alignment.** [VERIFIED: D-11 locks this]
+**所有算法都基于 UTC（D-11）。spec 上的 TZ 仅用于 cron 对齐。** [VERIFIED: D-11 locks this]
 
 ```go
 // internal/partition/keygen.go
@@ -602,17 +604,17 @@ func MonthlyKey(t time.Time) string {
 }
 ```
 
-**ISO week edge cases (WeeklyKey):** [VERIFIED: Go stdlib ISOWeek() documentation]
+**ISO 周边界情况（WeeklyKey）：** [VERIFIED: Go stdlib ISOWeek() documentation]
 
-The Go `time.ISOWeek()` method correctly handles:
-- **Year boundary:** December 28-31 may belong to ISO week 1 of the next year. Example: `2019-12-30` → `"2020-W01"`. ISOWeek() returns `(2020, 1)` not `(2019, 53)`.
-- **Year boundary backward:** January 1-3 may belong to the last week of the previous year. Example: `2015-01-01` → `"2015-W01"` or `"2014-W53"` depending on weekday. ISOWeek() returns the correct ISO year.
-- **Long years (53 weeks):** Some years have ISO week 53 (e.g., 2015 had week 53). ISOWeek() handles this correctly.
-- **No special handling needed** — `time.ISOWeek()` implements RFC 5545 / ISO 8601 correctly.
+Go `time.ISOWeek()` 方法正确处理：
+- **年份边界：** 12 月 28-31 日可能属于下一 ISO 周的第一周。示例：`2019-12-30` → `"2020-W01"`。ISOWeek() 返回 `(2020, 1)` 而非 `(2019, 53)`。
+- **年份边界向后：** 1 月 1-3 日可能属于上一年的最后一周。示例：`2015-01-01` → `"2015-W01"` 或 `"2014-W53"` 取决于星期几。ISOWeek() 返回正确的 ISO 年。
+- **长年份（53 周）：** 某些年份有 ISO 第 53 周（例如 2015 年有第 53 周）。ISOWeek() 正确处理。
+- **无需特殊处理** — `time.ISOWeek()` 正确实现 RFC 5545 / ISO 8601。
 
-**Partition key validation:** Keys must be `<=128 chars` (D-10 `VARCHAR(128)`). Daily/Weekly/Monthly keys are at most 8/9/7 chars respectively. Category keys are user-supplied — the builder should validate `len(key) <= 128 && !strings.Contains(key, "/")` to prevent path-injection confusion in downstream lineage tools.
+**分区键验证：** 键必须 `<=128 chars`（D-10 `VARCHAR(128)`）。Daily/Weekly/Monthly 键最多分别为 8/9/7 个字符。Category 键是用户提供的——builder 应验证 `len(key) <= 128 && !strings.Contains(key, "/")` 以防止下游血缘工具中的路径注入混淆。
 
-**CurrentKey (for Schedule→Partition composition, D-12):** When a cron schedule fires, it enqueues the "current" partition. Convention: use the partition window that *contains* `now - 1 window` (i.e., yesterday's daily, last week's weekly). This aligns with Dagster's "cron fires for the preceding window" behavior. [ASSUMED — Dagster convention; document as configurable offset, defaulting to "previous window"]
+**CurrentKey（用于 Schedule→Partition 组合，D-12）：** 当 cron 调度触发时，它将 "current" 分区加入队列。约定：使用包含 `now - 1 window` 的分区窗口（即昨天的 daily，上周的 weekly）。这与 Dagster 的 "cron 为前一个窗口触发" 行为一致。 [ASSUMED — Dagster convention; document as configurable offset, defaulting to "previous window"]
 
 ```go
 // CurrentDailyKey: for a daily cron firing at midnight, the "current" partition is yesterday.
@@ -626,7 +628,7 @@ func CurrentDailyKey(now time.Time, offset time.Duration) string {
 
 ## Pattern 7: Backfill Mass-Enqueue
 
-**Transactional batch insert (D-15):**
+**事务性批量插入（D-15）：**
 
 ```go
 // internal/backfill/submit.go
@@ -673,7 +675,7 @@ func Submit(ctx context.Context, store storage.Storage, events event.Writer,
 }
 ```
 
-**Status aggregation query:**
+**状态聚合查询：**
 
 ```sql
 -- ./platform backfill status <backfill_id>
@@ -691,15 +693,15 @@ GROUP BY b.id, b.asset_name, b.total_partitions, b.submitted_at, r.state
 ORDER BY r.state;
 ```
 
-**Backfill row-count limits:** 365 rows (1 year daily) is safe. 3650 rows (10 years daily) is safe. 36500 rows (100 years daily) is functionally absurd but still within Postgres INSERT limits. The real risk is `max_concurrent_backfill` — if set too high (e.g., 100), 100 parallel connections will saturate the connector. Default `max_concurrent_backfill = 5` is reasonable. [ASSUMED — based on typical Postgres connection pool sizing]
+**Backfill 行数限制：** 365 行（1 年 daily）是安全的。3650 行（10 年 daily）是安全的。36500 行（100 年 daily）功能上荒谬但仍在 Postgres INSERT 限制内。真正的风险是 `max_concurrent_backfill`——如果设置过高（例如 100），100 个并行连接将饱和连接器。默认 `max_concurrent_backfill = 5` 是合理的。 [ASSUMED — based on typical Postgres connection pool sizing]
 
-**backfill_id recommendation (Claude's Discretion):** Use `uuid.New()`. UUIDs are operator-copyable (36 chars), collision-proof, and consistent with all other IDs in the schema. Timestamp-prefixed strings would be sortable by submission time but add parsing complexity.
+**backfill_id 推荐（Claude's Discretion）：** 使用 `uuid.New()`。UUID 可由操作员复制（36 字符），无碰撞，与 schema 中所有其他 ID 一致。时间戳前缀字符串可按提交时间排序，但会增加解析复杂性。
 
 ---
 
 ## Pattern 8: Partition-Spec Parsing (CLI)
 
-**Three spec formats (D-14):**
+**三种 spec 格式（D-14）：**
 
 ```go
 // internal/backfill/submit.go or cmd/platform/backfill.go
@@ -734,7 +736,7 @@ func ParsePartitionSpec(strategy partition.PartitionStrategy, spec string) (Part
 }
 ```
 
-**`KeysBetween` for date range expansion:**
+**用于日期范围扩展的 `KeysBetween`：**
 
 ```go
 // partition/keygen.go
@@ -782,7 +784,7 @@ func isoWeekStart(t time.Time) time.Time {
 
 ## Pattern 9: CLI Subcommand Wiring
 
-**`cmd/platform/main.go` switch extension:**
+**`cmd/platform/main.go` switch 扩展：**
 
 ```go
 // cmd/platform/main.go — additive cases
@@ -812,7 +814,7 @@ case "backfill":
 }
 ```
 
-**`cmd/platform/backfill.go` flag parsing:**
+**`cmd/platform/backfill.go` flag 解析：**
 
 ```go
 // cmd/platform/backfill.go
@@ -832,7 +834,7 @@ func runBackfill(args []string) error {
 
 ## Pattern 10: Builder DSL Extension
 
-**`internal/asset/builder.go` additions:**
+**`internal/asset/builder.go` 补充：**
 
 ```go
 // .Schedule(expr) — attach cron expression (ORCH-05)
@@ -855,7 +857,7 @@ func (b *Builder) Partitions(strategy PartitionStrategy) *Builder {
 }
 ```
 
-**`internal/asset/io.go` extension:**
+**`internal/asset/io.go` 扩展：**
 
 ```go
 // AssetIO extended interface — additive, backwards compatible
@@ -868,20 +870,20 @@ type AssetIO interface {
 }
 ```
 
-The `assetIO` struct gains a `partitionKey string` field, populated from the `ClaimedRun.PartitionKey` passed through the executor into `NewAssetIO(a, resolver, partitionKey)`.
+`assetIO` 结构体增加 `partitionKey string` 字段，从通过 executor 传入的 `ClaimedRun.PartitionKey` 填充到 `NewAssetIO(a, resolver, partitionKey)`。
 
 ---
 
 ## Don't Hand-Roll
 
 | Problem | Don't Build | Use Instead | Why |
-|---------|-------------|-------------|-----|
-| Cron expression parsing | Custom cron parser | `robfig/cron/v3` NewParser + `Schedule.Next()` | Edge cases in DST, leap years, DOM/DOW interaction are validated by thousands of users |
-| ISO week calculation | Custom ISOWeek logic | Go stdlib `time.ISOWeek()` | Go stdlib correctly handles year-boundary weeks (ISO 8601 compliant since Go 1.0) |
-| Multi-replica scheduler safety | Redis locks, ZooKeeper, leader election | `SELECT ... FOR UPDATE SKIP LOCKED` (already in use for run claiming) | Same primitive already tested with 50-goroutine atomicity test |
-| Sensor goroutine leak prevention | Manual goroutine tracking | `context.WithTimeout` + `defer cancel()` wrapping each Sense() call | Context propagation is the canonical Go pattern; timeout is enforced at the OS scheduler level |
-| Partition uniqueness enforcement | Application-level check-then-insert | Partial unique index `(asset_name, partition_key) WHERE state IN ('queued','starting','running')` | Database enforces atomically; application check-then-insert has TOCTOU race |
-| Backfill progress tracking | Custom coordinator goroutine | `SELECT state, count(*) FROM runs WHERE backfill_id=$1 GROUP BY state` | The runs table is already the ground truth; no additional coordinator needed |
+|---------|-------------|-------------|---|
+| Cron expression parsing | Custom cron parser | `robfig/cron/v3` NewParser + `Schedule.Next()` | DST、闰年、DOM/DOW 交互的边缘情况已通过数千用户验证 |
+| ISO week calculation | Custom ISOWeek logic | Go stdlib `time.ISOWeek()` | Go stdlib 正确处理年份边界周（自 Go 1.0 起符合 ISO 8601）|
+| Multi-replica scheduler safety | Redis locks, ZooKeeper, leader election | `SELECT ... FOR UPDATE SKIP LOCKED` (already in use for run claiming) | 相同原语已通过 50-goroutine 原子性测试验证 |
+| Sensor goroutine leak prevention | Manual goroutine tracking | `context.WithTimeout` + `defer cancel()` wrapping each Sense() call | Context 传播是规范的 Go 模式；超时在 OS 调度器级别强制执行 |
+| Partition uniqueness enforcement | Application-level check-then-insert | Partial unique index `(asset_name, partition_key) WHERE state IN ('queued','starting','running')` | 数据库原子性强制执行；应用 check-then-insert 有 TOCTOU 竞争 |
+| Backfill progress tracking | Custom coordinator goroutine | `SELECT state, count(*) FROM runs WHERE backfill_id=$1 GROUP BY state` | runs 表已是真相的来源；无需额外协调器 |
 
 ---
 

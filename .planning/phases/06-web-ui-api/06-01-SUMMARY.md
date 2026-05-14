@@ -54,9 +54,9 @@ duration: 22.5min
 completed: 2026-05-12
 ---
 
-# Phase 06 Plan 01: ConnectRPC API Foundation and React SPA Scaffold
+# Phase 06 Plan 01: ConnectRPC API 基础与 React SPA 脚手架
 
-**ConnectRPC protocol established with protobuf IDL, chi router integration, React 19 SPA scaffold with TanStack Router/Query, /v1/me endpoint with cookie-based auth**
+**ConnectRPC 协议已建立，包含 protobuf IDL、chi 路由集成、React 19 SPA 脚手架（TanStack Router/Query）、/v1/me 端点及基于 Cookie 的认证**
 
 ## Performance
 

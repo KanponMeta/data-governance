@@ -93,9 +93,9 @@ duration: 25min
 completed: 2026-05-10
 ---
 
-# Phase 05 Plan 05-04: Governance Workflow Summary
+# Phase 05 Plan 05-04: 治理工作流摘要
 
-**Governance state-machine (submit → auto-approval pipeline → human review → approve/reject) wired to the audit hash chain, with three-source reviewer pool resolution, executor materialization gate, SLA scanner, REST + CLI surfaces, and a reviewer-reassign safety net.**
+**治理状态机（submit → 自动审批管道 → 人工审批 → approve/reject）接入哈希链审计日志，具有三源审查者池解析器、执行器物化门控、SLA 扫描器、REST + CLI 接口以及审查者重新分配安全网。**
 
 ## Performance
 
@@ -107,17 +107,17 @@ completed: 2026-05-10
 
 ## Accomplishments
 
-- governance_reviews state-machine table (D-08, D-12) + team_owners fallback + event_log CHECK extension covering all Phase 5 event_log subset (D-23)
-- Builder DSL extension — `Reviewers / Quorum / RequireHumanReview / EscalationRoles` chainable methods + `Quorum1 / Quorum2 / QuorumAll` constants — explicitly excluded from `code_hash` so a routing change does NOT reseat the asset version
-- 3-source reviewer pool resolver: Builder > YAML tag > team_owners owner-fallback (D-09); each entry tagged with Source provenance for audit payloads
-- 5-check auto-approval pipeline (D-10): unack breaking schema_changes → PII column without policy → quality rule references missing column → lineage drift pending → PII presence (soft, requires human review). RequireHumanReview() builder flag forces human path even when all 5 checks pass.
-- Workflow service — Submit / Approve / Reject / Reassign / Status with all transitions atomic-with-audit-hash-chain; ErrCommentRequired enforced on Reject; QuorumAll path supported with v1 vote-ledger
-- Executor materialization gate (D-08) — `runtime.Deps.GovernanceGatingEnabled` defaults false (logs slog.Warn at construction per Pitfall #11); when on, blocked steps emit governance.materialization_blocked to BOTH event_log AND audit hash chain (D-23 dual-emit), then short-circuit the step
-- SLA scanner (D-11) — tick-driven, sla_breach_emitted_at dedup, recipients = reviewer_pool ∪ owner ∪ escalation_roles; integrated into the existing scheduler tick body alongside the Plan 05-05 freshness scanner
-- REST surface — `POST /governance/submit`, `POST /governance/reviews/{id}/approve|reject|reassign`, `GET /governance/status[/{asset}]` — all gated by `auth.RequirePermission` with the seeded Casbin policies (data-engineer:write submit, governance:write decide, admin:manage reassign)
-- CLI surface — `./platform governance {submit|review|status|reassign}` via `platform.RegisterCommand` init() self-registration; `cmd/platform/main.go` adds `case "governance"` per acceptance criterion
-- ent schema declaration for GovernanceReview — codegen disabled due to pre-existing broken state (documented in plan 05-01 SUMMARY); workflow uses direct SQL queries like the existing role / role_assignments paths
-- Reviewer reassign safety net (Pitfall #12) — rotates reviewer_pool_snapshot for in-flight reviews; admin-only via Casbin manage permission
+- governance_reviews 状态机表（D-08, D-12）+ team_owners 回退 + event_log CHECK 扩展覆盖所有 Phase 5 event_log 子集（D-23）
+- Builder DSL 扩展 — `Reviewers / Quorum / RequireHumanReview / EscalationRoles` chainable 方法 + `Quorum1 / Quorum2 / QuorumAll` 常量 — 明确排除在 `code_hash` 之外，因此路由变更不会重新提交资产版本
+- 3-source 审查者池解析器：Builder > YAML tag > team_owners owner-fallback（D-09）；每个条目标记有 Source 出处用于审计载荷
+- 5-check 自动审批管道（D-10）：未确认的破坏性 schema_changes → PII 列无策略 → 质量规则引用缺失列 → 血缘漂移待处理 → PII 存在（软，需要人工审批 + privacy-team）。RequireHumanReview() builder 标志强制走人工路径即使全部 5 项检查通过。
+- Workflow 服务 — Submit / Approve / Reject / Reassign / Status，所有转换原子化并接入审计哈希链；Reject 强制 ErrCommentRequired；QuorumAll 路径支持 v1 投票账本
+- 执行器物化门控（D-08） — `runtime.Deps.GovernanceGatingEnabled` 默认为 false（构造时记录 slog.Warn 按 Pitfall #11）；开启时，被阻止的步骤向 event_log 和审计哈希链双重发送 governance.materialization_blocked（D-23 dual-emit），然后短路该步骤
+- SLA 扫描器（D-11） — tick 驱动，sla_breach_emitted_at 去重，接收人 = reviewer_pool ∪ owner ∪ escalation_roles；集成到现有调度器 tick 体内，与 Plan 05-05 freshness 扫描器并行
+- REST 接口 — `POST /governance/submit`, `POST /governance/reviews/{id}/approve|reject|reassign`, `GET /governance/status[/{asset}]` — 全部由 `auth.RequirePermission` 门控，基于 seeded Casbin 策略（data-engineer:write submit, governance:write decide, admin:manage reassign）
+- CLI 接口 — `./platform governance {submit|review|status|reassign}` 通过 `platform.RegisterCommand` init() 自注册；`cmd/platform/main.go` 添加 `case "governance"` 按验收标准
+- GovernanceReview 的 ent schema 声明 — 由于 pre-existing broken state（记录在 plan 05-01 SUMMARY 中）codegen 被禁用；workflow 使用直接 SQL 查询，与现有 role / role_assignments 路径一致
+- 审查者重新分配安全网（Pitfall #12） — 轮换进行中审查的 reviewer_pool_snapshot；仅管理员通过 Casbin manage 权限
 
 ## Task Commits
 
@@ -127,48 +127,48 @@ completed: 2026-05-10
 ## Files Created / Modified
 
 ### Migration
-- `migrations/20260510000005_phase5_governance_workflow.sql` — governance_reviews (14 columns + 3 indices + status CHECK + 3 FKs to user / asset_versions); team_owners (3 columns + JSONB roles); event_log CHECK extension covering 9 new event types; atlas.sum re-hashed.
+- `migrations/20260510000005_phase5_governance_workflow.sql` — governance_reviews (14 列 + 3 索引 + status CHECK + 3 FK 到 user / asset_versions)；team_owners (3 列 + JSONB roles)；event_log CHECK 扩展覆盖 9 个新事件类型；atlas.sum re-hashed。
 
 ### internal/asset/
-- `types.go` — added `Quorum` type + `Quorum1`/`Quorum2`/`QuorumAll` constants
-- `asset.go` — added `reviewerRoles / quorum / requireHumanReview / escalationRoles` fields + 4 accessors
-- `builder.go` — `Reviewers / Quorum / RequireHumanReview / EscalationRoles` chainable methods (NOT in code_hash)
-- `builder_test.go` — 5 tests including `TestBuilder_GovernanceConfig_NotInCodeHash`
+- `types.go` — 添加 `Quorum` 类型 + `Quorum1`/`Quorum2`/`QuorumAll` 常量
+- `asset.go` — 添加 `reviewerRoles / quorum / requireHumanReview / escalationRoles` 字段 + 4 个访问器
+- `builder.go` — `Reviewers / Quorum / RequireHumanReview / EscalationRoles` chainable 方法（不在 code_hash 中）
+- `builder_test.go` — 5 个测试包括 `TestBuilder_GovernanceConfig_NotInCodeHash`
 
 ### internal/event/
-- `types.go` — `EventTypeGovernanceMaterializationBlocked / EventTypeGovernanceReviewerReassigned` + typed payloads `GovernanceMaterializationBlockedPayload / GovernanceReviewerReassignedPayload`
+- `types.go` — `EventTypeGovernanceMaterializationBlocked / EventTypeGovernanceReviewerReassigned` + 类型化载荷 `GovernanceMaterializationBlockedPayload / GovernanceReviewerReassignedPayload`
 
 ### internal/governance/
 - `reviewers.go` (148 lines) — Resolver, ReviewerPool, ResolveReviewers, dedupRoles
-- `reviewers_test.go` (148 lines) — 6 cases via sqlmock + asset.Builder fixtures
-- `auto_approval.go` (270 lines) — AutoApprovalChecker, Decision enum, CheckResult, 5 SQL probes (hasUnackBreakingSchemaChange / piiColumnsCoverage / qualityRulesReferenceMissingColumn / declaredColumns / driftPending) + isUndefinedTable substring matcher
-- `auto_approval_test.go` (203 lines) — 7 cases via sqlmock
+- `reviewers_test.go` (148 lines) — 6 个 cases via sqlmock + asset.Builder fixtures
+- `auto_approval.go` (270 lines) — AutoApprovalChecker, Decision enum, CheckResult, 5 个 SQL probes (hasUnackBreakingSchemaChange / piiColumnsCoverage / qualityRulesReferenceMissingColumn / declaredColumns / driftPending) + isUndefinedTable substring matcher
+- `auto_approval_test.go` (203 lines) — 7 个 cases via sqlmock
 - `workflow.go` (450 lines) — Workflow, NewWorkflow, Submit, Approve, Reject, Reassign, Status, Get; sentinel errors; v1 vote ledger via comment field; QuorumAll resolution
-- `workflow_test.go` (305 lines) — 9 integration cases via testharness Postgres
+- `workflow_test.go` (305 lines) — 9 个集成 cases via testharness Postgres
 - `sla_scanner.go` (160 lines) — SLAScanner, OwnerLookup, SQLOwnerLookup, NewSLAScanner; per-row sla_breach_emitted_at update
-- `sla_scanner_test.go` (135 lines) — 4 integration cases
+- `sla_scanner_test.go` (135 lines) — 4 个集成 cases
 - `handler.go` (240 lines) — MountGovernance, HandlerDeps, submit/approve/reject/reassign/status handlers + RFC 7807 problem+json error responses
-- `handler_test.go` (240 lines) — 7 cases including the fast-feedback `TestRejectHandler_400_OnEmptyComment` no-DB path
+- `handler_test.go` (240 lines) — 7 个 cases 包括快速反馈 `TestRejectHandler_400_OnEmptyComment` no-DB 路径
 
 ### internal/runtime/
-- `executor.go` — Deps.GovernanceGatingEnabled, NewExecutor warning, runStep gate (queries asset_versions BEFORE token acquisition; emits event_log + audit dual-write; returns errMaterializationGated)
-- `executor_test.go` — 4 governance gate cases via testcontainer Postgres (gating disabled allows draft, gating+active allows, gating+draft blocks, gating+rejected blocks)
+- `executor.go` — Deps.GovernanceGatingEnabled, NewExecutor warning, runStep gate（在 token 获取前查询 asset_versions；发送 event_log + audit 双重写入；返回 errMaterializationGated）
+- `executor_test.go` — 4 个治理门控 cases via testcontainer Postgres（gating disabled allows draft, gating+active allows, gating+draft blocks, gating+rejected blocks）
 
 ### internal/api/
-- `governance_handlers.go` — `platform.RegisterRoutes("governance", MountGovernance)` init() bridge; reads optional Extra["policy.yaml"] (*policy.YAMLConfig) + Extra["governance.queue"] (notification.JobInserter); defaultMetadataLookup reads asset_metadata.tags + owner
+- `governance_handlers.go` — `platform.RegisterRoutes("governance", MountGovernance)` init() bridge；读取可选 Extra["policy.yaml"] (*policy.YAMLConfig) + Extra["governance.queue"] (notification.JobInserter)；defaultMetadataLookup 读取 asset_metadata.tags + owner
 
 ### internal/storage/ent/schema/
-- `governance_review.go` — ent entity definition (codegen disabled per pre-existing state)
+- `governance_review.go` — ent entity 定义（按 pre-existing state 禁用 codegen）
 
 ### cmd/platform/
-- `governance.go` (250 lines) — dispatchGovernance + submit/review/status/reassign cmds; ACTOR_ID env actor; flag-then-positional argument convention; openGovernanceDB helper
-- `governance_test.go` — 5 parse-layer cases (no DB required)
-- `scheduler.go` — governance.SQLOwnerLookup + governance.NewSLAScanner construction; govSLAScanner.Scan added to tick body; PLATFORM_GOVERNANCE_SLA_HOURS env (default 48)
-- `main.go` — `case "governance":` dispatch via platform.DispatchCommand (acceptance-criterion required)
+- `governance.go` (250 lines) — dispatchGovernance + submit/review/status/reassign cmds；ACTOR_ID env actor；flag-then-positional 参数约定；openGovernanceDB helper
+- `governance_test.go` — 5 个 parse-layer cases（无需 DB）
+- `scheduler.go` — governance.SQLOwnerLookup + governance.NewSLAScanner 构造；govSLAScanner.Scan 添加到 tick 体内；PLATFORM_GOVERNANCE_SLA_HOURS env（默认 48）
+- `main.go` — `case "governance":` 通过 platform.DispatchCommand 分发（验收标准要求）
 
 ## governance_reviews + team_owners Schema (output spec)
 
-`governance_reviews` (15 columns):
+`governance_reviews` (15 列):
 ```
 id                       UUID PRIMARY KEY DEFAULT gen_random_uuid()
 asset_version_id         UUID NOT NULL REFERENCES asset_versions(id)
@@ -210,9 +210,9 @@ updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 | 4 | lineage_drift            | `SELECT drift_status FROM asset_versions WHERE asset=$1 AND code_hash=$2 ORDER BY created_at DESC LIMIT 1`                                   | 'pending' → BLOCK "lineage drift unacknowledged"        |
 | 5 | pii_presence (soft)      | (re-uses #2's hasPII signal)                                                                                                                  | true → MUST_HUMAN_REVIEW + auto-add "privacy-team"      |
 
-`Builder.RequireHumanReview()` overrides post-pipeline: even when 1-5 pass, `DecisionMustHumanReview` is forced.
+`Builder.RequireHumanReview()` post-pipeline 覆盖：即使 1-5 通过，`DecisionMustHumanReview` 也会被强制。
 
-Missing tables (e.g. `quality_rules` in environments where Plan 05-05 hasn't run) short-circuit each probe to "no failures" via the `isUndefinedTable()` substring matcher — fail-open per Pitfall #11.
+缺失的表（例如 Phase 4 未安装环境中的 `quality_rules` 或 Plan 05-05 未安装环境中的 `quality_rules`）通过 `isUndefinedTable()` substring matcher 将每个 probe 短路为"无失败"——按 Pitfall #11 fail-open。
 
 ## gating_enabled Default-False WARN Implementation
 
@@ -226,7 +226,7 @@ if !deps.GovernanceGatingEnabled {
 }
 ```
 
-The slog.Warn log is emitted on every executor construction so operators see the inconsistency in production logs. Production runbook (per plan 05-04 user_setup) flips `GovernanceGatingEnabled=true`.
+slog.Warn 在每次执行器构造时发出，以便操作员在生产日志中看到不一致。生产手册（按 plan 05-04 user_setup）将 `GovernanceGatingEnabled=true`。
 
 ## Reassign CLI Examples
 

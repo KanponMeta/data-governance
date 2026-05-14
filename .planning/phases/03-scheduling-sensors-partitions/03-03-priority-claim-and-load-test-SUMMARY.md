@@ -70,7 +70,7 @@ completed: 2026-05-08
 
 # Phase 3 Plan 03: Priority-Aware Claim + Load Test Summary
 
-**ClaimNext now claims runs in tier order — `critical` → `normal` → `backfill` — without losing the SKIP LOCKED atomicity that the Phase 2 50-goroutine test asserts. The `Executor.Run` signature is frozen at `(ctx, *run.ClaimedRun)` for the rest of Phase 3.**
+**ClaimNext 现在按层级顺序 claim runs——`critical` → `normal` → `backfill`——同时不丢失 Phase 2 50-goroutine 测试所验证的 SKIP LOCKED 原子性。`Executor.Run` 签名在 Phase 3 剩余部分冻结为 `(ctx, *run.ClaimedRun)`。**
 
 ## Performance
 
@@ -101,7 +101,7 @@ const selectSQL = `
 `
 ```
 
-The CASE integer mapping (`critical=0, normal=1, backfill=2`, default `1`) mirrors `internal/run/priority.go::PriorityOrder` exactly. `TestPriorityOrderConsistency` enumerates `AllPriorities()` and asserts each value's integer.
+CASE 整数映射（`critical=0, normal=1, backfill=2`，默认 `1`）与 `internal/run/priority.go::PriorityOrder` 完全一致。`TestPriorityOrderConsistency` 枚举 `AllPriorities()` 并断言每个值的整数。
 
 ## Phase 2 Regression Guard — TestClaimAtomicity50Goroutines
 

@@ -65,11 +65,11 @@ duration: 12min
 completed: 2026-05-09
 ---
 
-# Phase 4 Plan 04: Lineage Writer + Schema Writer + Executor Transactional Integration Summary
+# Phase 4 Plan 04: 血缘写入器 + Schema写入器 + 执行器事务集成总结
 
-**Two writers that turn Wave 1's empty tables into a useful lineage + schema audit trail: lineage.Writer (SyncStaticEdges + CaptureRun), schema.Writer (HashSchema + Capture), executor.commitSuccess transactional boundary, and trackingIO D-04 platform-driven drift detection decorator**
+**两个写入器将 Wave 1 的空表转变为可用的血缘+Schema审计跟踪：lineage.Writer (SyncStaticEdges + CaptureRun)、schema.Writer (HashSchema + Capture)、executor.commitSuccess 事务边界，以及 trackingIO D-04 平台驱动的漂移检测装饰器**
 
-## Performance
+## 性能
 
 - **Duration:** ~12 min
 - **Started:** 2026-05-09T03:17:15Z
@@ -79,7 +79,7 @@ completed: 2026-05-09
 
 ## Accomplishments
 
-### Task 0: TrackingIO Decorator (D-04 platform-driven drift detection)
+### Task 0: TrackingIO 装饰器 (D-04 platform-driven drift detection)
 
 `internal/asset/io_tracking.go`:
 - `TrackingIO` interface embeds `AssetIO` and adds `Observed() []string`

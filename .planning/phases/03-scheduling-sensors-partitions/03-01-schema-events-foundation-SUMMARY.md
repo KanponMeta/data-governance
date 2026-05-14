@@ -70,7 +70,7 @@ completed: 2026-05-08
 
 # Phase 3 Plan 01: Schema + Events Foundation Summary
 
-**Three new ent entities (Schedule/Sensor/Backfill), three additive `runs` columns (partition_key/priority/backfill_id) with CHECK + partial-unique + claim-path indexes, and 13 Phase 3 EventType constants — every other Phase 3 plan now has its DB surface ready.**
+**三个新的 ent entities（Schedule/Sensor/Backfill）、三个 `runs` 表增量列（partition_key/priority/backfill_id）及其 CHECK + 部分唯一 + claim 路径索引，以及 13 个 Phase 3 EventType 常量——所有其他 Phase 3 计划的 DB 层已就绪。**
 
 ## Performance
 
@@ -83,19 +83,19 @@ completed: 2026-05-08
 
 ## Accomplishments
 
-- **runs table additions:** `partition_key VARCHAR(128) NULL`, `priority VARCHAR(16) NOT NULL DEFAULT 'normal'` with `CHECK (priority IN ('critical','normal','backfill'))`, `backfill_id UUID NULL`. Phase 2 atomicity test (`TestClaimAtomicity50Goroutines`) still passes against the new schema — regression guard intact.
-- **Three new tables created:** `schedules` (cron + paused_at + tick-scan index), `sensors` (min_interval_seconds + dedup state + auto-disable counter + tick-scan index), `backfills` (partition_spec + status + total_partitions). All owned by `platform_owner`; `platform_app` granted `SELECT, INSERT, UPDATE, DELETE`.
-- **Critical indexes:** `run_partition_inflight_unique` (partial UNIQUE, scoped to in-flight states — Pitfall 7), `run_state_priority_queued_at` (composite for D-13 priority claim path), `run_backfill_id` (partial for backfill aggregation).
-- **13 Phase 3 EventType constants** registered in `AllKnownTypes()` so `event.Writer.Append` accepts them: 4 `schedule.*` + 6 `sensor.*` + 3 `backfill.*`.
+- **runs 表追加：** `partition_key VARCHAR(128) NULL`、`priority VARCHAR(16) NOT NULL DEFAULT 'normal'` 含 `CHECK (priority IN ('critical','normal','backfill'))`、`backfill_id UUID NULL`。Phase 2 原子性测试（`TestClaimAtomicity50Goroutines`）在新 schema 下仍然通过——回归保护完整。
+- **三个新表已创建：** `schedules`（cron + paused_at + tick-scan index）、`sensors`（min_interval_seconds + dedup state + auto-disable counter + tick-scan index）、`backfills`（partition_spec + status + total_partitions）。全部由 `platform_owner` 拥有；`platform_app` 被授予 `SELECT, INSERT, UPDATE, DELETE`。
+- **关键索引：** `run_partition_inflight_unique`（部分 UNIQUE，限定在飞行中状态——Pitfall 7）、`run_state_priority_queued_at`（D-13 优先级 claim 路径的复合索引）、`run_backfill_id`（用于 backfill 聚合的部分索引）。
+- **13 个 Phase 3 EventType 常量** 已注册到 `AllKnownTypes()`，使 `event.Writer.Append` 接受它们：4 个 `schedule.*` + 6 个 `sensor.*` + 3 个 `backfill.*`。
 
 ## Task Commits
 
-Each task was committed atomically:
+每个任务原子提交：
 
 1. **Task 1: Add partition_key/priority/backfill_id columns to Run ent + migration** — `c328cdc` (feat)
-2. **Task 2: Create Schedule/Sensor/Backfill ent entities + migration with grants** — `5c28df4` (feat) — TDD GREEN was confirmed via `TestClaimAtomicity50Goroutines` regression on the live schema
+2. **Task 2: Create Schedule/Sensor/Backfill ent entities + migration with grants** — `5c28df4` (feat) — TDD GREEN 通过在 live schema 上确认 `TestClaimAtomicity50Goroutines` 回归来验证
 3. **Task 3 RED: Failing test for Phase 3 EventType constants** — `74f0d15` (test)
-4. **Task 3 GREEN: Add 13 EventType constants + extend AllKnownTypes()** — `19a6fa0` (feat) — `TestAllPhase3EventTypes` passes
+4. **Task 3 GREEN: Add 13 EventType constants + extend AllKnownTypes()** — `19a6fa0` (feat) — `TestAllPhase3EventTypes` 通过
 
 ## Migration Files
 

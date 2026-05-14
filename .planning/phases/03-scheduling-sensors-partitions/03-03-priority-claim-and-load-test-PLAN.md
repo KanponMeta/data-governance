@@ -55,14 +55,14 @@ must_haves:
 ---
 
 <objective>
-Modify `internal/run/claim.go` to claim runs in priority order (`critical` → `normal` → `backfill`) using a CASE expression in the ORDER BY clause, while preserving the SKIP LOCKED + state-guard atomicity that the Phase 2 50-goroutine test asserts. Extend the `ClaimedRun` struct to expose `partition_key`, `priority`, and `backfill_id` so the executor can pass them through to the runtime. Land two new tests:
+修改 `internal/run/claim.go` 以优先级顺序（`critical` → `normal` → `backfill`）claim runs，使用 CASE 表达式的 ORDER BY 子句，同时保留 Phase 2 50-goroutine 测试所验证的 SKIP LOCKED + state-guard 原子性。扩展 `ClaimedRun` 结构以暴露 `partition_key`、`priority` 和 `backfill_id`，使 executor 可以将它们传递到运行时。落地两个新测试：
 
-1. **TestClaimPriorityOrdering** — small-scale unit test verifying the CASE ORDER BY actually reorders runs.
-2. **TestPriorityClaimLoad** — load test with 1000 backfill + 50 normal runs claimed by 50 concurrent goroutines, asserting normal runs claim first, no duplicate claims (SKIP LOCKED preserved), and backfill runs only claim after normal runs are exhausted.
+1. **TestClaimPriorityOrdering** — 小规模单元测试，验证 CASE ORDER BY 实际重新排序 runs。
+2. **TestPriorityClaimLoad** — 负载测试，包含 1000 个 backfill + 50 个 normal runs，由 50 个并发 goroutines claim，断言 normal runs 首先被 claim，无重复 claim（SKIP LOCKED 保留），backfill runs 仅在 normal runs 耗尽后才被 claim。
 
-This plan is the **single point of truth** for the priority enum integer mapping (Pitfall 5). A dedicated `PriorityOrder(string) int` function in Go matches the SQL CASE expression; a unit test asserts they agree by enumerating each value.
+本计划是优先级枚举整数映射的**单一真实来源**（Pitfall 5）。Go 中专门的 `PriorityOrder(string) int` 函数与 SQL CASE 表达式匹配；一个单元测试通过枚举每个值来断言它们一致。
 
-**Single signature migration for Executor.Run:** Plan 03-03 sets `Executor.Run(ctx context.Context, claimed *run.ClaimedRun) error` as the final signature. Plan 03-07 (backfill CLI) will only READ additional fields off the same struct (e.g., `claimed.Priority == "backfill"` for layer-3 token tag); it does NOT change the signature again. This avoids the double-migration issue where callers updated by an intermediate signature break when a later plan changes it.
+**Executor.Run 的单一签名迁移：** 计划 03-03 设置 `Executor.Run(ctx context.Context, claimed *run.ClaimedRun) error` 作为最终签名。计划 03-07（backfill CLI）将只读取附加字段（例如 `claimed.Priority == "backfill"` 用于第三层 token tag）；它不会再次更改签名。这避免了双迁移问题，即由中间签名更新的调用者在后续计划更改时中断。
 </objective>
 
 <execution_context>
@@ -71,30 +71,30 @@ This plan is the **single point of truth** for the priority enum integer mapping
 </execution_context>
 
 <context>
-This plan implements D-13 layers 2 (priority-then-FIFO claim) — the foundational change that lets backfills coexist with scheduled and on-demand runs without queue-position starvation. Layers 1 (priority column) and 3 (concurrency token tag) live in plans 03-01 (schema) and 03-07 (backfill CLI) respectively.
+本计划实现了 D-13 层 2（优先级然后 FIFO claim）——允许 backfills 与 scheduled 和 on-demand runs 共存而不造成队列位置饥饿的基础变更。第 1 层（priority 列）和第 3 层（concurrency token tag）分别在计划 03-01（schema）和 03-07（backfill CLI）中。
 
-**Why Wave 2:** This plan modifies `internal/run/claim.go`. It cannot run until plan 03-01 has added the `partition_key`, `priority`, `backfill_id` columns to the `runs` table — otherwise the new SELECT projection fails. depends_on = [01].
+**为何 Wave 2：** 本计划修改 `internal/run/claim.go`。它必须等到计划 03-01 将 `partition_key`、`priority`、`backfill_id` 列添加到 `runs` 表后才能运行——否则新的 SELECT 投影会失败。depends_on = [01]。
 
-**Why parallel with 03-04 and 03-05 in Wave 2:** This plan touches `internal/run/*`, `internal/runtime/*`, and `cmd/platform/{worker.go,materialize.go}` only. Plan 03-04 touches `internal/schedule/*`; plan 03-05 touches `internal/sensor/*`. Zero file overlap → safe to run in parallel.
+**为何与 03-04 和 03-05 在 Wave 2 并行：** 本计划仅涉及 `internal/run/*`、`internal/runtime/*` 和 `cmd/platform/{worker.go,materialize.go}`。计划 03-04 涉及 `internal/schedule/*`；计划 03-05 涉及 `internal/sensor/*`。零文件重叠 → 可安全并行运行。
 
-**Why a dedicated PriorityOrder function (Pitfall 5):** The CASE expression in SQL and any future in-memory priority comparison in Go must agree on the integer mapping. By centralizing in `internal/run/priority.go`, future code paths (e.g., logging, observability, in-memory backfill scoring) call the same function. The drift-prevention test (`TestPriorityOrderConsistency`) asserts that `PriorityOrder("critical") < PriorityOrder("normal") < PriorityOrder("backfill")`.
+**为何使用专门的 PriorityOrder 函数（Pitfall 5）：** SQL 中的 CASE 表达式和 Go 中任何未来的内存优先级比较必须就整数映射达成一致。通过集中在 `internal/run/priority.go` 中，未来的代码路径（例如日志、可观察性、内存 backfill 评分）调用相同的函数。漂移预防测试（`TestPriorityOrderConsistency`）断言 `PriorityOrder("critical") < PriorityOrder("normal") < PriorityOrder("backfill")`。
 
-**Why the 50-goroutine atomicity test still passes:** The Phase 2 test (`TestClaimAtomicity50Goroutines`) inserts ONE queued run and asserts exactly one claimer wins. The new ORDER BY is irrelevant when there's only one row to choose from. The SKIP LOCKED + `WHERE state='queued'` + the defense-in-depth UPDATE guard (`WHERE id=$1 AND state='queued'`) all remain unchanged. The test asserts atomicity, not ordering — and atomicity is unchanged. **This plan must explicitly run the test as an acceptance gate.**
+**为何 50-goroutine 原子性测试仍然通过：** Phase 2 测试（`TestClaimAtomicity50Goroutines`）插入一个排队 run 并断言恰好一个 claimer 获胜。当只有一行可供选择时，新的 ORDER BY 无关。SKIP LOCKED + `WHERE state='queued'` + 防御性深度 UPDATE 守卫（`WHERE id=$1 AND state='queued'`）均保持不变。测试断言原子性，而非排序——原子性未改变。**本计划必须明确将测试作为验收门槛运行。**
 
-**Why the load test is in Wave 2, not Wave 3:** Per the dependency note in the planning context — "priority-aware claim must land BEFORE backfill mass-enqueue is exercised at scale." The load test inserts directly into the `runs` table (no backfill API needed), so it can run as soon as schema (plan 03-01) and claim change (this plan) land. Backfill CLI (plan 03-07) then assumes the priority-aware claim is already verified.
+**为何负载测试在 Wave 2，而非 Wave 3：** per 规划上下文中的依赖注释——"优先级感知 claim 必须先于 backfill 大量入队在规模上被验证"。负载测试直接插入 `runs` 表（无需 backfill API），因此可以在 schema（计划 03-01）和 claim 变更（本计划）落地后立即运行。Backfill CLI（计划 03-07）随后假设优先级感知 claim 已过验证。
 
-**Why Executor.Run takes *run.ClaimedRun (single signature migration):** Adding `partition_key` (plan 03-03) and `priority`-based token acquisition (plan 03-07 D-13 layer 3) both need executor-side access to fields populated by ClaimNext. The cleanest way to expose them is to thread the entire `*run.ClaimedRun` struct down. This plan performs the single signature change (`Run(ctx, runID, assetName) → Run(ctx, claimed)`) and updates all callers (`cmd/platform/worker.go`, `cmd/platform/materialize.go`). Plan 03-07 then only READS `claimed.Priority` to gate the backfill-tag acquisition — no further signature change. This eliminates the dual-migration risk where 03-03 intermediate `(ctx, runID, assetName, partitionKey)` and 03-07 final `(ctx, claimed)` would both update callers and break each other.
+**为何 Executor.Run 接受 *run.ClaimedRun（单一签名迁移）：** 添加 `partition_key`（计划 03-03）和基于 `priority` 的 token 获取（计划 03-07 D-13 层 3）都需要 executor 端访问 ClaimNext 填充的字段。最简洁的方式是整个 `*run.ClaimedRun` 结构向下传递。本计划执行单一签名变更（`Run(ctx, runID, assetName) → Run(ctx, claimed)`）并更新所有调用者（`cmd/platform/worker.go`、`cmd/platform/materialize.go`）。计划 03-07 然后仅读取 `claimed.Priority` 来控制 backfill-tag 获取——不再进一步更改签名。这消除了双重迁移风险，其中 03-03 的中间 `(ctx, runID, assetName, partitionKey)` 和 03-07 的最终 `(ctx, claimed)` 都更新调用者并相互中断。
 
-**Pgx dialect note:** ClaimNext currently uses `tx.QueryRowContext` against `*sql.DB` (pgx via stdlib driver). The CASE expression is portable PostgreSQL SQL; no driver-specific syntax. The claim test file already opens a `pgx`-driven connection — same path.
+**Pgx 方言注释：** ClaimNext 目前对 `*sql.DB`（pgx via stdlib driver）使用 `tx.QueryRowContext`。CASE 表达式是便携式 PostgreSQL SQL；无驱动程序特定语法。claim 测试文件已经打开了 `pgx` 驱动的连接——相同的路径。
 
-**Frozen interfaces consumed:**
-- `internal/storage.Storage` (DB() method only)
-- runs table schema with partition_key/priority/backfill_id columns (from plan 03-01)
+**已冻结的接口：**
+- `internal/storage.Storage`（仅 DB() 方法）
+- 带有 partition_key/priority/backfill_id 列的 runs 表 schema（来自计划 03-01）
 
-**Frozen interfaces produced:**
-- `internal/run.ClaimedRun` extended struct (consumed by plan 03-04 scheduler enqueue, plan 03-07 backfill CLI for status)
-- `internal/run.Priority` constants and `PriorityOrder` function (consumed by plan 03-04, plan 03-05, plan 03-07)
-- `internal/runtime.Executor.Run(ctx, *run.ClaimedRun) error` final signature (consumed by plan 03-07 layer-3 acquisition WITHOUT changing the signature again)
+**已冻结的接口：**
+- `internal/run.ClaimedRun` 扩展结构（由计划 03-04 scheduler 入队、计划 03-07 backfill CLI 用于状态消费）
+- `internal/run.Priority` 常量和 `PriorityOrder` 函数（由计划 03-04、03-05、03-07 消费）
+- `internal/runtime.Executor.Run(ctx, *run.ClaimedRun) error` 最终签名（由计划 03-07 第三层获取消费，不再更改签名）
 
 @.planning/phases/03-scheduling-sensors-partitions/03-CONTEXT.md
 @.planning/phases/03-scheduling-sensors-partitions/03-RESEARCH.md
@@ -108,9 +108,9 @@ This plan implements D-13 layers 2 (priority-then-FIFO claim) — the foundation
 @.planning/phases/02-execution-engine/02-02-SUMMARY.md
 
 <interfaces>
-<!-- Existing claim.go surface this plan extends. -->
+<!-- 本计划扩展的现有 claim.go 表面。 -->
 
-From internal/run/claim.go (Phase 2 baseline):
+From internal/run/claim.go (Phase 2 基线):
 ```go
 package run
 
@@ -131,7 +131,7 @@ func ClaimNext(ctx context.Context, store storage.Storage, workerID string) (*Cl
 func Heartbeat(ctx context.Context, store storage.Storage, runID uuid.UUID) error
 ```
 
-From internal/runtime/executor.go (Phase 2 baseline — to change in this plan):
+From internal/runtime/executor.go (Phase 2 基线——在本计划中更改):
 ```go
 // Current signature:
 func (e *Executor) Run(ctx context.Context, runID uuid.UUID, assetName string) error
@@ -139,7 +139,7 @@ func (e *Executor) Run(ctx context.Context, runID uuid.UUID, assetName string) e
 func (e *Executor) Run(ctx context.Context, claimed *run.ClaimedRun) error
 ```
 
-From cmd/platform/worker.go (Phase 2 baseline — to update in this plan):
+From cmd/platform/worker.go (Phase 2 基线——在本计划中更新):
 ```go
 // Current call site (line 85):
 execErr := deps.executor.Run(ctx, claimed.ID, claimed.AssetName)
@@ -147,7 +147,7 @@ execErr := deps.executor.Run(ctx, claimed.ID, claimed.AssetName)
 execErr := deps.executor.Run(ctx, claimed)
 ```
 
-From internal/run/claim_test.go (Phase 2 baseline — extending):
+From internal/run/claim_test.go (Phase 2 基线——扩展中):
 ```go
 // TestClaimAtomicity50Goroutines — MUST CONTINUE TO PASS after the ORDER BY change.
 // Inserts one queued run, spawns 50 goroutines, asserts exactly one wins.
@@ -155,7 +155,7 @@ From internal/run/claim_test.go (Phase 2 baseline — extending):
 func TestClaimAtomicity50Goroutines(t *testing.T)
 ```
 
-Phase 3 changes (this plan delivers):
+Phase 3 变更（本计划交付）:
 ```go
 // internal/run/priority.go (NEW)
 type Priority string
@@ -613,5 +613,4 @@ After completion, create `.planning/phases/03-scheduling-sensors-partitions/03-0
 - Caller-update map: which files outside `internal/run/` were modified to pass *ClaimedRun (worker.go, materialize.go, runtime/executor.go).
 - Final Executor.Run signature documented as STABLE for the rest of Phase 3 — plan 03-07 must NOT change it again.
 - Decision-coverage: D-13 layer 2 → which test names cover it (TestClaimPriorityOrdering for correctness, TestPriorityClaimLoad for atomicity at scale).
-</output>
 </output>

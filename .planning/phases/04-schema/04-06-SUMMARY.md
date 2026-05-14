@@ -68,9 +68,9 @@ duration: 10min
 completed: 2026-05-09
 ---
 
-# Phase 4 Plan 06: sqlc Recursive CTE Traversal + impact.Analyze Library Summary
+# Phase 4 Plan 06: sqlc 递归 CTE 遍历 + impact.Analyze 库总结
 
-**sqlc tooling introduced (first use in project), bidirectional recursive CTE traversal for asset_edges and column_edges with cycle guard, depth cap, and point-in-time AsOf; impact.Analyze public Go library wrapping the generated queries; 10 integration tests covering linear chains, branching trees, cycles, depth caps, active-only vs AsOf, column traversal, and SQL-layer defense-in-depth**
+**项目中首次引入 sqlc 工具，双向递归 CTE 遍历 asset_edges 和 column_edges，带环检测、深度上限和时间点 AsOf；impact.Analyze 公共 Go 库封装生成的查询；10 个集成测试覆盖线性链、分支树、环、深度上限、仅活跃/AsOf、列遍历和 SQL 层防御深度**
 
 ## Performance
 
@@ -82,15 +82,15 @@ completed: 2026-05-09
 
 ## Accomplishments
 
-### Task 1: sqlc Tooling + lineage.sql + Generated Bindings
+### Task 1: sqlc 工具 + lineage.sql + 生成的绑定
 
-**sqlc.yaml** at project root:
+**项目根目录的 `sqlc.yaml`：**
 - Engine: postgresql, queries: `internal/lineage/queries/lineage.sql`, schema: `migrations/`
 - Package: `lineageq`, sql_package: `pgx/v5`
-- `emit_methods_with_db_argument: true` — DB passed explicitly per method call
-- `emit_interface: true` — generates Querier interface for testability
+- `emit_methods_with_db_argument: true` — DB 作为第二个参数显式传递
+- `emit_interface: true` — 生成 Querier 接口用于可测试性
 
-**lineage.sql — two named recursive CTEs:**
+**lineage.sql — 两个命名的递归 CTE：**
 
 ```sql
 -- name: TraverseAssetLineage :many
@@ -114,7 +114,7 @@ Key CTE properties:
 - **Depth cap (layer 2)**: `l.depth < LEAST(@max_depth::int, 25)` — SQL-level ceiling even if caller bypasses Go layer
 - **Active-edge toggle**: `CASE WHEN @use_as_of::bool THEN ... point-in-time ... ELSE superseded_at IS NULL END` — switches between active-only and point-in-time modes (D-15)
 
-**Generated bindings** (`lineage.sql.go`):
+**生成的绑定** (`lineage.sql.go`)：
 - `TraverseAssetLineageParams{Direction, Asset, UseAsOf, AsOf pgtype.Timestamptz, MaxDepth int32}`
 - `TraverseColumnLineageParams{Direction, Asset, ColName, UseAsOf, AsOf pgtype.Timestamptz, MaxDepth int32}`
 - Row types: `TraverseAssetLineageRow{Asset interface{}, Depth int32}` and `TraverseColumnLineageRow{Asset, ColumnName interface{}, Depth int32}` — `interface{}` because sqlc cannot infer concrete types from CASE expressions
@@ -124,7 +124,7 @@ Key CTE properties:
 - `make sqlc` — runs `PATH="${HOME}/go/bin:${PATH}" sqlc generate`
 - `make sqlc-verify` — runs `./scripts/sqlc-verify.sh` (re-generates + git diff check)
 
-### Task 2: impact.Analyze + Integration Tests
+### Task 2: impact.Analyze + 集成测试
 
 **impact.Analyze API (D-19/D-20):**
 
@@ -145,12 +145,12 @@ type ImpactQuery struct {
 - `ErrInvalidDirection` — not "upstream" or "downstream"
 - `ErrDepthExceeded` — depth > MaxDepth (25)
 
-**Triple-defense depth-cap chain (D-14):**
+**三防御深度上限链（D-14）：**
 1. `impact.Analyze` Go check: `if q.Depth > MaxDepth { return ErrDepthExceeded }` — no DB call made
 2. SQL `WHERE l.depth < LEAST(@max_depth::int, 25)` — SQL cap independent of Go layer
 3. Wave 7 REST handler `?depth > 25` → HTTP 400 (not yet implemented; deferred to plan 04-07)
 
-**Integration test coverage matrix:**
+**集成测试覆盖矩阵：**
 
 | Test | CTE Path | Fixture | Assertion |
 |------|----------|---------|-----------|
@@ -169,23 +169,6 @@ type ImpactQuery struct {
 
 1. **Task 1: sqlc tooling + lineage.sql + generated bindings** - `2eccef2` (feat)
 2. **Task 2: impact.Analyze + integration tests** - `88b874e` (feat)
-
-## Files Created/Modified
-
-| File | Type | Description |
-|------|------|-------------|
-| `sqlc.yaml` | created | sqlc tool configuration |
-| `internal/lineage/queries/lineage.sql` | created | Recursive CTE source for 2 queries |
-| `internal/lineage/queries/db.go` | generated | DBTX interface + Queries struct |
-| `internal/lineage/queries/models.go` | generated | Go structs for asset_edges/column_edges schema |
-| `internal/lineage/queries/lineage.sql.go` | generated | TraverseAssetLineage + TraverseColumnLineage methods |
-| `internal/lineage/queries/querier.go` | generated | Querier interface |
-| `internal/lineage/queries/queries_smoke_test.go` | created | Compile-time method existence check |
-| `internal/lineage/queries/lineage_integration_test.go` | created | 10 integration test scenarios |
-| `internal/lineage/impact/analyze.go` | created | Public API entry point |
-| `internal/lineage/impact/analyze_test.go` | created | Unit tests (no DB) |
-| `scripts/sqlc-verify.sh` | created | CI idempotency verification script |
-| `Makefile` | modified | Added sqlc + sqlc-verify targets |
 
 ## Deviations from Plan
 
